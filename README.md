@@ -23,6 +23,7 @@
 │   └── transport.py     # TCP communication
 ├── docs/
 │   ├── specification.md # Detailed bilingual specification / 詳細仕様書
+│   ├── purchase-list.md # Purchase list / 購入品リスト
 │   └── images/          # Device photos / 装置写真
 ├── pyproject.toml
 └── uv.lock
@@ -167,3 +168,6 @@ CHANNELS = (
 
 See [docs/specification.md](docs/specification.md) for the detailed protocol and expansion rules.  
 詳しい通信仕様と拡張ルールは [docs/specification.md](docs/specification.md) を参照してください。
+
+See [docs/purchase-list.md](docs/purchase-list.md) for the purchase list.  
+購入品リストは [docs/purchase-list.md](docs/purchase-list.md) を参照してください。
