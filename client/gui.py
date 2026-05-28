@@ -57,37 +57,47 @@ class ChannelCard(QFrame):
         self.channel = channel
         self.setObjectName("channelCard")
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
+
+        state_row = QHBoxLayout()
+        state_row.setSpacing(10)
 
         self.title = QLabel(f"CH{channel}")
         self.title.setObjectName("channelTitle")
-        self.title.setMinimumWidth(64)
+        self.title.setMinimumWidth(56)
 
         self.badge = QLabel("UNKNOWN")
         self.badge.setObjectName("badgeUnknown")
         self.badge.setAlignment(Qt.AlignCenter)
-        self.badge.setMinimumWidth(92)
+        self.badge.setMinimumWidth(88)
 
         self.angle = QLabel("- deg")
         self.angle.setObjectName("mutedText")
-        self.angle.setMinimumWidth(72)
+        self.angle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.angle.setMinimumWidth(56)
 
         self.close_button = QPushButton("Close")
         self.open_button = QPushButton("Open")
         self.toggle_button = QPushButton("Toggle")
         for button in (self.close_button, self.open_button, self.toggle_button):
-            button.setMinimumWidth(82)
+            button.setMinimumHeight(34)
             button.setCursor(Qt.PointingHandCursor)
 
-        layout.addWidget(self.title)
-        layout.addWidget(self.badge)
-        layout.addWidget(self.angle)
-        layout.addStretch(1)
-        layout.addWidget(self.close_button)
-        layout.addWidget(self.open_button)
-        layout.addWidget(self.toggle_button)
+        state_row.addWidget(self.title)
+        state_row.addWidget(self.badge)
+        state_row.addStretch(1)
+        state_row.addWidget(self.angle)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        action_row.addWidget(self.close_button)
+        action_row.addWidget(self.open_button)
+        action_row.addWidget(self.toggle_button)
+
+        layout.addLayout(state_row)
+        layout.addLayout(action_row)
 
     def set_angle(self, angle):
         self.angle.setText(f"{angle} deg" if angle is not None else "- deg")
@@ -119,8 +129,8 @@ class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Kohda Lab Shutter")
-        self.resize(900, 620)
-        self.setMinimumSize(760, 480)
+        self.resize(560, 780)
+        self.setMinimumSize(420, 600)
 
         self.client = None
         self.current_status = {}
@@ -158,7 +168,7 @@ class App(QMainWindow):
         root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(14)
 
-        header_layout = QHBoxLayout()
+        header_layout = QVBoxLayout()
         title_block = QVBoxLayout()
         title = QLabel("Kohda Lab Shutter")
         title.setObjectName("appTitle")
@@ -167,7 +177,6 @@ class App(QMainWindow):
         title_block.addWidget(title)
         title_block.addWidget(subtitle)
         header_layout.addLayout(title_block)
-        header_layout.addStretch(1)
         self.last_update_label = QLabel("Last update: -")
         self.last_update_label.setObjectName("mutedText")
         header_layout.addWidget(self.last_update_label)
@@ -182,44 +191,45 @@ class App(QMainWindow):
 
         connection_layout.addWidget(QLabel("IP"), 0, 0)
         self.host_input = QLineEdit(DEFAULT_HOST)
-        self.host_input.setMinimumWidth(150)
-        connection_layout.addWidget(self.host_input, 0, 1)
+        self.host_input.setMinimumWidth(170)
+        connection_layout.addWidget(self.host_input, 0, 1, 1, 3)
 
-        connection_layout.addWidget(QLabel("Port"), 0, 2)
+        connection_layout.addWidget(QLabel("Port"), 1, 0)
         self.port_input = QSpinBox()
         self.port_input.setRange(1, 65535)
         self.port_input.setValue(DEFAULT_PORT)
         self.port_input.setMinimumWidth(90)
-        connection_layout.addWidget(self.port_input, 0, 3)
+        connection_layout.addWidget(self.port_input, 1, 1)
 
         self.connect_button = QPushButton("Connect")
         self.connect_button.setObjectName("primaryButton")
         self.connect_button.clicked.connect(self.connect_to_server)
-        connection_layout.addWidget(self.connect_button, 0, 4)
+        connection_layout.addWidget(self.connect_button, 1, 2)
 
         self.disconnect_button = QPushButton("Disconnect")
         self.disconnect_button.clicked.connect(self.disconnect_from_server)
-        connection_layout.addWidget(self.disconnect_button, 0, 5)
+        connection_layout.addWidget(self.disconnect_button, 1, 3)
 
         self.connection_label = QLabel("Disconnected")
         self.connection_label.setObjectName("mutedText")
-        self.connection_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        connection_layout.addWidget(self.connection_label, 0, 6)
-        connection_layout.setColumnStretch(6, 1)
+        self.connection_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        connection_layout.addWidget(self.connection_label, 2, 0, 1, 4)
+        connection_layout.setColumnStretch(1, 1)
         root_layout.addWidget(connection_panel)
 
-        summary_layout = QHBoxLayout()
+        summary_layout = QVBoxLayout()
         self.summary_label = QLabel("No channels")
         self.summary_label.setObjectName("summaryText")
         summary_layout.addWidget(self.summary_label)
-        summary_layout.addStretch(1)
 
         self.open_all_button = QPushButton("Open All")
         self.open_all_button.clicked.connect(lambda: self.run_command("open", self._known_channels()))
         self.close_all_button = QPushButton("Close All")
         self.close_all_button.clicked.connect(lambda: self.run_command("close", self._known_channels()))
-        summary_layout.addWidget(self.open_all_button)
-        summary_layout.addWidget(self.close_all_button)
+        summary_buttons = QHBoxLayout()
+        summary_buttons.addWidget(self.open_all_button)
+        summary_buttons.addWidget(self.close_all_button)
+        summary_layout.addLayout(summary_buttons)
         root_layout.addLayout(summary_layout)
 
         self.scroll = QScrollArea()
