@@ -1,0 +1,30 @@
+- name: bug
+  color: d73a4a
+  description: Something is not working.
+- name: enhancement
+  color: a2eeef
+  description: New feature or request.
+- name: documentation
+  color: 0075ca
+  description: Documentation improvements.
+- name: hardware
+  color: 5319e7
+  description: Wiring, servo, controller, or hardware support.
+- name: safety
+  color: b60205
+  description: Safety-critical behavior or risk.
+- name: gui
+  color: fbca04
+  description: GUI behavior or layout.
+- name: cli
+  color: c5def5
+  description: Command-line behavior.
+- name: pico
+  color: 0e8a16
+  description: Pico W server or MicroPython code.
+- name: protocol
+  color: 1d76db
+  description: TCP command protocol.
+- name: good first issue
+  color: 7057ff
+  description: Good for a first contribution.
