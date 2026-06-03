@@ -1,5 +1,11 @@
 # Kohda Lab Shutter Controller
 
+[![Test](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml/badge.svg)](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.13-blue)
+
+Roadmap: [ROADMAP.md](ROADMAP.md)
+
 ## Overview / 概要
 
 **JP:** Raspberry Pi Pico W と PCA9685 を使って、サーボ式シャッターを Wi-Fi 経由で操作する装置です。現在の標準構成は 4CH ですが、チャンネル定義を増やすことで nCH 構成へ拡張しやすいように整理しています。
