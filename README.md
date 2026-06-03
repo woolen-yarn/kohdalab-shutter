@@ -171,3 +171,30 @@ See [docs/specification.md](docs/specification.md) for the detailed protocol and
 
 See [docs/purchase-list.md](docs/purchase-list.md) for the purchase list.  
 購入品リストは [docs/purchase-list.md](docs/purchase-list.md) を参照してください。
+
+## Safety / 安全
+
+Read [SAFETY.md](SAFETY.md) before operating real shutters. Always confirm
+power, wiring, servo angles, optical path safety, and a manual way to block or
+disable the optical path.
+
+実機を操作する前に [SAFETY.md](SAFETY.md) を確認してください。電源、配線、
+サーボ角度、光路の安全性、手動で光路を遮断または無効化する方法を必ず確認してください。
+
+## Windows Setup / Windows セットアップ
+
+Use [docs/windows_setup.md](docs/windows_setup.md) when preparing a Windows PC.
+
+Windows PC の準備には [docs/windows_setup.md](docs/windows_setup.md) を使ってください。
+
+## Citation / 引用
+
+If you use this software in research, see [CITATION.cff](CITATION.cff).
+
+研究でこのソフトウェアを使う場合は [CITATION.cff](CITATION.cff) を参照してください。
+
+## License / ライセンス
+
+This project is released under the MIT License. See [LICENSE](LICENSE).
+
+このプロジェクトは MIT License で公開されています。詳細は [LICENSE](LICENSE) を参照してください。
