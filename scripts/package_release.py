@@ -284,8 +284,9 @@ def package(platform, binaries, output, metadata):
         shutil.rmtree(iconset)
         add_notices(resources, metadata)
         shutil.copy2(stage / "LICENSE", resources)
-        for binary in BINARIES:
-            run("codesign", "--force", "--sign", "-", str(executable / binary))
+        # Sign the nested CLI first. Signing the main executable also seals the
+        # enclosing app and would fail while a sibling executable is unsigned.
+        run("codesign", "--force", "--sign", "-", str(executable / "kohdalab-shutter"))
         run("codesign", "--force", "--sign", "-", str(app))
         run("codesign", "--verify", "--deep", "--strict", str(app))
         smoke = executable / "kohdalab-shutter"
