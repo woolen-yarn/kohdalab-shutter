@@ -2,6 +2,9 @@
 
 use clap::Parser;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
+use kohdalab_control_protocol::{
+    is_common, prepare as prepare_common, response as common_response,
+};
 use kohdalab_shutter::{
     DEFAULT_PORT,
     control::{ApiError, Control, response, string},
@@ -903,15 +906,48 @@ impl App {
             .map(|api| api.requests.try_iter().take(8).collect())
             .unwrap_or_default();
         for request in requests {
-            let result = if request.deadline < Instant::now() {
-                Err(ApiError::new(
+            let original = request.body.clone();
+            let value = if request.deadline < Instant::now() {
+                let native = response(Err(ApiError::new(
                     "timeout",
                     "Request expired before execution; no new action started",
-                ))
+                )));
+                if is_common(&original) {
+                    common_response(&original, native)
+                } else {
+                    native
+                }
             } else {
-                self.api_request(&request.body)
+                match prepare_common(&request.body) {
+                    Err(error) => error,
+                    Ok(mut native) => {
+                        // The shared normalizer uses private control_* names for
+                        // adapters; map the read-only aliases to Shutter's
+                        // existing native handlers without changing mutations.
+                        if let Some(method) = native.get("_control_method").and_then(Value::as_str)
+                        {
+                            let mapped = match method {
+                                "describe" => Some("capabilities"),
+                                "status" => Some("status"),
+                                "config" => Some("config"),
+                                "result" => Some("result"),
+                                _ => None,
+                            };
+                            if let Some(mapped) = mapped {
+                                native["method"] = json!(mapped);
+                                native["action"] = json!(mapped);
+                            }
+                        }
+                        let native_response = response(self.api_request(&native));
+                        if is_common(&original) {
+                            common_response(&original, native_response)
+                        } else {
+                            native_response
+                        }
+                    }
+                }
             };
-            let _ = request.reply.send(response(result));
+            let _ = request.reply.send(value);
         }
     }
 
@@ -925,9 +961,13 @@ impl App {
             "capabilities" => {
                 return Ok(
                     json!({"protocol":2,"app":"kohdalab-shutter","version":env!("CARGO_PKG_VERSION"),
+                "application":"kohdalab-shutter","control_protocol":1,
+                "methods":["control.describe","control.status","control.config","control.acquire","control.heartbeat","control.release","control.result","control.discover","control.connect","control.disconnect","control.open","control.close","control.toggle","control.open_all","control.close_all","control.set_layout","control.set_order"],
+                "safety":{"supports_ownership":true,"exclusive_control":true,"physical_auto_connect":false,"simulation_required_for_tests":true,"stop_requires_lease":true},
                 "actions":["capabilities","status","config","acquire","heartbeat","release","result","discover","connect","disconnect","open","close","toggle","open_all","close_all","set_layout","set_order"],
                 "channel_selection_required":true,"channel_lock_scope":"pico_channel","pico_lease_timeout_s":15,"lease_timeout_s":10,"release_policy":"hold_last_state","job_completion":"command_acknowledgement",
-                "state_semantics":"commanded_not_sensor_verified","receipt_limit":64,"action_id_limit":4096}),
+                "state_semantics":"commanded_not_sensor_verified","receipt_limit":64,"action_id_limit":4096,
+                "supports_ownership":true,"heartbeat_seconds":1,"timeout_seconds":10}),
                 );
             }
             "status" => return Ok(self.snapshot_json()),
@@ -936,19 +976,55 @@ impl App {
                     json!({"host":self.host,"port":self.port,"broadcast":self.broadcast,"layout":self.layout,"order":self.order,"demo":self.demo}),
                 );
             }
-            "result" => return self.control.result(string(body, "id")?),
-            "acquire" => return self.control.acquire(body, self.pending.is_some()),
+            "result" => {
+                let mut receipt = self.control.result(string(body, "id")?)?;
+                receipt["job_id"] = receipt["id"].clone();
+                receipt["terminal"] = json!(matches!(
+                    receipt["status"].as_str(),
+                    Some("completed" | "stopped" | "error")
+                ));
+                receipt["cleanup"] = json!(if receipt["status"] == "completed" {
+                    "not_required"
+                } else {
+                    "unknown"
+                });
+                receipt["linked_job_id"] = Value::Null;
+                return Ok(receipt);
+            }
+            "acquire" => {
+                let mut lease = self.control.acquire(body, self.pending.is_some())?;
+                lease["client_id"] = body.get("client").cloned().unwrap_or(Value::Null);
+                lease["heartbeat_seconds"] = json!(1);
+                lease["timeout_seconds"] = json!(10);
+                return Ok(lease);
+            }
             "heartbeat" => {
                 self.control.authorize(body)?;
                 return Ok(json!({"alive":true}));
             }
-            "release" => return self.control.release(body),
+            "release" => {
+                let mut released = self.control.release(body)?;
+                released["cleanup"] = json!("not_required");
+                return Ok(released);
+            }
             "discover" | "connect" | "disconnect" | "open" | "close" | "toggle" | "open_all"
             | "close_all" | "set_layout" | "set_order" => {}
             _ => return Err(ApiError::new("unsupported", "Unknown API method")),
         }
         self.control.authorize(body)?;
         if let Some(receipt) = self.control.cached(body, method)? {
+            let mut receipt = receipt;
+            receipt["job_id"] = receipt["id"].clone();
+            receipt["terminal"] = json!(matches!(
+                receipt["status"].as_str(),
+                Some("completed" | "stopped" | "error")
+            ));
+            receipt["cleanup"] = json!(if receipt["status"] == "completed" {
+                "not_required"
+            } else {
+                "unknown"
+            });
+            receipt["linked_job_id"] = Value::Null;
             return Ok(receipt);
         }
         if self.pending.is_some() {
@@ -1154,7 +1230,19 @@ impl App {
             self.pending_api_job = None;
             self.control.complete(&id,Ok(json!({"accepted":true,"completion":"command_acknowledgement","snapshot":self.snapshot_json(),"devices":self.devices_json()})));
         }
-        self.control.result(&id)
+        let mut receipt = self.control.result(&id)?;
+        receipt["job_id"] = receipt["id"].clone();
+        receipt["terminal"] = json!(matches!(
+            receipt["status"].as_str(),
+            Some("completed" | "stopped" | "error")
+        ));
+        receipt["cleanup"] = json!(if receipt["status"] == "completed" {
+            "not_required"
+        } else {
+            "unknown"
+        });
+        receipt["linked_job_id"] = Value::Null;
+        Ok(receipt)
     }
 
     fn connection_panel(&mut self, ui: &mut egui::Ui) {
@@ -2391,6 +2479,38 @@ mod tests {
         assert!(app.host.is_empty());
         assert!(app.client.is_none());
         assert_eq!(app.devices.len(), 1);
+    }
+
+    #[test]
+    fn common_lease_and_receipt_shapes_are_standard_without_early_completion() {
+        let mut app = App::demo();
+        let client = uuid::Uuid::new_v4().to_string();
+        let mut acquire = json!({"method":"acquire","client":client,"request_id":uuid::Uuid::new_v4().to_string()});
+        let lease = app.api_request(&acquire).unwrap();
+        assert_eq!(lease["client_id"], client);
+        assert_eq!(lease["heartbeat_seconds"], 1);
+        assert_eq!(lease["timeout_seconds"], 10);
+        acquire["lease"] = lease["lease"].clone();
+        acquire["method"] = json!("toggle");
+        acquire["channel"] = json!(0);
+        let receipt = app.api_request(&acquire).unwrap();
+        assert_eq!(receipt["job_id"], acquire["request_id"]);
+        assert!(receipt["terminal"].as_bool().is_some());
+        assert_eq!(receipt["cleanup"], "not_required");
+        let released = app
+            .api_request(&json!({
+                "method":"release",
+                "client":client,
+                "lease":lease["lease"],
+                "request_id":uuid::Uuid::new_v4().to_string()
+            }))
+            .unwrap();
+        assert_eq!(released["released"], true);
+        assert_eq!(released["cleanup"], "not_required");
+        let mut wrong = acquire.clone();
+        wrong["lease"] = json!("wrong");
+        wrong["request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        assert_eq!(app.api_request(&wrong).unwrap_err().code, "ownership_lost");
     }
     #[test]
     fn demo_operations_never_create_a_network_client_or_task() {

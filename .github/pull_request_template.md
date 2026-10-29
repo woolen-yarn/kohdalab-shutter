@@ -1,22 +1,11 @@
-## Summary
+## Summary / 概要
 
-## Verification
+Describe the concrete problem and resulting behavior. Link the relevant issue when one exists.
 
-- [ ] `cargo fmt --check`
-- [ ] `cargo clippy --locked --all-targets -- -D warnings`
-- [ ] `cargo test --locked --all-targets`
-- [ ] `uv run ruff check .`
-- [ ] `uv run mypy`
-- [ ] `uv run pytest --cov --cov-report=term-missing`
+## Validation / 検証
 
-## Hardware Impact
+Record the commands/checks run and their results. Distinguish simulation, installer lifecycle, desktop runtime, and physical hardware evidence. State anything not tested.
 
-- [ ] No hardware-facing behavior changed
-- [ ] Hardware-facing behavior changed and was tested with a small safe setup
+## Compatibility and safety / 互換性と安全性
 
-## Documentation
-
-- [ ] User-facing behaviour or hardware setup is unchanged
-- [ ] README and the relevant bilingual guide were updated
-
-## Notes
+Explain effects on settings, API/Notebook users, data formats, installation, and device ownership/cleanup when relevant. For changes without such effects, say so briefly. Include screenshots for visible UI changes, with version, OS/scale, and simulation context.
