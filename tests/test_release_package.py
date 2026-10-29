@@ -72,7 +72,16 @@ def test_windows_archive_contains_launchers_and_licenses(tmp_path):
         )
     )
     result = type("Result", (), {"stdout": release.version()})()
-    with patch.object(release, "run", return_value=result):
+
+    def fake_setup(stage, output):
+        path = output / f"{stage.name}-Setup.exe"
+        path.write_bytes(b"test-installer")
+        return path
+
+    with (
+        patch.object(release, "run", return_value=result),
+        patch.object(release, "build_windows_setup", side_effect=fake_setup),
+    ):
         archive = release.package("windows-x64", binaries, tmp_path / "dist", metadata)
     base = archive.stem
     with zipfile.ZipFile(archive) as handle:
@@ -85,6 +94,12 @@ def test_windows_archive_contains_launchers_and_licenses(tmp_path):
         assert b"%~dp0kohdalab-shutter-gui.exe" in handle.read(f"{base}/Demo.cmd")
         assert not any("wifi_config.py" in p for p in paths)
     report = json.loads((archive.parent / "BUILD-windows-x64.json").read_text())
+    setup = archive.with_name(f"{archive.stem}-Setup.exe")
+    assert set(report["assets"]) == {archive.name, setup.name}
+    assert (
+        report["assets"][setup.name]
+        == release.hashlib.sha256(setup.read_bytes()).hexdigest()
+    )
     assert (
         report["assets"][archive.name]
         == release.hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -204,3 +219,9 @@ def test_packaging_rejects_missing_binaries_and_existing_output(tmp_path):
         release.package(
             "windows-x64", tmp_path, tmp_path / "dist", tmp_path / "missing.json"
         )
+
+
+def test_windows_setup_must_exist_before_reporting(tmp_path):
+    with patch.object(release, "run"):
+        with pytest.raises(RuntimeError, match="Installer was not created"):
+            release.build_windows_setup(tmp_path / "stage", tmp_path)

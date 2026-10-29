@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-10-29
+
+- Added a Windows x64 Setup.exe with per-user installation, Start menu/Desktop shortcuts, in-place updates and an Apps uninstaller that preserves user settings and unrelated files. The portable ZIP remains available.
+- Added native Windows installation/reinstallation/uninstallation verification and included Setup in release provenance and SHA-256 checks. Installer and uninstaller remain unsigned pending provider approval.
+
 ## 0.4.2 — 2026-10-29
 
 - Defaulted Pico motion concurrency to every configured channel, allowing All actions to overlap instead of waiting for each channel's settling delay. Existing device settings require updating; movement stepping and PWM release stay configurable.
