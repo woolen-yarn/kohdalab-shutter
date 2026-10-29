@@ -3,6 +3,7 @@ name: Build desktop releases
 on:
   pull_request:
     paths:
+      - '.gitattributes'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'src/**'
@@ -130,12 +131,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.ref_name }}
-      RELEASE_COMMIT: ${{ github.sha }}
     steps:
       - name: Check out release notes
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Resolve the tag target commit
+        run: echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Require the complete tag validation suite
         run: |
           for attempt in $(seq 1 10); do

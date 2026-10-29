@@ -108,7 +108,7 @@ def test_vendored_spdx_text_is_used_when_crate_has_no_license_file(
     (spdx / "MIT.json").write_text(
         json.dumps({"licenseId": "MIT", "licenseText": text})
     )
-    (upstream / "LICENSE.txt").write_text(upstream_text)
+    (upstream / "LICENSE.txt").write_bytes(upstream_text.encode("utf-8"))
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
