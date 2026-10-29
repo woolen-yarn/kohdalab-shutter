@@ -4,7 +4,6 @@ The standard desktop application is the Rust version. See [Pico W setup and disc
 
 PC側の標準アプリはRust版です。検索とUSBでのIP確認は[Pico Wの設定と検索](rust-client.md)を参照してください。
 
-
 This checklist prepares a Windows PC for using KohdaLab Shutter and uploading
 server files to the Pico W.
 
@@ -36,7 +35,7 @@ cargo --version
 ```powershell
 New-Item -ItemType Directory -Force -Path $HOME\pythonKernel
 Set-Location $HOME\pythonKernel
-git clone https://github.com/Kohdalab/kohdalab-shutter.git kohdalab-shutter
+git clone https://github.com/woolen-yarn/kohdalab-shutter.git kohdalab-shutter
 Set-Location kohdalab-shutter
 cargo build --release --locked
 uv sync --all-extras --frozen

@@ -62,14 +62,7 @@ Use the browser login flow when prompted. For private repositories, confirm that
 
 ## 3. Clone the repository / リポジトリの取得
 
-For the KohdaLab organization repository:
-
-```bash
-gh repo clone Kohdalab/kohdalab-shutter
-cd kohdalab-shutter
-```
-
-For the personal mirror:
+Clone the repository / リポジトリを取得します:
 
 ```bash
 gh repo clone woolen-yarn/kohdalab-shutter

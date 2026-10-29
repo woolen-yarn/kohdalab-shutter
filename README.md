@@ -42,6 +42,12 @@ Rustデスクトップ版`0.3.0`は開発中です。Windows/macOS向けの配�
 
 ## Quick start / はじめに
 
+Explore the interface without connecting hardware / 実機に接続せず画面を試す:
+
+```sh
+cargo run --locked --bin kohdalab-shutter-gui -- --demo
+```
+
 1. Install stable Rust and build `cargo build --release --locked`. / stable Rustを導入してビルドします。
 2. Prepare `server/wifi_config.py`, connect the Pico W by USB, and upload the server once. / Wi-Fi設定を用意し、Pico WをUSB接続してサーバーを一度転送します。
 3. Start the Pico W server by holding a channel switch for three seconds, unless `AUTO_START_SERVER` is enabled. / `AUTO_START_SERVER`が無効なら、チャンネルスイッチを3秒長押ししてサーバーを開始します。

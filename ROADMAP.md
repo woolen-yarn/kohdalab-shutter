@@ -20,13 +20,14 @@ This roadmap tracks practical improvements for the Pico W shutter controller and
 ## v0.3.0 - Rust desktop and discovery
 
 - Rust GUI/CLI, safe device selection, and automatic local Pico W discovery.
+- Shared KohdaLab visual style, isolated GUI demo, and reproducible screenshots.
 - Keep the Pico W on MicroPython; retain the established TCP control protocol.
 - Document USB fallback for IP inspection and opt-in DHCP.
 
 ## v0.4.0 - Hardware Feedback
 
 - Evaluate position switches or current sensing for positive jam detection.
-- Add a simulated Pico transport for GUI development without hardware.
+- Expand simulation to model device-specific calibration and motion timing.
 - Add an opt-in hardware-in-the-loop smoke test and motion timing capture.
 
 ## v0.5.0 - Lab Workflow

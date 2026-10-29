@@ -24,6 +24,22 @@ CLIだけを作る場合はGUI用の依存を省けます。
 cargo build --release --locked --no-default-features --bin kohdalab-shutter
 ```
 
+## Demo and screenshots / デモと画面画像
+
+実機なしでGUIを試す場合は、ネットワークを使用しないデモを起動します。
+デモ内の開閉操作はシミュレーションのみに反映されます。
+
+```sh
+cargo run --release --locked --bin kohdalab-shutter-gui -- --demo
+```
+
+READMEの画像は、実際のGUIを次のコマンドで起動して撮影できます。
+`--screenshot` は `--demo` と併用したときだけ使用でき、PNGを保存して終了します。
+
+```sh
+cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --screenshot docs/images/kohdalab-shutter.png
+```
+
 ## First Pico W upload / 初回Pico W転送
 
 自動検索には `server/discovery.py` を含む新しいサーバーファイルが必要です。
