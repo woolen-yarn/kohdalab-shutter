@@ -30,7 +30,7 @@ cargo build --release --locked --no-default-features --bin kohdalab-shutter
 CH ↑ は昇順（CH00から）、CH ↓ は降順（最大のCH番号から）です。
 表示だけを入れ替え、CH番号・配線の対応・サーボ状態は変更しません。
 起動時は `--order ascending` / `--order descending` でも指定できます。
-写真の操作部に合わせたCHラベル・左右のLED・中央の押しボタンを、白いカードと控えめな色で表示します。
+黒ベースの画面で、光の経路と遮光板の模式図を表示します。Openは光が通る図、Closeは遮られる図です。図の下のOpen／Closeで操作します。図と状態は指令・校正情報に基づき、光の透過を実測したものではありません。
 中央のPUSHはToggle、下部のOpen／Closeは明示的な開閉指令です。
 右パネルはなく、接続情報・外部API・履歴は左パネルに集約しています。
 

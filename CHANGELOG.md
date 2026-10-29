@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Added numeric ascending/descending display order, CLI `--order`, and GUI API `set_order`; hardware channel identities stay fixed.
-- Refined the interface with a quiet light palette, white cards, segmented controls, subtle depth, and installed platform fonts.
+- Preserved the dark theme and replaced physical-button replicas with optical-path diagrams: a raised blade for Open, an interrupted beam for Close, and explicit unknown/moving states.
+- Kept per-channel Open / Close actions directly beneath each diagram, with segmented layout/order controls and installed platform fonts.
 
 - Added the authenticated GUI API v2 with exclusive ownership, idempotent action receipts, and a stdlib Python/Jupyter client.
 - Simplified the desktop to a left sidebar and horizontal/vertical shutter switches inspired by the physical controller.
