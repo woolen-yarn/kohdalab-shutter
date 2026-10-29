@@ -22,9 +22,9 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 ![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-The left panel finds and connects a Pico W, the centre shows the shutter switches in a horizontal row. Choose Horizontal or Vertical to change the layout; connection details and activity stay in the left panel. The image is simulated; no shutter hardware is connected.
+The left panel finds and connects a Pico W, the centre shows the shutter switches in a horizontal row. Choose Horizontal or Vertical to change the layout, and CH ↑ / CH ↓ to change the channel display order; connection details and activity stay in the left panel. The image is simulated; no shutter hardware is connected.
 
-左でPico Wを検索・接続し、中央で横並びのシャッターを操作します。Horizontal／Verticalで並びを切り替え、接続情報と履歴は左パネルに集約しています。画像はシミュレーションであり、実機は接続していません。
+左でPico Wを検索・接続し、中央で横並びのシャッターを操作します。Horizontal／Verticalで配置、CH ↑／CH ↓で昇順・降順を切り替え、接続情報と履歴は左パネルに集約しています。画像はシミュレーションであり、実機は接続していません。
 
 <details>
 <summary>Vertical layout / 縦並び</summary>
@@ -33,11 +33,22 @@ The left panel finds and connects a Pico W, the centre shows the shutter switche
 
 </details>
 
+<details>
+<summary>Descending order / 降順</summary>
+
+![KohdaLab Shutter descending channel order](docs/images/kohdalab-shutter-descending.png)
+
+Ordering changes the display only; hardware channel identifiers stay fixed.
+
+表示順だけが変わり、実機のCH番号は変わりません。
+
+</details>
+
 ## Downloads / ダウンロード
 
-Rust desktop version `0.4.0` is under development. There is no packaged Windows or macOS release yet; build it from this repository. Python/uv remains necessary only to upload or inspect the Pico W firmware and for the compatibility client.
+Rust desktop version `0.4.1` is under development. There is no packaged Windows or macOS release yet; build it from this repository. Python/uv remains necessary only to upload or inspect the Pico W firmware and for the compatibility client.
 
-Rustデスクトップ版`0.4.0`は開発中です。Windows/macOS向けの配布パッケージはまだありません。このリポジトリからビルドしてください。Python/uvはPico Wファームウェアの転送・確認と互換クライアントにだけ必要です。
+Rustデスクトップ版`0.4.1`は開発中です。Windows/macOS向けの配布パッケージはまだありません。このリポジトリからビルドしてください。Python/uvはPico Wファームウェアの転送・確認と互換クライアントにだけ必要です。
 
 ## Supported hardware / 対応ハードウェア
 

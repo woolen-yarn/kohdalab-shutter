@@ -12,7 +12,7 @@ Install the client in your Python environment / 使用するPython環境へイ�
 python -m pip install ./bindings/python
 ```
 
-Start the GUI with `--gui-api`, or enable **Enable local API** in the left panel. For hardware-free exploration / 実機なしで確認する場合:
+Start the GUI with `--gui-api`, or enable **Local control API** in the left panel. For hardware-free exploration / 実機なしで確認する場合:
 
 ```sh
 cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --gui-api
@@ -28,6 +28,7 @@ with GuiShutter() as shutter:
     shutter.wait_for_state(0, "Open", timeout=5)
     print(shutter.status()["channels"]["0"]["state"])
     shutter.wait(shutter.set_layout("vertical")["id"], timeout=5)
+    shutter.wait(shutter.set_order("descending")["id"], timeout=5)
     shutter.wait(shutter.close(0)["id"], timeout=5)
 ```
 
@@ -54,3 +55,7 @@ Job completion means command acknowledgement. `wait_for_state(channel, "Open" | 
 `close(channel)` はシャッターを閉じます。引数なしの `close()`、with終了、`release()` は操作権の解放であり、実機へCloseを送りません。受付済みの処理は解放・接続失効後も完了する場合があり、最後に要求した状態を維持します。Take control後、古いクライアントは再取得できず、新しいインスタンスが必要です。
 
 Wire protocol and validation / 通信仕様と検証: [GUI API reference](../../docs/gui-api.md).
+
+`set_order("ascending" | "descending")` changes display order only. `status()["display_order"]` returns the sequence; channel IDs passed to `open`, `close`, and `toggle` always identify the same hardware.
+
+`set_order()` は表示順だけを変えます。`open`・`close`・`toggle` のCH番号は常に同じ実機に対応します。

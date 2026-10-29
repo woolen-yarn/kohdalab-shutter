@@ -6,7 +6,7 @@ Pico接続はRust GUIが所有します。手動操作と外部APIは同じ制�
 
 ## Enable and attach / 有効化と接続
 
-Enable **Enable local API** in the sidebar, or launch with `--gui-api`. Add `--demo` to use an isolated simulation. `--api-directory DIR` overrides the endpoint descriptor directory, and explicit startup errors terminate the launch rather than silently disabling the requested API.
+Enable **Local control API** in the sidebar, or launch with `--gui-api`. Add `--demo` to use an isolated simulation. `--api-directory DIR` overrides the endpoint descriptor directory, and explicit startup errors terminate the launch rather than silently disabling the requested API.
 
 左パネルで有効にするか、`--gui-api` を指定します。`--demo` を併用すると実機へ通信しません。接続情報の保存先は `--api-directory DIR` で変更できます。
 
@@ -44,7 +44,7 @@ All requests include `token` and either `method` or the TRKR-style alias `action
 | Ownership / 操作権 | `acquire` (`client`, optional `label`), `heartbeat`, `release` |
 | Connection / 接続 | `discover`, `connect` (`host` or `device_id`, optional `port`), `disconnect` |
 | Shutters / 開閉 | `open`, `close`, `toggle` (`channel`); `open_all`, `close_all` |
-| Display / 表示 | `set_layout` (`layout`: `horizontal` or `vertical`) |
+| Display / 表示 | `set_layout` (`layout`: `horizontal` or `vertical`); `set_order` (`order`: `ascending` or `descending`) |
 
 Success is `{"ok":true,"result":...,"data":...}`; `data` is a compatibility alias. Failure is `{"ok":false,"error_code":"...","error":"..."}`. No arbitrary shell commands, raw Pico commands, or file-writing methods are exposed.
 
@@ -62,7 +62,7 @@ Release, client loss, and heartbeat expiry **hold the last requested state**. Th
 
 ## Receipts and state / 受付結果と開閉状態
 
-Connection, discovery, shutter, and layout mutations return `{id,kind,status,result,error,error_code}` receipts immediately. `status` is `running`, `completed`, or `error`. `result(id)` inspects the exact job; Python `wait(id)` polls and raises `GuiShutterError` on an error receipt. The same request ID and payload return the same receipt, including while running. Conflicting payloads return `request_id_conflict` and never run. Old IDs cannot be reused after their receipts expire.
+Connection, discovery, shutter, and display mutations return `{id,kind,status,result,error,error_code}` receipts immediately. `status` is `running`, `completed`, or `error`. `result(id)` inspects the exact job; Python `wait(id)` polls and raises `GuiShutterError` on an error receipt. The same request ID and payload return the same receipt, including while running. Conflicting payloads return `request_id_conflict` and never run. Old IDs cannot be reused after their receipts expire.
 
 操作ごとに受付IDを返し、そのIDで完了を照会します。同じIDの再送は二重実行せず、異なる内容の使い回しは拒否します。
 
@@ -70,7 +70,7 @@ The GUI retains the last **64** receipts and remembers **4096** action IDs until
 
 ジョブ完了はコマンド受付であり、移動完了とは区別します。`wait_for_state()` はPico側の移動・整定情報を確認します。新しい指令後は古い表示を完了扱いせず、最新の応答を待ちます。
 
-Each `status().channels` entry contains `state`, `position`, `target`, `close_angle`, `open_angle`, and `busy`. Open/Close use the Pico's own per-channel calibration; busy/queued/settling is Moving. Older firmware without `STATE` is Unknown. All states are software-commanded/output states, not sensor confirmation. `status` also includes connection, demo mode, layout, owner, command-task busy flag, endpoint and discovered devices.
+Each `status().channels` entry contains `state`, `position`, `target`, `close_angle`, `open_angle`, and `busy`. Open/Close use the Pico's own per-channel calibration; busy/queued/settling is Moving. Older firmware without `STATE` is Unknown. All states are software-commanded/output states, not sensor confirmation. `status` also includes connection, demo mode, layout, order, the numeric `display_order` array, owner, command-task busy flag, endpoint and discovered devices.
 
 Open/Close判定は各チャンネルの校正値を使います。移動待ち・駆動・整定中はMoving、校正情報のない旧ファームウェアはUnknownです。位置センサーによる確認ではありません。
 
@@ -83,6 +83,10 @@ cargo test --locked --all-targets
 python scripts/verify_gui_api.py target/release/kohdalab-shutter-gui --output docs/validation/gui-api.json
 ```
 
-The native script launches its own demo GUI in an isolated temporary API directory. It exercises real socket authentication, Python attachment, state queries, open/close, toggle deduplication, conflicting IDs, exclusive ownership, layout changes, batch actions, discovery/reconnect, heartbeats and release. Linux CI runs it inside Xvfb. See [recorded simulation result](validation/gui-api.json). These checks do not establish physical Pico/Wi-Fi/servo validation.
+The native script launches its own demo GUI in an isolated temporary API directory. It exercises real socket authentication, Python attachment, state queries, open/close, toggle deduplication, conflicting IDs, exclusive ownership, layout/order changes that preserve channel IDs and states, batch actions, discovery/reconnect, heartbeats and release. Linux CI runs it inside Xvfb. See [recorded simulation result](validation/gui-api.json). These checks do not establish physical Pico/Wi-Fi/servo validation.
 
 検証スクリプトは専用のデモGUIを起動し、実機へ接続しません。実機動作の確認は別途必要です。
+
+Display order changes are session preferences. `set_order` never renumbers channels or sends a hardware command. JSON `channels` remains keyed by the physical CH number; use `display_order` to reproduce the on-screen sequence.
+
+表示順はセッション内の設定です。`set_order` はCH番号を変更せず、実機へ指令を送りません。画面順を再現するときは `display_order` を使用します。

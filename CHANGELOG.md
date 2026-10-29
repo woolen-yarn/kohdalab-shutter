@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added numeric ascending/descending display order, CLI `--order`, and GUI API `set_order`; hardware channel identities stay fixed.
+- Refined the interface with a quiet light palette, white cards, segmented controls, subtle depth, and installed platform fonts.
+
 - Added the authenticated GUI API v2 with exclusive ownership, idempotent action receipts, and a stdlib Python/Jupyter client.
 - Simplified the desktop to a left sidebar and horizontal/vertical shutter switches inspired by the physical controller.
 - Replaced primary angle readouts with calibrated Open / Close / Moving / Unknown states; added the Pico `STATE` command.
