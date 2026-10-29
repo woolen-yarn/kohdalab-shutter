@@ -23,17 +23,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-const BG: Color32 = Color32::from_rgb(247, 248, 250);
-const SIDEBAR: Color32 = Color32::from_rgb(239, 241, 244);
-const PANEL: Color32 = Color32::WHITE;
-const SURFACE: Color32 = Color32::from_rgb(235, 237, 241);
-const BORDER: Color32 = Color32::from_rgb(222, 225, 231);
-const TEXT: Color32 = Color32::from_rgb(29, 31, 36);
-const MUTED: Color32 = Color32::from_rgb(103, 109, 120);
-const BLUE: Color32 = Color32::from_rgb(0, 102, 225);
-const TEAL: Color32 = Color32::from_rgb(24, 132, 92);
-const ORANGE: Color32 = Color32::from_rgb(157, 102, 17);
-const RED: Color32 = Color32::from_rgb(192, 65, 66);
+const BG: Color32 = Color32::from_rgb(18, 19, 23);
+const SIDEBAR: Color32 = Color32::from_rgb(22, 23, 28);
+const PANEL: Color32 = Color32::from_rgb(26, 27, 32);
+const SURFACE: Color32 = Color32::from_rgb(34, 36, 43);
+const BORDER: Color32 = Color32::from_rgb(56, 58, 67);
+const TEXT: Color32 = Color32::from_rgb(235, 236, 241);
+const MUTED: Color32 = Color32::from_rgb(160, 163, 176);
+const BLUE: Color32 = Color32::from_rgb(61, 127, 235);
+const TEAL: Color32 = Color32::from_rgb(63, 215, 194);
+const ORANGE: Color32 = Color32::from_rgb(245, 183, 82);
+const RED: Color32 = Color32::from_rgb(255, 123, 130);
 
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -927,18 +927,14 @@ impl App {
                                     });
                                     ui.add_space(22.0);
                                     ui.vertical_centered(|ui| {
-                                        let response = controller_switch(ui, name, manual, 1.0);
-                                        if response.clicked() {
-                                            action = Some((Operation::Toggle, channel));
-                                        }
-                                        response.on_hover_text(format!(
-                                            "Toggle CH{channel:02}. {detail}"
-                                        ));
-                                        ui.add_space(15.0);
-                                        ui.label(RichText::new(name).size(30.0).color(TEXT));
+                                        optical_path(ui, name, 1.0).on_hover_text(detail);
+                                        ui.add_space(10.0);
                                         ui.label(
-                                            RichText::new("Commanded state")
-                                                .size(11.0)
+                                            RichText::new(name).size(28.0).color(state_color(name)),
+                                        );
+                                        ui.label(
+                                            RichText::new(path_description(name))
+                                                .size(12.0)
                                                 .color(MUTED),
                                         );
                                     });
@@ -966,11 +962,7 @@ impl App {
                                     RichText::new(format!("CH{channel:02}")).strong().size(15.0),
                                 );
                                 ui.add_space(8.0);
-                                let button = controller_switch(ui, name, manual, 0.42);
-                                if button.clicked() {
-                                    action = Some((Operation::Toggle, channel));
-                                }
-                                button.on_hover_text(format!("Toggle CH{channel:02}"));
+                                optical_path(ui, name, 0.48).on_hover_text(path_description(name));
                                 ui.add_space(8.0);
                                 status_dot(ui, state_color(name));
                                 ui.label(RichText::new(name).size(21.0));
@@ -1121,7 +1113,7 @@ fn card_frame() -> egui::Frame {
         .fill(PANEL)
         .corner_radius(20)
         .inner_margin(20)
-        .stroke(Stroke::new(0.7_f32, Color32::from_rgb(232, 234, 239)))
+        .stroke(Stroke::new(0.7_f32, BORDER))
         .shadow(egui::epaint::Shadow {
             offset: [0, 4],
             blur: 18,
@@ -1144,9 +1136,9 @@ fn status_dot(ui: &mut egui::Ui, color: Color32) {
 }
 fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
     let tint = if color == TEAL {
-        Color32::from_rgb(229, 243, 235)
+        Color32::from_rgb(30, 61, 56)
     } else {
-        Color32::from_rgb(249, 241, 222)
+        Color32::from_rgb(65, 51, 30)
     };
     egui::Frame::new()
         .fill(tint)
@@ -1233,94 +1225,105 @@ fn channel_actions(ui: &mut egui::Ui, state: &str, enabled: bool) -> Option<Oper
     action
 }
 
-fn controller_switch(ui: &mut egui::Ui, state: &str, enabled: bool, scale: f32) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(174.0, 132.0) * scale,
-        if enabled {
-            egui::Sense::click()
-        } else {
-            egui::Sense::hover()
-        },
-    );
+fn path_description(state: &str) -> &'static str {
+    match state {
+        "Open" => "Light passes through",
+        "Close" => "Light is blocked",
+        "Moving" => "Shutter is moving",
+        _ => "Light path unknown",
+    }
+}
+
+// A schematic of the commanded optical path, not a hardware position sensor.
+fn optical_path(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(174.0, 132.0) * scale, egui::Sense::hover());
     let painter = ui.painter();
-    let centre = rect.center() + Vec2::new(0.0, 9.0) * scale;
-    for (dx, color, on) in [
-        (-62.0, RED, state == "Close"),
-        (62.0, TEAL, state == "Open"),
-    ] {
-        let pos = egui::pos2(rect.center().x + dx * scale, rect.top() + 19.0 * scale);
-        painter.circle_filled(pos, 7.0 * scale, if on { color } else { BORDER });
-        painter.circle_filled(
-            pos + Vec2::new(-1.5, -2.0) * scale,
-            2.0 * scale,
-            Color32::from_white_alpha(if on { 180 } else { 100 }),
+    let point = |x, y| rect.min + Vec2::new(x, y) * scale;
+    let open = state == "Open";
+    let closed = state == "Close";
+    let known = open || closed;
+    let beam = if known { TEAL } else { MUTED };
+    let y = 82.0;
+    // Incoming beam; a broad, faint line gives the light a gentle glow.
+    painter.line_segment(
+        [point(16.0, y), point(84.0, y)],
+        Stroke::new(9.0 * scale, beam.gamma_multiply(0.12)),
+    );
+    painter.line_segment(
+        [point(16.0, y), point(84.0, y)],
+        Stroke::new(2.5 * scale, beam),
+    );
+    painter.circle_filled(point(16.0, y), 5.0 * scale, beam);
+    if open {
+        painter.line_segment(
+            [point(84.0, y), point(158.0, y)],
+            Stroke::new(9.0 * scale, beam.gamma_multiply(0.12)),
         );
-    }
-    let switch = egui::Rect::from_center_size(centre, Vec2::splat(100.0) * scale);
-    let hover = ui
-        .ctx()
-        .animate_bool(response.id.with("hover"), enabled && response.hovered());
-    for (expansion, alpha) in [(6.0, 3), (3.0, 5), (0.0, 8)] {
-        painter.rect_filled(
-            switch
-                .translate(Vec2::new(0.0, 5.0) * scale)
-                .expand(expansion * scale),
-            18,
-            Color32::from_black_alpha(alpha),
+        painter.arrow(
+            point(84.0, y),
+            Vec2::new(74.0, 0.0) * scale,
+            Stroke::new(2.5 * scale, beam),
         );
-    }
-    let face = if response.is_pointer_button_down_on() {
-        switch.shrink(2.0 * scale)
     } else {
-        switch
-    };
-    painter.rect_filled(face, 18, Color32::from_rgb(232, 235, 239));
+        // No outgoing light: a faint dashed guide shows the interrupted path.
+        for x in [105.0, 120.0, 135.0, 150.0] {
+            painter.line_segment(
+                [point(x, y), point(x + 7.0, y)],
+                Stroke::new(1.2 * scale, BORDER),
+            );
+        }
+    }
+    // Raised blade = open; lowered blade intersects the beam = closed.
+    let top = if open { 22.0 } else { 57.0 };
+    let blade_color = state_color(state);
+    let blade = egui::Rect::from_min_max(point(79.0, top), point(95.0, top + 49.0));
+    painter.rect_filled(blade, 4, blade_color.gamma_multiply(0.2));
     painter.rect_stroke(
-        face,
-        18,
-        Stroke::new(1.0_f32, BORDER),
+        blade,
+        4,
+        Stroke::new(1.8 * scale, blade_color),
         egui::StrokeKind::Inside,
     );
-    painter.rect_filled(
-        face.shrink(3.0 * scale),
-        15,
-        Color32::from_rgb(249 - (hover * 4.0) as u8, 250 - (hover * 3.0) as u8, 252),
-    );
     painter.line_segment(
-        [
-            face.left_top() + Vec2::new(17.0, 5.0) * scale,
-            face.right_top() + Vec2::new(-17.0, 5.0) * scale,
-        ],
-        Stroke::new(1.0_f32, Color32::WHITE),
+        [point(71.0, 116.0), point(103.0, 116.0)],
+        Stroke::new(2.0 * scale, BORDER),
     );
-    let color = if state == "Open" {
-        TEAL
+    if open {
+        painter.arrow(
+            point(108.0, 55.0),
+            Vec2::new(0.0, -27.0) * scale,
+            Stroke::new(1.5 * scale, TEAL),
+        );
+    } else if closed {
+        // Cross at the beam stop remains recognizable without relying on color.
+        for dy in [-1.0, 1.0] {
+            painter.line_segment(
+                [point(81.0, y - 6.0 * dy), point(93.0, y + 6.0 * dy)],
+                Stroke::new(2.0 * scale, RED),
+            );
+        }
     } else {
-        Color32::from_rgb(130, 137, 148)
-    };
-    let r = 17.0 * scale;
-    painter.circle_stroke(centre, r, Stroke::new(1.8_f32, color));
-    let direction = if state == "Open" {
-        Vec2::new(1.0, -0.55)
-    } else {
-        Vec2::new(1.0, 0.0)
-    };
-    painter.line_segment(
-        [centre - direction * r * 0.75, centre + direction * r * 0.75],
-        Stroke::new(2.5_f32, color),
-    );
+        painter.text(
+            point(87.0, top + 24.5),
+            egui::Align2::CENTER_CENTER,
+            if state == "Moving" { "↕" } else { "?" },
+            egui::FontId::proportional(18.0 * scale),
+            blade_color,
+        );
+    }
     response
 }
 
 fn style(ctx: &egui::Context) {
-    ctx.set_theme(egui::ThemePreference::Light);
-    let mut visuals = egui::Visuals::light();
+    ctx.set_theme(egui::ThemePreference::Dark);
+    let mut visuals = egui::Visuals::dark();
     visuals.panel_fill = BG;
     visuals.window_fill = PANEL;
     visuals.extreme_bg_color = SURFACE;
     visuals.text_edit_bg_color = Some(PANEL);
     visuals.override_text_color = Some(TEXT);
-    visuals.selection.bg_fill = Color32::from_rgb(219, 234, 255);
+    visuals.selection.bg_fill = Color32::from_rgb(38, 64, 99);
     visuals.selection.stroke = Stroke::new(1.0_f32, BLUE);
     visuals.window_stroke = Stroke::new(0.7_f32, BORDER);
     for widget in [
@@ -1334,8 +1337,8 @@ fn style(ctx: &egui::Context) {
     }
     visuals.widgets.inactive.bg_fill = PANEL;
     visuals.widgets.inactive.weak_bg_fill = PANEL;
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(230, 237, 247);
-    visuals.widgets.active.bg_fill = Color32::from_rgb(215, 229, 249);
+    visuals.widgets.hovered.bg_fill = Color32::from_rgb(45, 48, 58);
+    visuals.widgets.active.bg_fill = Color32::from_rgb(50, 66, 90);
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(0.6_f32, BORDER);
     ctx.set_visuals(visuals);
     ctx.style_mut(|style| {
