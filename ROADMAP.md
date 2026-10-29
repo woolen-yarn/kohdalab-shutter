@@ -24,13 +24,20 @@ This roadmap tracks practical improvements for the Pico W shutter controller and
 - Keep the Pico W on MicroPython; retain the established TCP control protocol.
 - Document USB fallback for IP inspection and opt-in DHCP.
 
-## v0.4.0 - Hardware Feedback
+## v0.4.0 - Simple shutter controls and GUI API
+
+- Horizontal/vertical switch layouts inspired by the physical button board.
+- Calibrated Open / Close / Moving / Unknown states from the Pico STATE protocol.
+- GUI-owned local API, Python/Jupyter client, ownership and idempotent receipts.
+- Native simulation validation; no arbitrary shell or raw hardware API.
+
+## v0.5.0 - Hardware Feedback
 
 - Evaluate position switches or current sensing for positive jam detection.
 - Expand simulation to model device-specific calibration and motion timing.
 - Add an opt-in hardware-in-the-loop smoke test and motion timing capture.
 
-## v0.5.0 - Lab Workflow
+## v0.6.0 - Lab Workflow
 
 - Add operator-facing troubleshooting notes for Wi-Fi, power, and servo alignment.
 - Improve GUI status visibility for channel state and connection health.

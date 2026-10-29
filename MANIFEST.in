@@ -2,3 +2,11 @@ include CHANGELOG.md CITATION.cff CONTRIBUTING.md LICENSE README.md ROADMAP.md S
 recursive-include docs *
 recursive-include server *.py
 recursive-include tests *.py
+include Cargo.toml Cargo.lock
+recursive-include src *.rs
+recursive-include bindings *.py *.md *.toml
+recursive-include scripts *.py
+recursive-include assets *.svg
+exclude server/wifi_config.py
+prune bindings/python/build
+prune bindings/python/kohdalab_shutter_api.egg-info

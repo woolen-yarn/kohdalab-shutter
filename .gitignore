@@ -12,3 +12,4 @@ dist/
 *.log
 wifi_config.py
 /target/
+api-dist/

@@ -22,15 +22,22 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 ![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-The left panel finds and connects a Pico W, the centre panel controls the reported channels, and the right panel retains connection and action messages. The image is simulated; no shutter hardware is connected.
+The left panel finds and connects a Pico W, the centre shows the shutter switches in a horizontal row. Choose Horizontal or Vertical to change the layout; connection details and activity stay in the left panel. The image is simulated; no shutter hardware is connected.
 
-左でPico Wを検索・接続し、中央でチャンネルを操作します。右には接続・操作メッセージを残します。画像はシミュレーションであり、実機は接続していません。
+左でPico Wを検索・接続し、中央で横並びのシャッターを操作します。Horizontal／Verticalで並びを切り替え、接続情報と履歴は左パネルに集約しています。画像はシミュレーションであり、実機は接続していません。
+
+<details>
+<summary>Vertical layout / 縦並び</summary>
+
+![KohdaLab Shutter vertical interface](docs/images/kohdalab-shutter-vertical.png)
+
+</details>
 
 ## Downloads / ダウンロード
 
-Rust desktop version `0.3.0` is under development. There is no packaged Windows or macOS release yet; build it from this repository. Python/uv remains necessary only to upload or inspect the Pico W firmware and for the compatibility client.
+Rust desktop version `0.4.0` is under development. There is no packaged Windows or macOS release yet; build it from this repository. Python/uv remains necessary only to upload or inspect the Pico W firmware and for the compatibility client.
 
-Rustデスクトップ版`0.3.0`は開発中です。Windows/macOS向けの配布パッケージはまだありません。このリポジトリからビルドしてください。Python/uvはPico Wファームウェアの転送・確認と互換クライアントにだけ必要です。
+Rustデスクトップ版`0.4.0`は開発中です。Windows/macOS向けの配布パッケージはまだありません。このリポジトリからビルドしてください。Python/uvはPico Wファームウェアの転送・確認と互換クライアントにだけ必要です。
 
 ## Supported hardware / 対応ハードウェア
 
@@ -56,6 +63,21 @@ cargo run --locked --bin kohdalab-shutter-gui -- --demo
 The first firmware upload and DHCP/fixed-IP choice are described in [Pico W setup and discovery / Pico Wの設定と検索](docs/rust-client.md). Discovery requires that the PC and Pico W can exchange local UDP traffic; use the USB fallback if the laboratory network blocks it.
 
 初回転送とDHCP・固定IPの選択は[Pico Wの設定と検索](docs/rust-client.md)を参照してください。検索にはPCとPico WのローカルUDP通信が必要です。研究室ネットワークで遮断される場合はUSB確認を使用します。
+
+## External control / 外部制御
+
+Python/Jupyter can attach to the running GUI using an opt-in local API. The GUI owns the Pico connection, and GUI/API actions share the same serialized path and calibrated Open/Close states.
+
+Python/Jupyterから起動中GUIへ接続できます。Pico接続はGUIが所有し、手動操作とAPI操作は同じ制御経路・Open/Close判定を使います。
+
+```sh
+cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --gui-api
+python -m pip install ./bindings/python
+```
+
+See the [Python client guide](bindings/python/README.md) and [GUI API reference](docs/gui-api.md). Open/Close display requires the updated Pico firmware; older firmware remains controllable and displays Unknown.
+
+詳しくは[Pythonクライアント](bindings/python/README.md)と[GUI API仕様](docs/gui-api.md)を参照してください。Open/Close表示にはPico側も更新します。旧ファームウェアでは操作は可能ですが、状態はUnknownと表示します。
 
 ## Development / 開発
 

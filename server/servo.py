@@ -214,5 +214,19 @@ class ServoBoard:
             "CH{}={}".format(index, angle) for index, angle in enumerate(self.positions)
         )
 
+    def state_text(self):
+        """Commanded position, target, calibration, and queued/active motion."""
+        return ",".join(
+            "CH{}={}/{}/{}/{}/{}".format(
+                index,
+                self.positions[index],
+                self.angles[index],
+                self.close_angle(index),
+                self.open_angle(index),
+                int(self.busy(index)),
+            )
+            for index in range(self.count())
+        )
+
     def _write_angle(self, index, angle):
         self._pwm.set_servo_angle(self.channels[index]["servo"], angle)

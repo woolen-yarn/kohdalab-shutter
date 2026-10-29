@@ -147,3 +147,21 @@ Multiple matches require explicit selection. Device IDs identify hardware but ar
 
 Rust GUI angles are commanded positions, not physical-state confirmation, and do not assume
 that every channel uses 0/90-degree calibration.
+
+## Calibrated state / 校正済み状態
+
+`STATE\n` returns comma-separated fields such as `CH0=10/70/10/70/1`.
+Each field is `CH<index>=<position>/<target>/<close>/<open>/<busy>`.
+Position and target are the most recently commanded output step and target;
+close/open come from that channel's `CHANNELS` calibration. `busy` is 1 for
+queued, active, or settling motion, and 0 when idle. GUI state is Moving while
+busy or position differs from target; otherwise it is Open or Close only when
+position equals the matching calibration. Other states are Unknown.
+
+`STATUS` remains unchanged for existing CLI/Python clients. New desktop clients
+fall back to `STATUS` when an old server replies `UNKNOWN` to `STATE`, but do
+not guess the Open/Close calibration from angles. The server uses MicroPython
+stream `write` to avoid partial TCP replies.
+
+`STATE` は角度・目標・校正値・移動待ち/駆動/整定中の状態を返します。
+`STATUS` の既存仕様は維持します。どちらも位置センサー値ではありません。

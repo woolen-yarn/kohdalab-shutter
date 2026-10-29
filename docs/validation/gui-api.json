@@ -1,0 +1,19 @@
+{
+  "result": "passed",
+  "mode": "simulation",
+  "protocol": 2,
+  "checks": [
+    "attach",
+    "calibrated-state",
+    "open-close",
+    "toggle-dedup",
+    "request-conflict",
+    "exclusive-control",
+    "layout-switch",
+    "open-close-all",
+    "discovery-reconnect",
+    "authentication",
+    "heartbeat-release"
+  ],
+  "hardware_connected": false
+}

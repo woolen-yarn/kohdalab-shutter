@@ -1,4 +1,4 @@
-use crate::protocol::{Operation, Status, parse_status};
+use crate::protocol::{Operation, Snapshot, Status, parse_state, parse_status};
 use std::{
     io::{self, Error, ErrorKind, Read, Write},
     net::{TcpStream, ToSocketAddrs},
@@ -32,6 +32,14 @@ impl Client {
 
     pub fn status(&self) -> io::Result<Status> {
         parse_status(&self.send("STATUS", true)?)
+    }
+
+    pub fn snapshot(&self) -> io::Result<Snapshot> {
+        let raw = self.send("STATE", true)?;
+        if raw == "UNKNOWN" {
+            return self.status().map(Snapshot::legacy);
+        }
+        parse_state(&raw)
     }
 
     pub fn operate(&self, operation: Operation, channel: u8) -> io::Result<()> {
@@ -234,5 +242,14 @@ mod tests {
         let (client, worker) = server(vec![bytes]);
         assert_eq!(client.status().unwrap_err().kind(), ErrorKind::InvalidData);
         worker.join().unwrap();
+    }
+    #[test]
+    fn snapshot_supports_calibration_and_legacy_without_guessing() {
+        let (client, worker) = server(vec![b"CH0=70/70/10/70/0\n"]);
+        assert_eq!(client.snapshot().unwrap().channels[&0].name(), "Open");
+        assert_eq!(worker.join().unwrap(), ["STATE\n"]);
+        let (client, worker) = server(vec![b"UNKNOWN\n", b"CH0=0\n"]);
+        assert_eq!(client.snapshot().unwrap().channels[&0].name(), "Unknown");
+        assert_eq!(worker.join().unwrap(), ["STATE\n", "STATUS\n"]);
     }
 }

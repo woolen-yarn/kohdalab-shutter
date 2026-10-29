@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added the authenticated GUI API v2 with exclusive ownership, idempotent action receipts, and a stdlib Python/Jupyter client.
+- Simplified the desktop to a left sidebar and horizontal/vertical shutter switches inspired by the physical controller.
+- Replaced primary angle readouts with calibrated Open / Close / Moving / Unknown states; added the Pico `STATE` command.
+- Added native GUI/API simulation validation and weak-reference heartbeat cleanup.
+
 - Added the Rust `0.3.0` desktop GUI and CLI with automatic Pico W discovery and explicit device selection.
 - Added bounded nonblocking UDP discovery on Pico W while retaining MicroPython servo control.
 - Added USB IP-inspection instructions and a DHCP migration path.

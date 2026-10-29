@@ -235,7 +235,7 @@ class WifiServer:
             except Exception as exc:
                 print("Server error:", exc)
                 try:
-                    conn.send(b"ERROR\n")
+                    conn.write(b"ERROR\n")
                 except Exception:
                     pass
             finally:
@@ -291,22 +291,27 @@ class WifiServer:
     def _handle(self, command, conn):
         parts = command.split()
         if not parts:
-            conn.send(b"UNKNOWN\n")
+            conn.write(b"UNKNOWN\n")
             return
 
         operation = parts[0]
+        # MicroPython stream.write completes a blocking write; send may be short.
+        if operation == "STATE" and len(parts) == 1:
+            conn.write(self.servos.state_text().encode() + b"\n")
+            return
+
         if operation == "STATUS":
-            conn.send(self.servos.status_text().encode() + b"\n")
+            conn.write(self.servos.status_text().encode() + b"\n")
             return
 
         if operation not in ("OPEN", "CLOSE", "TOGGLE") or len(parts) != 2:
-            conn.send(b"UNKNOWN\n")
+            conn.write(b"UNKNOWN\n")
             return
 
         try:
             channel = int(parts[1])
         except ValueError:
-            conn.send(b"ERR\n")
+            conn.write(b"ERR\n")
             return
 
         if operation == "OPEN":
@@ -318,9 +323,9 @@ class WifiServer:
 
         if ok:
             self.leds.reflect()
-            conn.send(b"OK\n")
+            conn.write(b"OK\n")
         else:
-            conn.send(b"ERR\n")
+            conn.write(b"ERR\n")
 
 
 i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
