@@ -9,9 +9,9 @@ Download the current version from [GitHub Releases](https://github.com/woolen-ya
 | Windows 10/11, x64 | `kohdalab-shutter-<version>-windows-x64-Setup.exe` | Run Setup, then open KohdaLab Shutter from Start or the desktop. / Setupを実行後、スタートメニューまたはデスクトップから起動 |
 | macOS 13+, Apple Silicon / Intel | `kohdalab-shutter-<version>-macos-universal.dmg` | Open the DMG, drag `KohdaLab Shutter.app` to Applications, then open the app. / DMGを開き、アプリをApplicationsへドラッグして起動 |
 
-The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for the current user without administrator rights, under `%LOCALAPPDATA%\Programs\Kohdalab\KohdaLab Shutter`. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
+The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for all users under `%ProgramFiles%\Kohdalab\KohdaLab Shutter` and requires administrator approval. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
 
-WindowsのZIP版も引き続き利用できます。Setup版は管理者権限不要で現在のユーザーへインストールします。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
+WindowsのZIP版も引き続き利用できます。Setup版は管理者の許可を得て全ユーザー向けに `%ProgramFiles%\Kohdalab\KohdaLab Shutter` へ導入します。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
 
 The Mac ZIP is an alternative to the DMG; both contain the same universal app. Windows ARM64 and Linux binaries are not provided in this release.
 
@@ -92,3 +92,13 @@ The GUI's **Local control API** supports Python/Jupyter through the [Python clie
 `SHA256SUMS.txt` lists checksums for the Setup/ZIP/DMG files. `BUILD-*.json` records the exact source commit and artifact hashes. Each app includes the project license and dependency/font notices. Do not copy the example Wi-Fi file into a release with real credentials.
 
 `SHA256SUMS.txt`にSetup・ZIP・DMGのハッシュ、`BUILD-*.json`にビルド元コミットを記録しています。ライセンスと依存ライブラリ・フォントの表記も同梱します。Wi-Fiパスワード等の個人設定は含めません。
+
+## Application directories
+
+Windows Setup uses `C:\Program Files\Kohdalab\KohdaLab Shutter`;
+macOS uses `/Applications/KohdaLab Shutter.app`. Local desktop preferences use
+`~/.kohdalab/shutter/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config.json`).
+Pico calibration, network settings, and shared device/channel names remain on the
+controller. The shared `.kohdalab/control` directory is API discovery, not the
+application settings file. Updating or uninstalling the desktop app preserves
+these user settings and never resets the Pico.

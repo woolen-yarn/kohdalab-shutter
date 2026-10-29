@@ -1,18 +1,20 @@
 # Requires a disposable Windows user profile. Installs, updates, then uninstalls
-# the supplied per-user Setup.exe and verifies the Windows integration points.
+# the supplied machine-wide Setup.exe and verifies the Windows integration points.
 [CmdletBinding()]
 param(
  [Parameter(Mandatory=$true)][string]$Installer,
  [Parameter(Mandatory=$true)][ValidatePattern('^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$')][string]$Version
 )
 $ErrorActionPreference='Stop'
+$principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+if(!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Run this disposable-machine test in an elevated PowerShell.'}
 $installerPath=[IO.Path]::GetFullPath($Installer)
 if(!(Test-Path -LiteralPath $installerPath -PathType Leaf)){throw "Installer was not found: $installerPath"}
-$installed=Join-Path $env:LOCALAPPDATA 'Programs\Kohdalab\KohdaLab Shutter'
-$uninstallKey='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter'
-$menu=Join-Path ([Environment]::GetFolderPath('Programs')) 'KohdaLab\KohdaLab Shutter.lnk'
-$demoMenu=Join-Path ([Environment]::GetFolderPath('Programs')) 'KohdaLab\KohdaLab Shutter Demo.lnk'
-$desktop=Join-Path ([Environment]::GetFolderPath('Desktop')) 'KohdaLab Shutter.lnk'
+$installed=Join-Path $env:ProgramFiles 'Kohdalab\KohdaLab Shutter'
+$uninstallKey='HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter'
+$menu=Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'KohdaLab\KohdaLab Shutter.lnk'
+$demoMenu=Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'KohdaLab\KohdaLab Shutter Demo.lnk'
+$desktop=Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'KohdaLab Shutter.lnk'
 if((Test-Path -LiteralPath $installed) -or (Test-Path -LiteralPath $uninstallKey) -or (Test-Path -LiteralPath $menu) -or (Test-Path -LiteralPath $demoMenu) -or (Test-Path -LiteralPath $desktop)){
  throw 'Refusing to run installer verification over an existing KohdaLab Shutter installation.'
 }
@@ -28,7 +30,8 @@ $redirect=Join-Path $env:TEMP ('KohdaLab-Shutter-installer-redirect-'+[Guid]::Ne
 New-Item -ItemType Directory -Path $redirect | Out-Null
 $redirectSentinel=Join-Path $redirect 'must-not-be-removed.txt'
 [IO.File]::WriteAllText($redirectSentinel,'keep')
-$productKey='HKCU:\Software\KohdaLab\KohdaLab Shutter'
+$productKey='HKLM:\Software\KohdaLab\KohdaLab Shutter'
+if(Test-Path -LiteralPath $productKey){throw 'Refusing to change an existing Shutter product registration.'}
 New-Item -Path $productKey -Force | Out-Null
 New-ItemProperty -Path $productKey -Name InstallLocation -Value $redirect -PropertyType String -Force | Out-Null
 Invoke-Setup $installerPath @('/S',("/D="+$redirect))
@@ -41,9 +44,9 @@ if(!(Test-Path -LiteralPath $desktop)){throw 'Desktop shortcut was not created.'
 if((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne $Version){throw 'Apps uninstall version did not match.'}
 $userFile=Join-Path $installed 'kept-by-user.txt'
 [IO.File]::WriteAllText($userFile,'keep')
-$configDirectory=Join-Path $env:APPDATA 'KohdaLab\KohdaLab Shutter'
+$configDirectory=Join-Path $env:USERPROFILE '.kohdalab\shutter'
 New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
-$configFile=Join-Path $configDirectory 'kept-by-user.txt'
+$configFile=Join-Path $configDirectory ('installer-validation-'+[Guid]::NewGuid().ToString('N')+'.txt')
 [IO.File]::WriteAllText($configFile,'keep')
 $lock=$null
 try {

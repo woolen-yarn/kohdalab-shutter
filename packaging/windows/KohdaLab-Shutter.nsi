@@ -1,4 +1,4 @@
-; KohdaLab Shutter per-user Windows installer.
+; KohdaLab Shutter Windows installer.
 ; SPDX-License-Identifier: MIT
 ;
 ; Required compile-time definitions from scripts/build_windows_installer.py:
@@ -28,8 +28,8 @@ SetDatablockOptimize on
 
 Name "KohdaLab Shutter ${VERSION}"
 OutFile "${OUTPUT_FILE}"
-InstallDir "$LOCALAPPDATA\Programs\Kohdalab\KohdaLab Shutter"
-RequestExecutionLevel user
+InstallDir "$PROGRAMFILES64\Kohdalab\KohdaLab Shutter"
+RequestExecutionLevel admin
 ShowInstDetails show
 ShowUninstDetails show
 BrandingText "KohdaLab Shutter"
@@ -46,7 +46,7 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright Kohdalab contributors"
 
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "KohdaLab Shutter Setup"
-!define MUI_WELCOMEPAGE_TEXT "This installs KohdaLab Shutter for this Windows user. Existing settings are kept."
+!define MUI_WELCOMEPAGE_TEXT "This installs KohdaLab Shutter for all Windows users. Existing settings are kept."
 !define MUI_FINISHPAGE_TITLE "KohdaLab Shutter is ready"
 !define MUI_FINISHPAGE_TEXT "Start KohdaLab Shutter from the Start menu or desktop shortcut."
 
@@ -64,8 +64,9 @@ Function .onInit
     Abort
   ${EndIf}
   SetRegView 64
-  ; Do not accept a registry value or /D override for this per-user product.
-  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\Kohdalab\KohdaLab Shutter"
+  ; Do not accept a registry value or /D override for this application.
+  StrCpy $INSTDIR "$PROGRAMFILES64\Kohdalab\KohdaLab Shutter"
+  SetShellVarContext all
 FunctionEnd
 
 Function un.onInit
@@ -73,7 +74,8 @@ Function un.onInit
   ; NSIS may launch a temporary uninstaller copy, but retains the original
   ; install path in $INSTDIR. Refuse caller-supplied removal paths.
   StrCpy $0 $INSTDIR
-  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\Kohdalab\KohdaLab Shutter"
+  StrCpy $INSTDIR "$PROGRAMFILES64\Kohdalab\KohdaLab Shutter"
+  SetShellVarContext all
   ${If} $0 != ""
   ${AndIf} $0 != $INSTDIR
     IfSilent reject
@@ -140,17 +142,17 @@ Section "KohdaLab Shutter" SecMain
   Call EnsureShutterIsClosed
   !insertmacro InstallPayload
   WriteUninstaller "$INSTDIR\Uninstall.exe"
-  WriteRegStr HKCU "Software\KohdaLab\KohdaLab Shutter" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "DisplayName" "KohdaLab Shutter"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "Publisher" "Kohdalab"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "DisplayIcon" "$INSTDIR\kohdalab-shutter-gui.exe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "URLInfoAbout" "https://github.com/woolen-yarn/kohdalab-shutter"
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "NoModify" 1
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "NoRepair" 1
+  WriteRegStr HKLM "Software\KohdaLab\KohdaLab Shutter" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "DisplayName" "KohdaLab Shutter"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "Publisher" "Kohdalab"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "DisplayIcon" "$INSTDIR\kohdalab-shutter-gui.exe"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "URLInfoAbout" "https://github.com/woolen-yarn/kohdalab-shutter"
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "NoModify" 1
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter" "NoRepair" 1
   CreateDirectory "$SMPROGRAMS\KohdaLab"
   CreateShortcut "$SMPROGRAMS\KohdaLab\KohdaLab Shutter.lnk" "$INSTDIR\kohdalab-shutter-gui.exe" "" "$INSTDIR\kohdalab-shutter-gui.exe" 0
   CreateShortcut "$SMPROGRAMS\KohdaLab\KohdaLab Shutter Demo.lnk" "$INSTDIR\kohdalab-shutter-gui.exe" "--demo" "$INSTDIR\kohdalab-shutter-gui.exe" 0
@@ -162,8 +164,8 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\KohdaLab\KohdaLab Shutter.lnk"
   Delete "$SMPROGRAMS\KohdaLab\KohdaLab Shutter Demo.lnk"
   Delete "$DESKTOP\KohdaLab Shutter.lnk"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter"
-  DeleteRegKey HKCU "Software\KohdaLab\KohdaLab Shutter"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\KohdaLabShutter"
+  DeleteRegKey HKLM "Software\KohdaLab\KohdaLab Shutter"
   !insertmacro RemovePayload
   Delete /REBOOTOK "$INSTDIR\Uninstall.exe"
   RMDir "$SMPROGRAMS\KohdaLab"
