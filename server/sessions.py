@@ -54,7 +54,7 @@ class DeviceLabel:
     def _load(self):
         try:
             with open(self.path, "r") as stream:
-                value = json.load(stream).get("label")
+                value = json.loads(stream.read()).get("label")
             return value if valid_label(value) else self.default
         except Exception:
             return self.default
@@ -65,7 +65,9 @@ class DeviceLabel:
         temporary = self.path + ".tmp"
         try:
             with open(temporary, "w") as stream:
-                json.dump({"label": value}, stream)
+                # MicroPython's ujson consistently exposes dumps/loads, while
+                # dump is not available in every firmware build.
+                stream.write(json.dumps({"label": value}))
             self.os.rename(temporary, self.path)
         except Exception as error:
             try:

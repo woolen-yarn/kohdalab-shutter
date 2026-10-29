@@ -168,11 +168,31 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: xvfb-run -a python3 scripts/verify_gui_api.py target/release/kohdalab-shutter-gui --output target/gui-api-validation.json
 
+  micropython:
+    name: MicroPython Pico session compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build a pinned official MicroPython interpreter
+        run: |
+          git clone --depth 1 --branch v1.24.1 https://github.com/micropython/micropython.git build/micropython
+          test "$(git -C build/micropython rev-parse HEAD)" = ecfdd5d6f9be971852003c2049600dc7b3e2a838
+          make -C build/micropython/mpy-cross -j2
+          make -C build/micropython/ports/unix -j2 MICROPY_PY_BTREE=0 MICROPY_PY_SSL=0 MICROPY_PY_FFI=0 FROZEN_MANIFEST=
+      - name: Exercise production Pico sessions with actual MicroPython
+        run: |
+          build/micropython/ports/unix/build-standard/micropython --version
+          build/micropython/ports/unix/build-standard/micropython scripts/verify_micropython_sessions.py build/micropython-label-test.json
+
   # Keep the existing protected-branch contexts. Both gates require every
   # Python/Rust platform, packaging check, and dependency audit to succeed.
   required:
     name: ${{ matrix.context }}
-    needs: [test, package, audit, rust]
+    needs: [test, package, audit, rust, micropython]
     if: ${{ always() }}
     runs-on: ${{ matrix.runner }}
     strategy:
