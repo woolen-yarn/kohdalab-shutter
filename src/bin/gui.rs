@@ -348,9 +348,22 @@ impl App {
         match self.endpoint() {
             Ok(client) => {
                 let selected: Vec<_> = self.selected.iter().copied().collect();
+                let expected_id = self
+                    .devices
+                    .iter()
+                    .find(|device| {
+                        device.address.ip().to_string() == self.host
+                            && device.address.port() == self.port
+                    })
+                    .map(|device| device.id.clone());
                 self.message = "Connecting…".into();
                 self.task(move || {
                     let info = client.info()?;
+                    if expected_id.is_some_and(|id| !id.eq_ignore_ascii_case(&info.device_id)) {
+                        return Err(std::io::Error::other(
+                            "Pico identity changed. Find and select the controller again.",
+                        ));
+                    }
                     let claimed = client.claim(&selected)?;
                     match claimed.snapshot().and_then(|snapshot| {
                         if selected.iter().all(|ch| snapshot.channels.contains_key(ch)) {
