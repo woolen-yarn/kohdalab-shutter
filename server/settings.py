@@ -20,15 +20,14 @@ I2C_FREQ = 400_000
 PCA9685_ADDRESS = 0x40
 PCA9685_ANGLE_OFFSET = 0
 
-# Move one servo at a time to avoid supply-current spikes. Motion is slewed in
-# small steps, then PWM is released so a mechanism at its stop cannot keep
-# drawing stall current. Increase SERVO_RELEASE_DELAY_MS only if the shutter
-# needs more settling time. Set SERVO_RELEASE_PWM=False only for mechanisms
-# that cannot hold position without torque; doing so restores stall risk.
+# Motion is slewed in small steps, then PWM is released so a mechanism at its
+# stop cannot keep drawing stall current. Increase SERVO_RELEASE_DELAY_MS only
+# if the shutter needs more settling time. Set SERVO_RELEASE_PWM=False only
+# for mechanisms that cannot hold position without torque; doing so restores
+# stall risk.
 SERVO_STEP_DEGREES = 3
 SERVO_STEP_INTERVAL_MS = 20
 SERVO_RELEASE_DELAY_MS = 500
-SERVO_MAX_ACTIVE = 1
 SERVO_RELEASE_PWM = True
 
 # Add or remove entries here to build a different number of channels.
@@ -71,3 +70,7 @@ CHANNELS = (
         "open": 90,
     },
 )
+
+# Drive every configured channel in parallel by default. Set a lower value
+# when the external servo supply cannot support all shutters moving together.
+SERVO_MAX_ACTIVE = len(CHANNELS)

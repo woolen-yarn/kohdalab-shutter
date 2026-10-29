@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kohdalab-shutter-api"
-version = "0.4.1"
+version = "0.4.2"
 description = "Python/Jupyter client for the KohdaLab Shutter GUI API"
 readme = "README.md"
 requires-python = ">=3.10"

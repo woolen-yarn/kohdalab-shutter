@@ -2,9 +2,9 @@
 
 ## Current status / 現在の状態
 
-The published v0.4.1 Windows binaries are unsigned; the Mac app is ad-hoc signed and not Apple-notarized. This repository is not accepted by SignPath Foundation and does not claim sponsorship or a trusted signing certificate. Preparation files and passing CI are not evidence that a release is signed.
+The published Windows binaries are unsigned; the Mac app is ad-hoc signed and not Apple-notarized. This repository is not accepted by SignPath Foundation and does not claim sponsorship or a trusted signing certificate. Preparation files and passing CI are not evidence that a release is signed.
 
-公開中のv0.4.1はWindowsが未署名、Macがアドホック署名のみでApple公証なしです。SignPath Foundationの承認・支援を受けたとの表明ではありません。準備ファイルやCIの成功だけで、署名済みになったとは表示しません。
+現在の配布版はWindowsが未署名、Macがアドホック署名のみでApple公証なしです。SignPath Foundationの承認・支援を受けたとの表明ではありません。準備ファイルやCIの成功だけで、署名済みになったとは表示しません。
 
 ## Shared KohdaLab policy / 共通方針
 

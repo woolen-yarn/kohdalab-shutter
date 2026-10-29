@@ -95,9 +95,9 @@
 
 ## Servo Behavior / サーボ仕様
 
-**JP:** PCA9685 は 50Hz で動作します。標準設定ではサーボパルス幅を 500us から 2500us へ線形変換し、0 度から 180 度に対応させます。現在のシャッター制御では `close=0`, `open=90` を使います。移動は非ブロッキングで段階的に行い、既定では同時駆動を 1 台に制限し、到達後に PWM を解放します。`STATUS` は最後に出力した段階角を返すため、移動中は中間角になることがあります。
+**JP:** PCA9685 は 50Hz で動作します。標準設定ではサーボパルス幅を 500us から 2500us へ線形変換し、0 度から 180 度に対応させます。現在のシャッター制御では `close=0`, `open=90` を使います。移動は非ブロッキングで段階的に行い、既定では設定済みの全チャンネルを同時駆動し、到達後に PWM を解放します。外部電源に余裕がない場合は `SERVO_MAX_ACTIVE` を小さくして同時駆動数を制限できます。`STATUS` は最後に出力した段階角を返すため、移動中は中間角になることがあります。
 
-**EN:** The PCA9685 runs at 50 Hz. By default, servo pulse width is mapped linearly from 500 us to 2500 us, corresponding to 0 to 180 degrees. The current shutter control uses `close=0` and `open=90`. Motion is stepped without blocking the event loop, limited to one active servo by default, and PWM is released after settling. `STATUS` reports the last commanded step, so it may contain an intermediate angle during motion.
+**EN:** The PCA9685 runs at 50 Hz. By default, servo pulse width is mapped linearly from 500 us to 2500 us, corresponding to 0 to 180 degrees. The current shutter control uses `close=0` and `open=90`. Motion is stepped without blocking the event loop, drives every configured channel in parallel by default, and releases PWM after settling. If the external supply cannot support simultaneous motion, lower `SERVO_MAX_ACTIVE` to limit concurrency. `STATUS` reports the last commanded step, so it may contain an intermediate angle during motion.
 
 ## n-Channel Expansion Rules / nCH 拡張ルール
 
@@ -130,7 +130,7 @@
 | PC cannot connect / PC から接続できない | Check that the Pico server was started by long press and that the IP is `10.32.145.232` / Pico 側サーバが長押しで起動しているか、IP が `10.32.145.232` か |
 | `Wi-Fi config missing` | Check that `server/wifi_config.py` was uploaded to the Pico / `server/wifi_config.py` を Pico へ転送したか |
 | LEDs work but servo does not / LED は動くがサーボが動かない | Check PCA9685 power, I2C, servo power, and common GND / PCA9685 電源、I2C、サーボ電源、GND 共通を確認 |
-| Servo buzzes, heats, or sticks / サーボが唸る、発熱する、固まる | Move open/close angles away from the mechanical stop, verify the external supply under load, keep `SERVO_MAX_ACTIVE=1`, and keep PWM release enabled / open/close 角を機械端から離し、負荷時の外部電源を確認し、同時駆動 1 台と PWM 解放を維持する |
+| Servo buzzes, heats, or sticks / サーボが唸る、発熱する、固まる | Move open/close angles away from the mechanical stop, verify the external supply under load, lower `SERVO_MAX_ACTIVE` if needed, and keep PWM release enabled / open/close 角を機械端から離し、負荷時の外部電源を確認し、必要に応じて `SERVO_MAX_ACTIVE` を下げ、PWM 解放を維持する |
 | Channel order is wrong / チャンネルがずれる | Check `CHANNELS` order, PCA9685 channel numbers, and physical labels / `CHANNELS` の順番、PCA9685 チャンネル、物理ラベルを確認 |
 | GUI shows `ERROR` or `UNKNOWN` / GUI に `ERROR` または `UNKNOWN` が出る | `STATUS` failed or the angle is not equal to the configured open/close angle / `STATUS` 取得失敗、または角度が open/close 以外 |
 

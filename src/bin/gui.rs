@@ -642,7 +642,14 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            status_dot(ui, TEAL);
+                            status_dot(
+                                ui,
+                                if self.last_update.is_some() {
+                                    TEAL
+                                } else {
+                                    ORANGE
+                                },
+                            );
                             ui.label(RichText::new("Pico W").strong().size(16.0));
                         });
                         ui.add_space(5.0);
@@ -652,18 +659,6 @@ impl App {
                                 .color(MUTED),
                         );
                     });
-                ui.add_space(9.0);
-                if ui
-                    .add_enabled(
-                        manual,
-                        egui::Button::new("Change controller…")
-                            .fill(Color32::TRANSPARENT)
-                            .stroke(Stroke::NONE),
-                    )
-                    .clicked()
-                {
-                    self.disconnect();
-                }
             } else {
                 if ui
                     .add_enabled(
@@ -712,13 +707,41 @@ impl App {
                         ui.label("Port");
                         ui.add(egui::DragValue::new(&mut self.port).range(1..=65535));
                     });
-                    if ui
-                        .add_sized([ui.available_width(), 34.0], egui::Button::new("Connect"))
-                        .clicked()
-                    {
-                        self.connect();
-                    }
                 });
+            }
+            ui.add_space(9.0);
+            ui.columns(2, |columns| {
+                if columns[0]
+                    .add_enabled(
+                        manual && !connected && !self.host.trim().is_empty(),
+                        egui::Button::new("Connect")
+                            .min_size(Vec2::new(columns[0].available_width(), 32.0)),
+                    )
+                    .clicked()
+                {
+                    self.connect();
+                }
+                if columns[1]
+                    .add_enabled(
+                        manual && connected,
+                        egui::Button::new("Disconnect")
+                            .min_size(Vec2::new(columns[1].available_width(), 32.0)),
+                    )
+                    .clicked()
+                {
+                    self.disconnect();
+                }
+            });
+            // Connection/progress errors belong to the sidebar, never above
+            // the shutter cards where background polling would move controls.
+            if self.error || (self.pending.is_some() && (!connected || self.last_update.is_none()))
+            {
+                ui.add_space(8.0);
+                ui.label(RichText::new(&self.message).small().color(if self.error {
+                    RED
+                } else {
+                    MUTED
+                }));
             }
             if !connected {
                 ui.add_enabled_ui(manual, |ui| {
@@ -837,18 +860,12 @@ impl App {
                         .on_hover_text("Descending channel order");
                 });
             });
+            // Keep the same toolbar geometry during every background refresh.
+            let (indicator, _) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::hover());
             if self.pending.is_some() {
-                ui.spinner();
+                egui::Spinner::new().paint_at(ui, indicator);
             }
         });
-        if self.error || self.pending.is_some() || !self.connected() {
-            ui.add_space(14.0);
-            ui.label(RichText::new(&self.message).small().color(if self.error {
-                RED
-            } else {
-                MUTED
-            }));
-        }
         ui.add_space(24.0);
         if self.status.is_empty() {
             ui.add_space(80.0);
@@ -1497,6 +1514,109 @@ mod tests {
                 .is_err()
         );
     }
+    fn render_text(app: &mut App) -> Vec<(String, egui::Pos2)> {
+        fn collect(shape: &egui::epaint::Shape, text: &mut Vec<(String, egui::Pos2)>) {
+            match shape {
+                egui::epaint::Shape::Text(label) => {
+                    text.push((label.galley.job.text.clone(), label.pos))
+                }
+                egui::epaint::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, text);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let ctx = egui::Context::default();
+        style(&ctx);
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    Vec2::new(1320.0, 700.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::SidePanel::left("connection")
+                    .exact_width(240.0)
+                    .frame(egui::Frame::new().inner_margin(18))
+                    .show(ctx, |ui| app.connection_panel(ui));
+                egui::CentralPanel::default().show(ctx, |ui| app.channels_panel(ui));
+            },
+        );
+        let mut text = Vec::new();
+        for shape in output.shapes {
+            collect(&shape.shape, &mut text);
+        }
+        text
+    }
+
+    #[test]
+    fn polling_does_not_move_shutter_controls_or_show_connection_messages_above_them() {
+        for layout in [Layout::Horizontal, Layout::Vertical] {
+            let mut app = App::demo();
+            app.layout = layout;
+            app.message = "Connected. Commanded positions refresh every second.".into();
+            let idle = render_text(&mut app);
+            let (_sender, receiver) = mpsc::channel();
+            app.pending = Some(receiver);
+            let polling = render_text(&mut app);
+            for channel in 0..4 {
+                let name = format!("CH{channel:02}");
+                let before = idle
+                    .iter()
+                    .find(|(text, _)| text == &name)
+                    .expect("idle channel")
+                    .1;
+                let after = polling
+                    .iter()
+                    .find(|(text, _)| text == &name)
+                    .expect("polling channel")
+                    .1;
+                assert_eq!(before, after, "Polling moved {name}");
+            }
+            assert!(!polling.iter().any(|(text, _)| text == &app.message));
+        }
+    }
+
+    #[test]
+    fn initial_connection_progress_is_visible_but_periodic_progress_is_not() {
+        let mut app = App::demo();
+        let (_sender, receiver) = mpsc::channel();
+        app.pending = Some(receiver);
+        app.last_update = None;
+        app.message = "Connecting and reading channel positions...".into();
+        let connecting = render_text(&mut app);
+        let (_, position) = connecting
+            .iter()
+            .find(|(text, _)| text == &app.message)
+            .expect("connection progress");
+        assert!(
+            position.x < 240.0,
+            "Connection progress must stay in the sidebar"
+        );
+        app.last_update = Some(Instant::now());
+        let polling = render_text(&mut app);
+        assert!(!polling.iter().any(|(text, _)| text == &app.message));
+    }
+
+    #[test]
+    fn connection_controls_always_show_connect_and_disconnect() {
+        let mut app = App::demo();
+        for connected in [true, false] {
+            app.demo_connected = connected;
+            let text = render_text(&mut app);
+            for label in ["Connect", "Disconnect"] {
+                assert!(
+                    text.iter().any(|(text, _)| text == label),
+                    "Missing {label}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn display_order_is_numeric_for_both_layouts_without_renumbering_channels() {
         let mut app = App::demo();
