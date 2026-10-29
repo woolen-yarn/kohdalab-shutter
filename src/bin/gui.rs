@@ -1735,7 +1735,8 @@ impl App {
                         ui.add_sized(
                             [(ui.available_width() - reserve).max(30.0), 14.0],
                             egui::Label::new(RichText::new(&status).size(11.0).color(MUTED))
-                                .truncate(),
+                                .truncate()
+                                .halign(egui::Align::Min),
                         )
                         .on_hover_text(&status);
                         if (!self.config_error.is_empty() || !self.preferences_error.is_empty())
