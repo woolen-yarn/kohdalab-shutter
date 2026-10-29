@@ -20,6 +20,7 @@ Run hardware-free checks:
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets
+python scripts/verify_gui_api.py target/release/kohdalab-shutter-gui
 ```
 
 ```powershell
@@ -57,6 +58,7 @@ Before opening a pull request:
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets
+python scripts/verify_gui_api.py target/release/kohdalab-shutter-gui
 uv run ruff check .
 uv run mypy
 uv run pytest --cov --cov-report=term-missing
@@ -64,3 +66,5 @@ uv run pytest --cov --cov-report=term-missing
 
 If the change affects servo motion or Wi-Fi startup, include the hardware used
 and the smallest test performed.
+
+API ownership and receipts live in `src/control.rs`; the bounded local bridge is `src/remote.rs`. Keep external operations on the same GUI command path. Python/Jupyter uses `bindings/python/kohdalab_shutter.py`. See [GUI API](docs/gui-api.md).

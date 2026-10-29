@@ -158,3 +158,14 @@ def test_validates_channel_configuration(channels, mutation, message):
 def test_requires_channels():
     with pytest.raises(ChannelConfigurationError, match="At least one"):
         validate_channels(())
+
+
+def test_state_includes_custom_calibration_targets_and_motion(channels, pwm, clock):
+    board = make_board(channels, pwm, clock, max_active=2)
+    assert board.state_text() == "CH0=0/0/0/90/1,CH1=10/10/10/70/1"
+    board.tick()
+    clock.advance(100)
+    board.tick()
+    assert board.state_text() == "CH0=0/0/0/90/0,CH1=10/10/10/70/0"
+    board.open(1)
+    assert "CH1=10/70/10/70/1" in board.state_text()

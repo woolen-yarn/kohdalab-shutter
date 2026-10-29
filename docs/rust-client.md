@@ -24,6 +24,24 @@ CLIだけを作る場合はGUI用の依存を省けます。
 cargo build --release --locked --no-default-features --bin kohdalab-shutter
 ```
 
+## Layout and shutter states / 配置と開閉状態
+
+シャッターは初期状態で横並びです。Horizontal／Verticalで切り替えられます。
+写真の操作部に合わせたCHラベル・左右のLED・中央の押しボタンを表示します。
+中央のPUSHはToggle、下部のOpen／Closeは明示的な開閉指令です。
+右パネルはなく、接続情報・外部API・履歴は左パネルに集約しています。
+
+Open／CloseはPicoの `CHANNELS` の校正値と、移動待ち・駆動・整定中の情報から判定します。
+旧ファームウェアの `STATUS` だけでは角度の意味を推測せずUnknownにします。
+`server/main.py` と `server/servo.py` を含む最新ファイルを再転送してください。
+状態表示は指令・出力状態であり、物理的な開閉を位置センサーで検証したものではありません。
+
+## External control / 外部制御
+
+左のEnable local API、または起動時の `--gui-api` でPython/Jupyterからの制御を有効にできます。
+複数台のPico検索とは別に、同じPCで起動しているGUIに接続するAPIです。
+[Pythonクライアント](../bindings/python/README.md)と[API仕様](gui-api.md)を参照してください。
+
 ## Demo and screenshots / デモと画面画像
 
 実機なしでGUIを試す場合は、ネットワークを使用しないデモを起動します。
