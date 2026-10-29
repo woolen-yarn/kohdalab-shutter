@@ -149,3 +149,23 @@ jobs:
         run: cargo build --release --locked
       - name: Check CLI entry point
         run: cargo run --locked --bin kohdalab-shutter -- --help
+
+  # Keep the existing protected-branch contexts. Both gates require every
+  # Python/Rust platform, packaging check, and dependency audit to succeed.
+  required:
+    name: ${{ matrix.context }}
+    needs: [test, package, audit, rust]
+    if: ${{ always() }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - context: ubuntu-latest
+            runner: ubuntu-24.04
+          - context: windows-latest
+            runner: windows-2025
+    steps:
+      - name: Require the complete validation suite
+        env:
+          CHECK_RESULTS: ${{ join(needs.*.result, ',') }}
+        run: python -c "import os, sys; sys.exit(0 if all(result == 'success' for result in os.environ['CHECK_RESULTS'].split(',')) else 1)"
