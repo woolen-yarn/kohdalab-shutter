@@ -8,7 +8,7 @@
 Rust desktop controller and MicroPython Pico W firmware for servo-driven optical shutters.
 Rust製デスクトップコントローラーと、サーボ式光シャッター用Pico W MicroPythonファームウェアです。
 
-[Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
+[Download / ダウンロード](https://github.com/woolen-yarn/kohdalab-shutter/releases) · [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
 
 - Select a labelled Pico W and the channels you need in a separate connection screen.
 - Locks selected channels on the Pico; other PCs can use the remaining channels.

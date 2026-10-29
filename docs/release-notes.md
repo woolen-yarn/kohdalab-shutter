@@ -18,7 +18,7 @@ Windows x64 Setup/portable ZIP; macOS universal ZIP/DMG; corresponding source, d
 
 Local Rust application/common suites: 63 passed. Actual Demo GUI covered native regression plus common open/result/wait, duplicate receipts and truthful release cleanup. Package/installer tests passed. Platform CI validates Windows/macOS packages.
 
-The common Python SDK has seven device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
+The common Python SDK has nine device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
 
 ## 日本語
 
