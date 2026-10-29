@@ -27,7 +27,10 @@ cargo build --release --locked --no-default-features --bin kohdalab-shutter
 ## Layout and shutter states / 配置と開閉状態
 
 シャッターは初期状態で横並びです。Horizontal／Verticalで切り替えられます。
-写真の操作部に合わせたCHラベル・左右のLED・中央の押しボタンを表示します。
+CH ↑ は昇順（CH00から）、CH ↓ は降順（最大のCH番号から）です。
+表示だけを入れ替え、CH番号・配線の対応・サーボ状態は変更しません。
+起動時は `--order ascending` / `--order descending` でも指定できます。
+写真の操作部に合わせたCHラベル・左右のLED・中央の押しボタンを、白いカードと控えめな色で表示します。
 中央のPUSHはToggle、下部のOpen／Closeは明示的な開閉指令です。
 右パネルはなく、接続情報・外部API・履歴は左パネルに集約しています。
 
@@ -38,13 +41,13 @@ Open／CloseはPicoの `CHANNELS` の校正値と、移動待ち・駆動・整�
 
 ## External control / 外部制御
 
-左のEnable local API、または起動時の `--gui-api` でPython/Jupyterからの制御を有効にできます。
+左のLocal control API、または起動時の `--gui-api` でPython/Jupyterからの制御を有効にできます。
 複数台のPico検索とは別に、同じPCで起動しているGUIに接続するAPIです。
 [Pythonクライアント](../bindings/python/README.md)と[API仕様](gui-api.md)を参照してください。
 
 ## Demo and screenshots / デモと画面画像
 
-実機なしでGUIを試す場合は、ネットワークを使用しないデモを起動します。
+実機なしでGUIを試す場合は、Pico Wへ通信しないデモを起動します。
 デモ内の開閉操作はシミュレーションのみに反映されます。
 
 ```sh
@@ -56,6 +59,13 @@ READMEの画像は、実際のGUIを次のコマンドで起動して撮影で�
 
 ```sh
 cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --screenshot docs/images/kohdalab-shutter.png
+```
+
+昇順・降順や縦並びを指定して撮影する場合:
+
+```sh
+cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --order descending --screenshot docs/images/kohdalab-shutter-descending.png
+cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --layout vertical --order descending --screenshot docs/images/kohdalab-shutter-vertical.png
 ```
 
 ## First Pico W upload / 初回Pico W転送
@@ -159,3 +169,7 @@ uv run pytest --cov --cov-report=term-missing
 
 TCP/UDPのローカル模擬サーバーとMicroPython用モジュールのテストはハードウェアなしで実行できます。
 実機では更新後、検索→ID選択→STATUS取得→安全な条件で1チャンネルの開閉の順で確認します。
+
+## Design reference / デザインの参考
+
+余白・文字の階層・控えめな色と奥行きは [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) を参考にしています。macOS／Windowsではインストール済みのシステムフォントを優先し、フォントファイル自体は配布物に含めません。

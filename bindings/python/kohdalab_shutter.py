@@ -308,6 +308,12 @@ class GuiShutter:
             raise ValueError("layout must be 'horizontal' or 'vertical'")
         return self._mutation("set_layout", layout=layout, request_id=request_id)
 
+    def set_order(self, order: str, *, request_id: str | None = None) -> Any:
+        """Change display ordering without renumbering hardware channels."""
+        if order not in {"ascending", "descending"}:
+            raise ValueError("order must be 'ascending' or 'descending'")
+        return self._mutation("set_order", order=order, request_id=request_id)
+
     def wait(self, id: str, timeout: float | None = None) -> Any:
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:

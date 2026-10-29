@@ -173,6 +173,18 @@ class GuiClientTests(unittest.TestCase):
         self.assertNotIn("port", request)
         client.close()
 
+    def test_order_setting_validates_and_sends_the_explicit_order(self) -> None:
+        client = GuiShutter(self.server.path, timeout=1)
+        receipt = client.set_order("descending")
+        self.assertEqual(receipt["kind"], "set_order")
+        request = next(
+            call for call in self.server.calls if call["method"] == "set_order"
+        )
+        self.assertEqual(request["order"], "descending")
+        with self.assertRaises(ValueError):
+            client.set_order("invalid")
+        client.close()
+
     def test_discarded_client_does_not_keep_heartbeat_alive(self) -> None:
         client = GuiShutter(self.server.path, timeout=1)
         client.acquire()

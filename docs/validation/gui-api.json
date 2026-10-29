@@ -10,6 +10,7 @@
     "request-conflict",
     "exclusive-control",
     "layout-switch",
+    "display-order",
     "open-close-all",
     "discovery-reconnect",
     "authentication",

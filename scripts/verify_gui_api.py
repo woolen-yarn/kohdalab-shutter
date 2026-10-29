@@ -98,6 +98,21 @@ def verify(binary, output):
                         require(
                             client.status()["layout"] == layout, "Layout did not switch"
                         )
+                    positions_before = client.status()["channels"]
+                    for order, expected in (
+                        ("descending", [3, 2, 1, 0]),
+                        ("ascending", [0, 1, 2, 3]),
+                    ):
+                        client.wait(client.set_order(order)["id"], timeout=5)
+                        snapshot = client.status()
+                        require(
+                            snapshot["display_order"] == expected,
+                            "Display order did not switch",
+                        )
+                        require(
+                            snapshot["channels"] == positions_before,
+                            "Sorting changed a shutter state",
+                        )
                     client.wait(client.close_all()["id"], timeout=5)
                     require(
                         all(
@@ -157,6 +172,7 @@ def verify(binary, output):
                         "request-conflict",
                         "exclusive-control",
                         "layout-switch",
+                        "display-order",
                         "open-close-all",
                         "discovery-reconnect",
                         "authentication",
