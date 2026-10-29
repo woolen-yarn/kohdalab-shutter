@@ -6,7 +6,7 @@ PC側GUI・CLIはRustを使い、Pico WはMicroPythonのままです。既存の
 
 ## Download the desktop app / PCアプリの取得
 
-[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)にWindows向けZIPとMac向けUniversalアプリ（DMG／ZIP）を用意しています。GUIの利用にRust・Pythonは不要です。[導入と初回起動](install.md)を参照してください。
+[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)にWindows向けSetup／ZIPとMac向けUniversalアプリ（DMG／ZIP）を用意しています。GUIの利用にRust・Pythonは不要です。[導入と初回起動](install.md)を参照してください。
 
 ## Build the desktop app / PCアプリのビルド
 
@@ -35,8 +35,9 @@ CH ↑ は昇順（CH00から）、CH ↓ は降順（最大のCH番号から）
 表示だけを入れ替え、CH番号・配線の対応・サーボ状態は変更しません。
 起動時は `--order ascending` / `--order descending` でも指定できます。
 kohdalab-trkrと共通の黒・グレーの配色、枠線、青い選択ボタンを使用します。上部にはアプリ名とバージョンを表示します。
-丸い窓はOpenで扉が開いて光が見え、Closeで扉が閉じて光が隠れます。Movingは矢印、Unknownは「?」で表示します。図の下のOpen／Closeで操作し、一括操作は左パネルのAll channelsにまとめています。図と状態は指令・校正情報に基づき、光の透過を実測したものではありません。
-右パネルはなく、接続情報・外部API・履歴は左パネルに集約しています。Connection欄にはConnect／Disconnectを並べて表示します。定期的な状態取得では、シャッター領域にメッセージ行を出し入れしないため縦位置は変わりません。
+接続画面でラベル付き機器と使用CHを選択し、Connectします。接続後は選んだCHだけを小さなウィンドウに表示します。上部にStatusとVersion、右上にDisconnectと「···」（配置・昇降順・API設定）を置きます。一括開閉も選択CHだけに作用します。光の窓はOpen／Closeの指令状態を表し、位置センサーによる確認ではありません。
+
+Pico側の`main.py`と新しい`sessions.py`の更新が必要です。ラベルはPicoに保存され、使用CHは15秒リースで排他管理されます。接続中LEDは二連点滅し、Disconnectで即時解放、通信断では15秒で解放します。詳しくは[導入手順](install.md)を参照してください。
 
 Open／CloseはPicoの `CHANNELS` の校正値と、移動待ち・駆動・整定中の情報から判定します。
 旧ファームウェアの `STATUS` だけでは角度の意味を推測せずUnknownにします。
@@ -51,7 +52,7 @@ Open／CloseはPicoの `CHANNELS` の校正値と、移動待ち・駆動・整�
 
 ## External control / 外部制御
 
-左のLocal control API、または起動時の `--gui-api` でPython/Jupyterからの制御を有効にできます。
+接続画面のSettingsまたは操作画面の「···」内のLocal control API、または起動時の `--gui-api` でPython/Jupyterからの制御を有効にできます。
 複数台のPico検索とは別に、同じPCで起動しているGUIに接続するAPIです。
 [Pythonクライアント](../bindings/python/README.md)と[API仕様](gui-api.md)を参照してください。
 
@@ -81,7 +82,7 @@ cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --layout verti
 ## First Pico W upload / 初回Pico W転送
 
 自動検索には `server/discovery.py` を含む新しいサーバーファイルが必要です。
-古いサーバーにもRust版からIPを指定してTCP接続できます。
+v0.5.0のGUI・操作用CLIには新しい`sessions.py`と`main.py`が必要です。旧サーバーに対する状態参照は引き続き利用できます。
 
 1. Pico WのMicroPythonと `server/wifi_config.py` のSSID・パスワードを確認します。
 2. 固定IPが今のネットワークに合っていなければ、`server/settings.py` の
@@ -91,7 +92,7 @@ cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --layout verti
    macOS/Linuxでは次のコマンドを使います。
 
 ```sh
-uv run mpremote connect auto fs cp server/main.py :main.py fs cp server/pca9685.py :pca9685.py fs cp server/servo.py :servo.py fs cp server/discovery.py :discovery.py fs cp server/settings.py :settings.py fs cp server/wifi_config.py :wifi_config.py reset
+uv run mpremote connect auto fs cp server/main.py :main.py fs cp server/pca9685.py :pca9685.py fs cp server/servo.py :servo.py fs cp server/discovery.py :discovery.py fs cp server/sessions.py :sessions.py fs cp server/settings.py :settings.py fs cp server/wifi_config.py :wifi_config.py reset
 ```
 
 4. 既存の操作どおり、スイッチを3秒長押ししてWi-Fiサーバーを開始します。

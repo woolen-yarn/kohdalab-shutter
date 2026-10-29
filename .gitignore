@@ -13,3 +13,5 @@ dist/
 wifi_config.py
 /target/
 api-dist/
+device_config.json
+device_config.json.tmp

@@ -8,11 +8,12 @@ use kohdalab_shutter::{
     discovery::{self, Device},
     protocol::{Operation, Snapshot, Status},
     remote,
+    session::{ChannelInfo, ControllerInfo},
     transport::Client,
 };
 use serde_json::{Value, json};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, BTreeSet, VecDeque},
     net::{Ipv4Addr, SocketAddrV4},
     path::PathBuf,
     sync::{
@@ -24,7 +25,6 @@ use std::{
 };
 
 const BG: Color32 = Color32::from_rgb(18, 19, 23);
-const SIDEBAR: Color32 = Color32::from_rgb(22, 23, 28);
 const PANEL: Color32 = Color32::from_rgb(26, 27, 32);
 const SURFACE: Color32 = Color32::from_rgb(34, 36, 43);
 const BORDER: Color32 = Color32::from_rgb(56, 58, 67);
@@ -59,6 +59,12 @@ struct Args {
     /// Save a real GUI screenshot and exit (demo mode only)
     #[arg(long, requires = "demo")]
     screenshot: Option<PathBuf>,
+    /// Capture the connection picker instead of the connected demo
+    #[arg(long, requires = "demo")]
+    picker: bool,
+    /// Demo channel selection, e.g. 0,2
+    #[arg(long, requires = "demo", value_delimiter = ',')]
+    channels: Vec<u8>,
     /// Enable the authenticated loopback GUI control API
     #[arg(long)]
     gui_api: bool,
@@ -72,7 +78,10 @@ struct Args {
 }
 
 enum Reply {
-    Devices(Vec<Device>),
+    Devices(Vec<Device>, BTreeMap<String, ControllerInfo>),
+    Info(ControllerInfo),
+    Connected(Client, Snapshot, ControllerInfo),
+    Released(ControllerInfo),
     Status(Snapshot),
     Accepted(String),
 }
@@ -81,6 +90,11 @@ struct App {
     port: u16,
     broadcast: String,
     devices: Vec<Device>,
+    device_info: BTreeMap<String, ControllerInfo>,
+    info: Option<ControllerInfo>,
+    device_label: String,
+    selected: BTreeSet<u8>,
+    last_size: Option<Vec2>,
     client: Option<Client>,
     status: Status,
     state: Snapshot,
@@ -112,12 +126,17 @@ impl Default for App {
             port: DEFAULT_PORT,
             broadcast: "255.255.255.255".into(),
             devices: Vec::new(),
+            device_info: BTreeMap::new(),
+            info: None,
+            device_label: String::new(),
+            selected: BTreeSet::new(),
+            last_size: None,
             client: None,
             status: Status::new(),
             state: Snapshot::default(),
             pending: None,
             next_refresh: Instant::now(),
-            message: "Find a Pico W, select its ID, then connect.".into(),
+            message: String::new(),
             error: false,
             last_command: None,
             last_update: None,
@@ -147,6 +166,13 @@ impl App {
         app.devices = demo_devices();
         app.host = app.devices[0].address.ip().to_string();
         app.demo_status = [(0, 0), (1, 90), (2, 0), (3, 90)].into();
+        for (i, device) in app.devices.iter().enumerate() {
+            app.device_info
+                .insert(device.id.clone(), demo_info(&device.id, i));
+        }
+        app.info = app.device_info.get(&app.devices[0].id).cloned();
+        app.device_label = app.info.as_ref().unwrap().label.clone();
+        app.selected = (0..4).collect();
         app.connect();
         app.log
             .push_front("00:00  Two simulated Pico W devices available".into());
@@ -179,7 +205,10 @@ impl App {
         self.pending = Some(receiver);
         self.error = false;
         std::thread::spawn(move || {
-            let _ = sender.send(job().map_err(|e| e.to_string()));
+            let result = job().map_err(|e| e.to_string());
+            if let Err(mpsc::SendError(Ok(Reply::Connected(client, _, _)))) = sender.send(result) {
+                let _ = client.release();
+            }
         });
     }
 
@@ -201,35 +230,157 @@ impl App {
         self.devices.clear();
         self.message = "Searching the local network...".into();
         self.record("Searching for Pico W devices");
-        self.task(move || discovery::discover(target, Duration::from_secs(2)).map(Reply::Devices));
+        self.task(move || {
+            let devices = discovery::discover(target, Duration::from_secs(2))?;
+            let mut info = BTreeMap::new();
+            // A small bounded batch avoids spending one timeout per absent controller.
+            for batch in devices.chunks(8) {
+                let workers: Vec<_> = batch
+                    .iter()
+                    .cloned()
+                    .map(|device| {
+                        std::thread::spawn(move || {
+                            let client = Client::new(
+                                device.address.ip().to_string(),
+                                device.address.port(),
+                                Duration::from_secs(2),
+                                1,
+                            )
+                            .ok()?;
+                            Some((device.id, client.info().ok()?))
+                        })
+                    })
+                    .collect();
+                for worker in workers {
+                    if let Ok(Some((id, detail))) = worker.join() {
+                        info.insert(id, detail);
+                    }
+                }
+            }
+            Ok(Reply::Devices(devices, info))
+        });
+    }
+
+    fn endpoint(&self) -> std::io::Result<Client> {
+        Client::new(
+            self.host.trim().to_owned(),
+            self.port,
+            Duration::from_secs(2),
+            2,
+        )
+    }
+
+    fn select_device(&mut self, device: &Device) {
+        self.host = device.address.ip().to_string();
+        self.port = device.address.port();
+        self.selected.clear();
+        self.info = self.device_info.get(&device.id).cloned();
+        self.device_label = self
+            .info
+            .as_ref()
+            .map_or(String::new(), |info| info.label.clone());
+        self.error = false;
+        self.message.clear();
+        if !self.demo {
+            match self.endpoint() {
+                Ok(client) => self.task(move || client.info().map(Reply::Info)),
+                Err(error) => {
+                    self.error = true;
+                    self.message = error.to_string();
+                }
+            }
+        }
+    }
+
+    fn save_label(&mut self) {
+        if self.demo {
+            if let Some(info) = &mut self.info {
+                info.label = self.device_label.trim().to_owned();
+                self.device_info
+                    .insert(info.device_id.clone(), info.clone());
+            }
+            return;
+        }
+        let label = self.device_label.trim().to_owned();
+        match self.endpoint() {
+            Ok(client) => self.task(move || {
+                client.set_label(&label)?;
+                client.info().map(Reply::Info)
+            }),
+            Err(error) => {
+                self.error = true;
+                self.message = error.to_string();
+            }
+        }
     }
 
     fn connect(&mut self) {
         self.last_command = None;
         self.last_update = None;
         self.error = false;
-        if self.demo {
-            self.demo_connected = true;
-            self.status = self.demo_status.clone();
-            self.state = Snapshot::demo(&self.status);
-            self.last_update = Some(Instant::now());
-            self.message = "Simulation connected. No hardware is controlled.".into();
-            self.record(format!("Connected to simulated Pico at {}", self.host));
+        if self.selected.is_empty() {
+            self.error = true;
+            self.message = "Select at least one available channel.".into();
             return;
         }
-        match Client::new(
-            self.host.trim().to_owned(),
-            self.port,
-            Duration::from_secs(2),
-            2,
-        ) {
+        if self.demo {
+            if self.info.as_ref().is_some_and(|info| {
+                info.channels
+                    .iter()
+                    .any(|ch| ch.locked && self.selected.contains(&ch.id))
+            }) {
+                self.error = true;
+                self.message = "Selected channels are in use.".into();
+                return;
+            }
+            self.demo_connected = true;
+            self.status = self
+                .demo_status
+                .iter()
+                .filter(|(ch, _)| self.selected.contains(ch))
+                .map(|(&ch, &angle)| (ch, angle))
+                .collect();
+            self.state = Snapshot::demo(&self.status);
+            self.last_update = Some(Instant::now());
+            self.message.clear();
+            return;
+        }
+        match self.endpoint() {
             Ok(client) => {
-                self.client = Some(client.clone());
-                self.status.clear();
-                self.state = Snapshot::default();
-                self.message = "Connecting and reading channel positions...".into();
-                self.record(format!("Connecting to {}:{}", self.host.trim(), self.port));
-                self.task(move || client.snapshot().map(Reply::Status));
+                let selected: Vec<_> = self.selected.iter().copied().collect();
+                let expected_id = self
+                    .devices
+                    .iter()
+                    .find(|device| {
+                        device.address.ip().to_string() == self.host
+                            && device.address.port() == self.port
+                    })
+                    .map(|device| device.id.clone());
+                self.message = "Connecting…".into();
+                self.task(move || {
+                    let info = client.info()?;
+                    if expected_id.is_some_and(|id| !id.eq_ignore_ascii_case(&info.device_id)) {
+                        return Err(std::io::Error::other(
+                            "Pico identity changed. Find and select the controller again.",
+                        ));
+                    }
+                    let claimed = client.claim(&selected)?;
+                    match claimed.snapshot().and_then(|snapshot| {
+                        if selected.iter().all(|ch| snapshot.channels.contains_key(ch)) {
+                            Ok(snapshot)
+                        } else {
+                            Err(std::io::Error::other(
+                                "Selected channels are missing from Pico state",
+                            ))
+                        }
+                    }) {
+                        Ok(snapshot) => Ok(Reply::Connected(claimed, snapshot, info)),
+                        Err(error) => {
+                            let _ = claimed.release();
+                            Err(error)
+                        }
+                    }
+                });
             }
             Err(error) => {
                 self.error = true;
@@ -239,28 +390,45 @@ impl App {
     }
 
     fn disconnect(&mut self) {
-        self.client = None;
+        let client = self.client.take();
         self.demo_connected = false;
         self.status.clear();
         self.state = Snapshot::default();
         self.last_update = None;
-        self.message = "Disconnected. Select a Pico W to connect.".into();
-        self.record("Disconnected");
+        self.message.clear();
+        if let Some(client) = client {
+            self.task(move || {
+                client.release()?;
+                client.info().map(Reply::Released)
+            });
+        }
+    }
+
+    fn apply_snapshot(&mut self, mut snapshot: Snapshot) {
+        snapshot.channels.retain(|ch, _| self.selected.contains(ch));
+        self.status = snapshot.positions();
+        self.state = snapshot;
+        self.last_update = Some(Instant::now());
+        self.next_refresh = Instant::now() + Duration::from_secs(1);
     }
 
     fn refresh(&mut self) {
         if self.demo {
-            self.status = self.demo_status.clone();
-            self.state = Snapshot::demo(&self.status);
-            self.last_update = Some(Instant::now());
-            self.next_refresh = Instant::now() + Duration::from_secs(1);
+            self.apply_snapshot(Snapshot::demo(&self.demo_status));
         } else if let Some(client) = self.client.clone() {
-            self.task(move || client.snapshot().map(Reply::Status));
+            self.task(move || {
+                client.renew()?;
+                client.snapshot().map(Reply::Status)
+            });
         }
     }
 
     fn operate(&mut self, operation: Operation, channels: Vec<u8>) {
-        if !self.connected() || self.pending.is_some() || channels.is_empty() {
+        if !self.connected()
+            || self.pending.is_some()
+            || channels.is_empty()
+            || channels.iter().any(|ch| !self.selected.contains(ch))
+        {
             return;
         }
         if self.demo {
@@ -279,8 +447,7 @@ impl App {
                     };
                 }
             }
-            self.status = self.demo_status.clone();
-            self.state = Snapshot::demo(&self.status);
+            self.apply_snapshot(Snapshot::demo(&self.demo_status));
             let description = format!(
                 "SIM: {operation:?} accepted for {} channel(s)",
                 channels.len()
@@ -311,11 +478,10 @@ impl App {
             }
             self.task(move || {
                 let total = channels.len();
-                for (completed, channel) in channels.into_iter().enumerate() {
-                    client.operate(operation, channel).map_err(|error| std::io::Error::new(error.kind(),
-                        format!("{operation:?}: {completed}/{total} commands acknowledged before error: {error}")))?;
-                }
-                Ok(Reply::Accepted(format!("{operation:?}: {total} command(s) accepted; check commanded angles.")))
+                client.operate_many(operation, &channels)?;
+                Ok(Reply::Accepted(format!(
+                    "{operation:?}: {total} channel(s) accepted"
+                )))
             });
         }
     }
@@ -334,7 +500,8 @@ impl App {
         self.pending = None;
         let api_error = result.as_ref().err().cloned();
         match result {
-            Ok(Reply::Devices(devices)) => {
+            Ok(Reply::Devices(devices, info)) => {
+                self.device_info = info;
                 self.message = if devices.is_empty() {
                     "No Pico W found. Start its server; check Wi-Fi or inspect the IP over USB."
                         .into()
@@ -346,20 +513,47 @@ impl App {
                 };
                 self.record(format!("Discovery complete: {} device(s)", devices.len()));
                 self.devices = devices;
+                if let Some(info) = self
+                    .devices
+                    .iter()
+                    .find(|device| {
+                        device.address.ip().to_string() == self.host
+                            && device.address.port() == self.port
+                    })
+                    .and_then(|device| self.device_info.get(&device.id))
+                    .cloned()
+                {
+                    self.selected.retain(|ch| {
+                        info.channels
+                            .iter()
+                            .any(|entry| entry.id == *ch && !entry.locked)
+                    });
+                    self.device_label = info.label.clone();
+                    self.info = Some(info);
+                }
+            }
+            Ok(Reply::Info(info) | Reply::Released(info)) => {
+                self.selected.retain(|ch| {
+                    info.channels
+                        .iter()
+                        .any(|entry| entry.id == *ch && !entry.locked)
+                });
+                self.device_label = info.label.clone();
+                self.device_info
+                    .insert(info.device_id.clone(), info.clone());
+                self.info = Some(info);
+                self.message.clear();
+            }
+            Ok(Reply::Connected(client, snapshot, info)) => {
+                self.device_label = info.label.clone();
+                self.info = Some(info);
+                self.client = Some(client);
+                self.apply_snapshot(snapshot);
+                self.message.clear();
             }
             Ok(Reply::Status(status)) => {
-                let first = self.last_update.is_none();
-                self.status = status.positions();
-                self.state = status;
-                self.last_update = Some(Instant::now());
-                self.message = "Connected. Commanded positions refresh every second.".into();
-                self.next_refresh = Instant::now() + Duration::from_secs(1);
-                if first {
-                    self.record(format!(
-                        "Connected; {} channels available",
-                        self.status.len()
-                    ));
-                }
+                self.apply_snapshot(status);
+                self.message.clear();
             }
             Ok(Reply::Accepted(description)) => {
                 self.record(description.clone());
@@ -372,7 +566,11 @@ impl App {
                 self.message = error;
                 self.status.clear();
                 self.state = Snapshot::default();
-                self.client = None;
+                if let Some(client) = self.client.take() {
+                    std::thread::spawn(move || {
+                        let _ = client.release();
+                    });
+                }
                 self.last_update = None;
             }
         }
@@ -389,7 +587,7 @@ impl App {
         json!(
             self.devices
                 .iter()
-                .map(|device| json!({"id":device.id,"address":device.address.to_string()}))
+                .map(|device| json!({"id":device.id,"address":device.address.to_string(),"label":self.device_info.get(&device.id).map(|info| &info.label),"channels":self.device_info.get(&device.id).map(|info| &info.channels)}))
                 .collect::<Vec<_>>()
         )
     }
@@ -415,7 +613,7 @@ impl App {
             .collect();
         json!({"connected":self.connected() && self.last_update.is_some(),"demo":self.demo,
             "layout":self.layout,"order":self.order,"display_order":self.ordered_channels(),"host":self.host,"port":self.port,"busy":self.pending.is_some(),
-            "owner":self.control.label(),"channels":channels,"devices":self.devices_json(),
+            "owner":self.control.label(),"device_label":self.device_label,"selected_channels":self.selected,"channels":channels,"devices":self.devices_json(),
             "message":self.message,"last_command":self.last_command,
             "state_semantics":"commanded_not_sensor_verified"})
     }
@@ -453,7 +651,7 @@ impl App {
                 return Ok(
                     json!({"protocol":2,"app":"kohdalab-shutter","version":env!("CARGO_PKG_VERSION"),
                 "actions":["capabilities","status","config","acquire","heartbeat","release","result","discover","connect","disconnect","open","close","toggle","open_all","close_all","set_layout","set_order"],
-                "lease_timeout_s":10,"release_policy":"hold_last_state","job_completion":"command_acknowledgement",
+                "channel_selection_required":true,"channel_lock_scope":"pico_channel","pico_lease_timeout_s":15,"lease_timeout_s":10,"release_policy":"hold_last_state","job_completion":"command_acknowledgement",
                 "state_semantics":"commanded_not_sensor_verified","receipt_limit":64,"action_id_limit":4096}),
                 );
             }
@@ -537,7 +735,50 @@ impl App {
                         .map(|port| port as u16)
                         .ok_or_else(|| ApiError::new("invalid_request", "port must be in 1..65535"))
                 })?;
-                connection = Some((host, port));
+                let selection = if let Some(value) = body.get("channels") {
+                    let list = value
+                        .as_array()
+                        .filter(|list| !list.is_empty())
+                        .ok_or_else(|| {
+                            ApiError::new("invalid_request", "channels must be a nonempty array")
+                        })?;
+                    let mut selection = BTreeSet::new();
+                    for value in list {
+                        let ch = value.as_u64().filter(|ch| *ch < 16).ok_or_else(|| {
+                            ApiError::new(
+                                "invalid_request",
+                                "channels must contain channel numbers in 0..15",
+                            )
+                        })? as u8;
+                        if !selection.insert(ch) {
+                            return Err(ApiError::new("invalid_request", "Duplicate channel"));
+                        }
+                    }
+                    selection
+                } else if self.demo {
+                    self.devices
+                        .iter()
+                        .find(|device| {
+                            device.address.ip().to_string() == host && device.address.port() == port
+                        })
+                        .and_then(|device| self.device_info.get(&device.id))
+                        .map_or_else(
+                            || (0..4).collect(),
+                            |info| {
+                                info.channels
+                                    .iter()
+                                    .filter(|ch| !ch.locked)
+                                    .map(|ch| ch.id)
+                                    .collect()
+                            },
+                        )
+                } else {
+                    return Err(ApiError::new(
+                        "invalid_request",
+                        "Select channels before connecting",
+                    ));
+                };
+                connection = Some((host, port, selection));
             }
             "discover" => {
                 if self.connected() {
@@ -609,9 +850,19 @@ impl App {
         let receipt = self.control.begin(body, method)?;
         let id = receipt["id"].as_str().expect("job ID").to_owned();
         self.pending_api_job = Some(id.clone());
-        if let Some((host, port)) = connection {
+        if let Some((host, port, selection)) = connection {
+            self.selected = selection;
             self.host = host;
             self.port = port;
+            self.info = self
+                .devices
+                .iter()
+                .find(|device| {
+                    device.address.ip().to_string() == self.host
+                        && device.address.port() == self.port
+                })
+                .and_then(|device| self.device_info.get(&device.id))
+                .cloned();
             self.connect();
         } else if let Some(operation) = action {
             self.operate(operation, channels);
@@ -632,298 +883,240 @@ impl App {
     }
 
     fn connection_panel(&mut self, ui: &mut egui::Ui) {
-        let connected = self.connected();
         let manual = self.pending.is_none() && !self.control.owned();
-        section(ui, "Connection", |ui| {
-            if connected {
-                egui::Frame::new()
-                    .fill(Color32::TRANSPARENT)
-                    .inner_margin(0)
-                    .show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            status_dot(
-                                ui,
-                                if self.last_update.is_some() {
-                                    TEAL
-                                } else {
-                                    ORANGE
-                                },
-                            );
-                            ui.label(RichText::new("Pico W").strong().size(16.0));
-                        });
-                        ui.add_space(5.0);
-                        ui.label(
-                            RichText::new(format!("{}:{}", self.host, self.port))
-                                .small()
-                                .color(MUTED),
-                        );
-                    });
-            } else {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Connect").size(23.0).strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .add_enabled(
-                        manual,
-                        egui::Button::new(RichText::new("Find Pico W").color(Color32::WHITE))
-                            .fill(BLUE)
-                            .min_size(Vec2::new(ui.available_width(), 36.0)),
-                    )
+                    .add_enabled(manual, egui::Button::new("Find Pico W").fill(BLUE))
                     .clicked()
                 {
                     self.find();
                 }
-                let mut selected = None;
-                ui.add_enabled_ui(manual, |ui| {
-                    for device in &self.devices {
-                        let active = self.host == device.address.ip().to_string()
-                            && self.port == device.address.port();
-                        let id = if device.id.len() > 12 {
-                            format!("{}…{}", &device.id[..4], &device.id[device.id.len() - 6..])
-                        } else {
-                            device.id.clone()
-                        };
-                        if ui
-                            .add_sized(
-                                [ui.available_width(), 51.0],
-                                egui::Button::new(format!("Pico {id}\n{}", device.address))
-                                    .selected(active),
-                            )
-                            .on_hover_text(&device.id)
-                            .clicked()
-                        {
-                            selected = Some(device.clone());
-                        }
-                    }
-                    if let Some(device) = selected {
-                        self.host = device.address.ip().to_string();
-                        self.port = device.address.port();
-                    }
-                    ui.add_space(10.0);
-                    ui.label(RichText::new("IP or hostname").small().color(MUTED));
-                    ui.add_sized(
-                        [ui.available_width(), 31.0],
-                        egui::TextEdit::singleline(&mut self.host),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.label("Port");
-                        ui.add(egui::DragValue::new(&mut self.port).range(1..=65535));
-                    });
-                });
-            }
-            ui.add_space(9.0);
-            ui.columns(2, |columns| {
-                if columns[0]
-                    .add_enabled(
-                        manual && !connected && !self.host.trim().is_empty(),
-                        egui::Button::new("Connect")
-                            .min_size(Vec2::new(columns[0].available_width(), 32.0)),
-                    )
-                    .clicked()
-                {
-                    self.connect();
-                }
-                if columns[1]
-                    .add_enabled(
-                        manual && connected,
-                        egui::Button::new("Disconnect")
-                            .min_size(Vec2::new(columns[1].available_width(), 32.0)),
-                    )
-                    .clicked()
-                {
-                    self.disconnect();
-                }
             });
-            // Connection/progress errors belong to the sidebar, never above
-            // the shutter cards where background polling would move controls.
-            if self.error || (self.pending.is_some() && (!connected || self.last_update.is_none()))
-            {
-                ui.add_space(8.0);
-                ui.label(RichText::new(&self.message).small().color(if self.error {
-                    RED
-                } else {
-                    MUTED
-                }));
-            }
-            if !connected {
-                ui.add_enabled_ui(manual, |ui| {
-                    ui.collapsing("Network settings", |ui| {
-                        ui.label(RichText::new("Subnet broadcast").small().color(MUTED));
-                        ui.add_sized(
-                            [ui.available_width(), 28.0],
-                            egui::TextEdit::singleline(&mut self.broadcast),
-                        );
-                    });
-                });
-            }
         });
-        ui.add_space(12.0);
-        section(ui, "All channels", |ui| {
-            ui.columns(2, |columns| {
-                for (i, label, operation) in [
-                    (0, "Open all", Operation::Open),
-                    (1, "Close all", Operation::Close),
-                ] {
-                    if columns[i]
+        ui.add_space(14.0);
+        let mut chosen = None;
+        egui::ScrollArea::vertical()
+            .id_salt("devices")
+            .max_height(174.0)
+            .show(ui, |ui| {
+                for device in &self.devices {
+                    let detail = self.device_info.get(&device.id);
+                    let label =
+                        detail.map_or("Pico W · update firmware", |info| info.label.as_str());
+                    let active = self.host == device.address.ip().to_string()
+                        && self.port == device.address.port();
+                    if ui
                         .add_enabled(
-                            connected && manual && !self.status.is_empty(),
-                            egui::Button::new(label)
-                                .fill(if i == 0 { BLUE } else { BUTTON })
-                                .min_size(Vec2::new(columns[i].available_width(), 30.0)),
+                            manual,
+                            egui::Button::new(format!(
+                                "{label}\n{}  ·  {}",
+                                device.address, device.id
+                            ))
+                            .selected(active)
+                            .min_size(Vec2::new(ui.available_width(), 52.0)),
                         )
                         .clicked()
                     {
-                        self.operate(operation, self.status.keys().copied().collect());
+                        chosen = Some(device.clone());
+                    }
+                }
+                if self.devices.is_empty() {
+                    ui.label(RichText::new("Find a controller on your network.").color(MUTED));
+                }
+            });
+        if let Some(device) = chosen {
+            self.select_device(&device);
+        }
+        ui.add_space(12.0);
+        if let Some(info) = self.info.clone() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Label").small().color(MUTED));
+                ui.add_enabled(
+                    manual && !info.channels.iter().any(|ch| ch.locked),
+                    egui::TextEdit::singleline(&mut self.device_label)
+                        .desired_width(260.0)
+                        .char_limit(32),
+                );
+                let valid = !self.device_label.trim().is_empty()
+                    && self.device_label.trim() != info.label
+                    && !info.channels.iter().any(|ch| ch.locked);
+                if ui
+                    .add_enabled(manual && valid, egui::Button::new("Save"))
+                    .clicked()
+                {
+                    self.save_label();
+                }
+            });
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Channels").small().color(MUTED));
+                if ui
+                    .add_enabled(manual, egui::Button::new("Refresh").small())
+                    .clicked()
+                    && !self.demo
+                    && let Ok(client) = self.endpoint()
+                {
+                    self.task(move || client.info().map(Reply::Info));
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                for channel in &info.channels {
+                    let mut selected = self.selected.contains(&channel.id);
+                    let name = if channel.locked {
+                        format!("{} · In use", channel.label)
+                    } else {
+                        channel.label.clone()
+                    };
+                    if ui
+                        .add_enabled(
+                            manual && !channel.locked,
+                            egui::Checkbox::new(&mut selected, name),
+                        )
+                        .changed()
+                    {
+                        if selected {
+                            self.selected.insert(channel.id);
+                        } else {
+                            self.selected.remove(&channel.id);
+                        }
                     }
                 }
             });
-        });
-        ui.add_space(12.0);
-        section(ui, "Automation", |ui| {
-            let mut enabled = self.api.is_some();
+            ui.add_space(18.0);
             if ui
                 .add_enabled(
-                    !self.control.owned() && self.pending_api_job.is_none(),
-                    egui::Checkbox::new(&mut enabled, "Local control API"),
+                    manual && !self.selected.is_empty(),
+                    egui::Button::new("Connect")
+                        .fill(BLUE)
+                        .min_size(Vec2::new(ui.available_width(), 36.0)),
                 )
-                .changed()
+                .clicked()
             {
-                if enabled {
-                    match remote::Server::start(None) {
-                        Ok(server) => {
-                            self.api = Some(server);
-                            self.record("Local API enabled");
-                        }
-                        Err(error) => {
-                            self.error = true;
-                            self.message = error;
-                        }
+                self.connect();
+            }
+        }
+        ui.add_space(8.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::hover());
+        if self.pending.is_some() {
+            egui::Spinner::new().paint_at(ui, rect);
+        }
+        if !self.message.is_empty() && (self.error || self.pending.is_some()) {
+            ui.label(RichText::new(&self.message).small().color(if self.error {
+                RED
+            } else {
+                MUTED
+            }));
+        }
+        ui.add_space(8.0);
+        ui.collapsing("Settings", |ui| {
+            ui.add_enabled_ui(manual, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Host");
+                    let host_changed = ui
+                        .add(egui::TextEdit::singleline(&mut self.host).desired_width(180.0))
+                        .changed();
+                    let port_changed = ui
+                        .add(egui::DragValue::new(&mut self.port).range(1..=65535))
+                        .changed();
+                    if host_changed || port_changed {
+                        self.info = None;
+                        self.selected.clear();
+                        self.device_label.clear();
                     }
-                } else {
-                    self.api = None;
-                    self.control.revoke();
-                }
-            }
-            if let Some(label) = self.control.label() {
-                ui.add_space(8.0);
-                badge(ui, &format!("Controlled by {label}"), ORANGE);
-                if ui
-                    .add_enabled(self.pending.is_none(), egui::Button::new("Take control"))
-                    .clicked()
-                {
-                    self.control.revoke();
-                    self.record("External control revoked by operator");
-                }
-            }
-        });
-        ui.add_space(24.0);
-        ui.separator();
-        ui.add_space(10.0);
-        ui.collapsing("Activity", |ui| {
-            if let Some(last) = &self.last_command {
-                ui.label(last);
-            }
-            egui::ScrollArea::vertical()
-                .id_salt("activity")
-                .max_height(150.0)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    for event in &self.log {
-                        ui.label(RichText::new(event).small().color(MUTED));
+                    if ui.button("Read").clicked() {
+                        self.selected.clear();
+                        self.info = None;
+                        match self.endpoint() {
+                            Ok(client) => self.task(move || client.info().map(Reply::Info)),
+                            Err(error) => {
+                                self.error = true;
+                                self.message = error.to_string();
+                            }
+                        }
                     }
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Broadcast");
+                    ui.text_edit_singleline(&mut self.broadcast);
+                });
+                self.automation_settings(ui);
+            });
         });
+    }
+
+    fn automation_settings(&mut self, ui: &mut egui::Ui) {
+        let mut enabled = self.api.is_some();
+        if ui
+            .add_enabled(
+                !self.control.owned() && self.pending_api_job.is_none(),
+                egui::Checkbox::new(&mut enabled, "Local control API"),
+            )
+            .changed()
+        {
+            if enabled {
+                match remote::Server::start(None) {
+                    Ok(server) => self.api = Some(server),
+                    Err(error) => {
+                        self.error = true;
+                        self.message = error;
+                    }
+                }
+            } else {
+                self.api = None;
+                self.control.revoke();
+            }
+        }
+        if let Some(label) = self.control.label() {
+            ui.label(format!("Controlled by {label}"));
+            if ui
+                .add_enabled(self.pending.is_none(), egui::Button::new("Take control"))
+                .clicked()
+            {
+                self.control.revoke();
+            }
+        }
     }
 
     fn channels_panel(&mut self, ui: &mut egui::Ui) {
         let manual = self.connected() && self.pending.is_none() && !self.control.owned();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Shutters").size(20.0));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(
-                    RichText::new(format!("{} channels", self.status.len()))
-                        .small()
-                        .color(MUTED),
-                );
-            });
-        });
-        ui.add_space(24.0);
-        ui.horizontal(|ui| {
-            ui.add_enabled_ui(!self.control.owned(), |ui| {
-                segmented_frame(ui, |ui| {
-                    segment(ui, &mut self.layout, Layout::Horizontal, "Horizontal");
-                    segment(ui, &mut self.layout, Layout::Vertical, "Vertical");
-                });
-                ui.add_space(10.0);
-                segmented_frame(ui, |ui| {
-                    segment(ui, &mut self.order, Order::Ascending, "CH ↑")
-                        .on_hover_text("Ascending channel order");
-                    segment(ui, &mut self.order, Order::Descending, "CH ↓")
-                        .on_hover_text("Descending channel order");
-                });
-            });
-            // Keep the same toolbar geometry during every background refresh.
-            let (indicator, _) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::hover());
-            if self.pending.is_some() {
-                egui::Spinner::new().paint_at(ui, indicator);
-            }
-        });
-        ui.add_space(24.0);
-        if self.status.is_empty() {
-            ui.add_space(80.0);
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No controller connected").color(MUTED));
-            });
-            return;
-        }
         let channels = self.ordered_channels();
         let mut action = None;
         egui::ScrollArea::both().id_salt("shutters").show(ui, |ui| {
             if self.layout == Layout::Horizontal {
-                let total = channels.len() as f32 * 228.0
-                    + (channels.len().saturating_sub(1)) as f32 * 16.0;
-                let inset = ((ui.available_width() - total) * 0.5).max(0.0);
                 ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = 16.0;
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let total = channels.len() as f32 * 174.0 - 10.0;
+                    let inset = ((ui.available_width() - total) * 0.5).max(0.0);
                     if inset > 0.0 {
                         ui.add_space(inset);
                     }
-                    for channel in channels {
+                    for channel in &channels {
                         let name = self
                             .state
                             .channels
-                            .get(&channel)
+                            .get(channel)
                             .map_or("Unknown", |state| state.name());
-                        let detail = self.state.channels.get(&channel).map_or(
-                            "Update Pico firmware for calibrated state names".into(),
-                            |state| {
-                                format!(
-                                    "Position {}° · target {:?} · close {:?} · open {:?}",
-                                    state.position,
-                                    state.target,
-                                    state.close_angle,
-                                    state.open_angle
-                                )
-                            },
-                        );
-                        ui.push_id(("channel", self.host.as_str(), self.port, channel), |ui| {
-                            card_frame().show(ui, |ui| {
+                        ui.push_id(channel, |ui| {
+                            card_frame().inner_margin(12).show(ui, |ui| {
                                 ui.vertical(|ui| {
-                                    ui.set_width(188.0);
-                                    ui.horizontal(|ui| {
+                                    ui.set_width(140.0);
+                                    ui.label(
+                                        RichText::new(format!("CH{channel:02}"))
+                                            .strong()
+                                            .size(13.0),
+                                    );
+                                    ui.add_space(5.0);
+                                    ui.vertical_centered(|ui| {
+                                        shutter_window(ui, name, 0.60);
                                         ui.label(
-                                            RichText::new(format!("CH{channel:02}"))
-                                                .size(14.0)
-                                                .strong(),
+                                            RichText::new(name).size(16.0).color(state_color(name)),
                                         );
                                     });
-                                    ui.add_space(22.0);
-                                    ui.vertical_centered(|ui| {
-                                        shutter_window(ui, name, 1.0).on_hover_text(detail);
-                                        ui.add_space(10.0);
-                                        ui.label(RichText::new(name).size(22.0).color(TEXT));
-                                    });
-                                    ui.add_space(24.0);
+                                    ui.add_space(8.0);
                                     if let Some(operation) = channel_actions(ui, name, manual) {
-                                        action = Some((operation, channel));
+                                        action = Some((operation, *channel));
                                     }
                                 });
                             });
@@ -931,36 +1124,30 @@ impl App {
                     }
                 });
             } else {
-                for channel in channels {
+                for channel in &channels {
                     let name = self
                         .state
                         .channels
-                        .get(&channel)
+                        .get(channel)
                         .map_or("Unknown", |state| state.name());
-                    ui.push_id(("channel", self.host.as_str(), self.port, channel), |ui| {
-                        card_frame().inner_margin(12).show(ui, |ui| {
-                            ui.set_min_width(ui.available_width().max(620.0));
+                    ui.push_id(channel, |ui| {
+                        card_frame().inner_margin(10).show(ui, |ui| {
+                            ui.set_min_width(ui.available_width().max(370.0));
                             ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(format!("CH{channel:02}")).strong().size(15.0),
-                                );
-                                ui.add_space(8.0);
-                                shutter_window(ui, name, 0.48)
-                                    .on_hover_text("Commanded state; no position sensor");
-                                ui.add_space(8.0);
-                                status_dot(ui, state_color(name));
-                                ui.label(RichText::new(name).size(21.0));
+                                ui.label(RichText::new(format!("CH{channel:02}")).strong());
+                                shutter_window(ui, name, 0.4);
+                                ui.label(RichText::new(name).color(state_color(name)));
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         ui.allocate_ui_with_layout(
-                                            Vec2::new(176.0, 36.0),
+                                            Vec2::new(150.0, 30.0),
                                             egui::Layout::left_to_right(egui::Align::Center),
                                             |ui| {
                                                 if let Some(operation) =
                                                     channel_actions(ui, name, manual)
                                                 {
-                                                    action = Some((operation, channel));
+                                                    action = Some((operation, *channel));
                                                 }
                                             },
                                         );
@@ -969,13 +1156,146 @@ impl App {
                             });
                         });
                     });
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
                 }
+            }
+            if channels.len() > 1 {
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    for (label, operation) in [
+                        ("Open all", Operation::Open),
+                        ("Close all", Operation::Close),
+                    ] {
+                        if ui.add_enabled(manual, egui::Button::new(label)).clicked() {
+                            self.operate(operation, channels.clone());
+                        }
+                    }
+                });
             }
         });
         if let Some((operation, channel)) = action {
             self.operate(operation, vec![channel]);
         }
+    }
+
+    fn desired_size(&self) -> Vec2 {
+        if !self.connected() {
+            return Vec2::new(540.0, 520.0);
+        }
+        let count = self.status.len().max(1) as f32;
+        if self.layout == Layout::Horizontal {
+            Vec2::new(
+                (count * 176.0 + 18.0).clamp(300.0, 1160.0),
+                if count > 1.0 { 380.0 } else { 330.0 },
+            )
+        } else {
+            Vec2::new(450.0, (count * 86.0 + 98.0).min(820.0))
+        }
+    }
+
+    fn draw(&mut self, ctx: &egui::Context) {
+        let desired = self.desired_size();
+        if self.last_size != Some(desired) {
+            self.last_size = Some(desired);
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(if self.connected() {
+                format!("{} · KohdaLab Shutter", self.device_label)
+            } else {
+                "Connect · KohdaLab Shutter".into()
+            }));
+        }
+        egui::TopBottomPanel::top("header")
+            .show_separator_line(false)
+            .exact_height(if self.connected() { 64.0 } else { 44.0 })
+            .frame(
+                egui::Frame::new()
+                    .fill(PANEL)
+                    .inner_margin(egui::Margin::symmetric(12, 8)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(if self.connected() {
+                            "Shutter"
+                        } else {
+                            "KohdaLab Shutter"
+                        })
+                        .size(13.0)
+                        .strong(),
+                    );
+                    ui.label(
+                        RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                            .size(10.0)
+                            .color(MUTED),
+                    );
+                    if self.demo {
+                        ui.label(RichText::new("Demo").size(10.0).color(ORANGE));
+                    }
+                    if self.connected() {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.menu_button("···", |ui| {
+                                ui.add_enabled_ui(!self.control.owned(), |ui| {
+                                    ui.selectable_value(
+                                        &mut self.layout,
+                                        Layout::Horizontal,
+                                        "Horizontal",
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.layout,
+                                        Layout::Vertical,
+                                        "Vertical",
+                                    );
+                                    ui.separator();
+                                    ui.selectable_value(&mut self.order, Order::Ascending, "CH ↑");
+                                    ui.selectable_value(&mut self.order, Order::Descending, "CH ↓");
+                                });
+                                ui.separator();
+                                self.automation_settings(ui);
+                            });
+                            if ui
+                                .add_enabled(
+                                    self.pending.is_none() && !self.control.owned(),
+                                    egui::Button::new("Disconnect").small(),
+                                )
+                                .clicked()
+                            {
+                                self.disconnect();
+                            }
+                        });
+                    }
+                });
+                if self.connected() {
+                    ui.horizontal(|ui| {
+                        status_dot(ui, if self.error { RED } else { TEAL });
+                        ui.label(
+                            RichText::new(format!("{} · Connected", self.device_label))
+                                .size(11.0)
+                                .color(MUTED),
+                        );
+                        if self.control.owned() {
+                            ui.label(RichText::new("API").size(10.0).color(ORANGE));
+                        }
+                        let (rect, _) =
+                            ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
+                        if self.pending.is_some() {
+                            egui::Spinner::new().paint_at(ui, rect);
+                        }
+                    });
+                }
+            });
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(BG)
+                    .inner_margin(if self.connected() { 12 } else { 20 }),
+            )
+            .show(ctx, |ui| {
+                if self.connected() {
+                    self.channels_panel(ui);
+                } else {
+                    egui::ScrollArea::vertical().show(ui, |ui| self.connection_panel(ui));
+                }
+            });
     }
 
     fn capture(&mut self, ctx: &egui::Context) {
@@ -1017,6 +1337,12 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(client) = self.client.take() {
+            let _ = client.release();
+        }
+    }
+
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         BG.to_normalized_gamma_f32()
     }
@@ -1027,47 +1353,30 @@ impl eframe::App for App {
         if self.connected() && self.pending.is_none() && Instant::now() >= self.next_refresh {
             self.refresh();
         }
-        egui::TopBottomPanel::top("header")
-            .show_separator_line(false)
-            .resizable(false)
-            .exact_height(52.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(22, 13)),
-            )
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("KohdaLab Shutter").size(16.0).strong());
-                    ui.label(
-                        RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                            .size(13.0)
-                            .color(MUTED),
-                    );
-                    ui.add_space(10.0);
-                    if self.demo {
-                        badge(ui, "Demo", ORANGE);
-                    }
-                    if self.control.owned() {
-                        badge(ui, "External control", ORANGE);
-                    }
-                });
-            });
-        egui::SidePanel::left("connection")
-            .exact_width(240.0)
-            .resizable(false)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(18))
-            .show(ctx, |ui| {
-                ui.add_space(8.0);
-                egui::ScrollArea::vertical()
-                    .id_salt("connection-scroll")
-                    .show(ui, |ui| self.connection_panel(ui));
-            });
-        egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG).inner_margin(30))
-            .show(ctx, |ui| self.channels_panel(ui));
+        self.draw(ctx);
         self.capture(ctx);
         ctx.request_repaint_after(Duration::from_millis(100));
+    }
+}
+
+fn demo_info(id: &str, index: usize) -> ControllerInfo {
+    ControllerInfo {
+        protocol: 2,
+        device_id: id.into(),
+        label: if index == 0 {
+            "Optics bench"
+        } else {
+            "Pump probe"
+        }
+        .into(),
+        lease_ms: 15000,
+        channels: (0..4)
+            .map(|id| ChannelInfo {
+                id,
+                label: format!("CH{id:02}"),
+                locked: index == 1 && id < 2,
+            })
+            .collect(),
     }
 }
 
@@ -1082,15 +1391,6 @@ fn demo_devices() -> Vec<Device> {
             address: "192.0.2.21:12345".parse().unwrap(),
         },
     ]
-}
-
-fn section(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
-    card_frame().inner_margin(12).show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        ui.label(RichText::new(title).size(12.0).color(MUTED));
-        ui.add_space(8.0);
-        content(ui);
-    });
 }
 
 fn card_frame() -> egui::Frame {
@@ -1112,51 +1412,6 @@ fn state_color(name: &str) -> Color32 {
 fn status_dot(ui: &mut egui::Ui, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), 3.5, color);
-}
-fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
-    let tint = if color == TEAL {
-        Color32::from_rgb(30, 61, 56)
-    } else {
-        Color32::from_rgb(65, 51, 30)
-    };
-    egui::Frame::new()
-        .fill(tint)
-        .corner_radius(7)
-        .inner_margin(egui::Margin::symmetric(8, 3))
-        .show(ui, |ui| {
-            ui.label(RichText::new(text).size(11.0).color(color));
-        });
-}
-fn segmented_frame(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::new()
-        .fill(SURFACE)
-        .corner_radius(6)
-        .inner_margin(3)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 3.0;
-                content(ui);
-            });
-        });
-}
-fn segment<T: PartialEq + Copy>(
-    ui: &mut egui::Ui,
-    current: &mut T,
-    value: T,
-    label: &str,
-) -> egui::Response {
-    let selected = *current == value;
-    let response = ui.add(
-        egui::Button::new(RichText::new(label).color(if selected { TEXT } else { MUTED }))
-            .fill(if selected { BLUE } else { BUTTON })
-            .stroke(Stroke::NONE)
-            .corner_radius(6)
-            .min_size(Vec2::new(64.0, 30.0)),
-    );
-    if response.clicked() {
-        *current = value;
-    }
-    response
 }
 fn channel_actions(ui: &mut egui::Ui, state: &str, enabled: bool) -> Option<Operation> {
     let mut action = None;
@@ -1316,6 +1571,29 @@ fn style(ctx: &egui::Context) {
                 .entry(egui::FontFamily::Proportional)
                 .or_default()
                 .insert(0, "platform".into());
+            let cjk = if cfg!(target_os = "macos") {
+                Some(PathBuf::from("/System/Library/Fonts/Hiragino Sans GB.ttc"))
+            } else if cfg!(windows) {
+                Some(
+                    PathBuf::from(
+                        std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into()),
+                    )
+                    .join("Fonts/msgothic.ttc"),
+                )
+            } else {
+                None
+            };
+            if let Some(data) = cjk.and_then(|path| std::fs::read(path).ok()) {
+                fonts.font_data.insert(
+                    "cjk".into(),
+                    std::sync::Arc::new(egui::FontData::from_owned(data)),
+                );
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .push("cjk".into());
+            }
             ctx.set_fonts(fonts);
             break;
         }
@@ -1344,8 +1622,8 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let expected_screenshot = args.screenshot.is_some();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1320.0, 700.0])
-            .with_min_inner_size([720.0, 520.0]),
+            .with_inner_size([540.0, 520.0])
+            .with_min_inner_size([270.0, 220.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -1358,6 +1636,16 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 App::default()
             };
+            if args.demo && !args.channels.is_empty() {
+                if args.channels.iter().any(|ch| *ch > 3) {
+                    return Err("Demo channels must be in 0..3".into());
+                }
+                app.selected = args.channels.iter().copied().collect();
+                app.refresh();
+            }
+            if args.picker {
+                app.disconnect();
+            }
             app.layout = args.layout;
             app.order = args.order;
             app.api = api;
@@ -1410,10 +1698,13 @@ mod tests {
         let mut app = App::default();
         deliver(
             &mut app,
-            Ok(Reply::Devices(vec![Device {
-                id: "aa".into(),
-                address: "127.0.0.1:12345".parse().unwrap(),
-            }])),
+            Ok(Reply::Devices(
+                vec![Device {
+                    id: "aa".into(),
+                    address: "127.0.0.1:12345".parse().unwrap(),
+                }],
+                BTreeMap::new(),
+            )),
         );
         assert!(app.host.is_empty());
         assert!(app.client.is_none());
@@ -1514,6 +1805,28 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn api_cannot_operate_channels_outside_the_pico_selection() {
+        let mut app = App::demo();
+        app.selected = [1, 3].into();
+        app.refresh();
+        let before = app.demo_status.clone();
+        let mut request = api_owner(&mut app);
+        request["method"] = json!("open");
+        request["channel"] = json!(0);
+        request["request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        assert_eq!(
+            app.api_request(&request).unwrap_err().code,
+            "invalid_request"
+        );
+        assert_eq!(app.demo_status, before);
+        request["method"] = json!("open_all");
+        request["request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        app.api_request(&request).unwrap();
+        assert_eq!(app.demo_status[&0], before[&0]);
+        assert_eq!(app.demo_status[&2], before[&2]);
+    }
+
     fn render_text(app: &mut App) -> Vec<(String, egui::Pos2)> {
         fn collect(shape: &egui::epaint::Shape, text: &mut Vec<(String, egui::Pos2)>) {
             match shape {
@@ -1539,11 +1852,7 @@ mod tests {
                 ..Default::default()
             },
             |ctx| {
-                egui::SidePanel::left("connection")
-                    .exact_width(240.0)
-                    .frame(egui::Frame::new().inner_margin(18))
-                    .show(ctx, |ui| app.connection_panel(ui));
-                egui::CentralPanel::default().show(ctx, |ui| app.channels_panel(ui));
+                app.draw(ctx);
             },
         );
         let mut text = Vec::new();
@@ -1582,39 +1891,43 @@ mod tests {
     }
 
     #[test]
-    fn initial_connection_progress_is_visible_but_periodic_progress_is_not() {
+    fn picker_and_controls_are_separate_and_only_selected_channels_are_visible() {
         let mut app = App::demo();
-        let (_sender, receiver) = mpsc::channel();
-        app.pending = Some(receiver);
-        app.last_update = None;
-        app.message = "Connecting and reading channel positions...".into();
-        let connecting = render_text(&mut app);
-        let (_, position) = connecting
-            .iter()
-            .find(|(text, _)| text == &app.message)
-            .expect("connection progress");
+        app.selected = [1, 3].into();
+        app.refresh();
+        let text = render_text(&mut app);
+        assert!(text.iter().any(|(text, _)| text == "CH01"));
+        assert!(text.iter().any(|(text, _)| text == "CH03"));
         assert!(
-            position.x < 240.0,
-            "Connection progress must stay in the sidebar"
+            !text
+                .iter()
+                .any(|(text, _)| text == "CH00" || text == "CH02" || text == "Find Pico W")
         );
-        app.last_update = Some(Instant::now());
-        let polling = render_text(&mut app);
-        assert!(!polling.iter().any(|(text, _)| text == &app.message));
+        assert!(text.iter().any(|(text, _)| text == "Disconnect"));
+        app.disconnect();
+        let picker = render_text(&mut app);
+        assert!(picker.iter().any(|(text, _)| text == "Find Pico W"));
+        assert!(
+            !picker
+                .iter()
+                .any(|(text, _)| text == "Open all" || text == "Disconnect")
+        );
     }
 
     #[test]
-    fn connection_controls_always_show_connect_and_disconnect() {
+    fn no_selection_cannot_connect_or_operate_unselected_channels() {
         let mut app = App::demo();
-        for connected in [true, false] {
-            app.demo_connected = connected;
-            let text = render_text(&mut app);
-            for label in ["Connect", "Disconnect"] {
-                assert!(
-                    text.iter().any(|(text, _)| text == label),
-                    "Missing {label}"
-                );
-            }
-        }
+        app.disconnect();
+        app.selected.clear();
+        app.connect();
+        assert!(!app.connected());
+        assert!(app.error);
+        app.selected = [2].into();
+        app.connect();
+        let before = app.demo_status.clone();
+        app.operate(Operation::Toggle, vec![0]);
+        assert_eq!(app.demo_status, before);
+        assert_eq!(app.status.len(), 1);
     }
 
     #[test]

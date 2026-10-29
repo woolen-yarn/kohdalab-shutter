@@ -1,4 +1,8 @@
-use crate::protocol::{Operation, Snapshot, Status, parse_state, parse_status};
+use crate::{
+    protocol::{Operation, Snapshot, Status, parse_state, parse_status},
+    session::{ControllerInfo, invalid, parse_info},
+};
+use serde_json::{Value, json};
 use std::{
     io::{self, Error, ErrorKind, Read, Write},
     net::{TcpStream, ToSocketAddrs},
@@ -6,12 +10,26 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Client {
     pub host: String,
     pub port: u16,
     pub timeout: Duration,
     pub retries: u8,
+    token: Option<String>,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Client")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("timeout", &self.timeout)
+            .field("retries", &self.retries)
+            .field("session", &self.token.as_ref().map(|_| "active"))
+            .finish()
+    }
 }
 
 impl Client {
@@ -27,6 +45,7 @@ impl Client {
             port,
             timeout,
             retries,
+            token: None,
         })
     }
 
@@ -43,12 +62,129 @@ impl Client {
     }
 
     pub fn operate(&self, operation: Operation, channel: u8) -> io::Result<()> {
+        if self.token.is_some() {
+            return self.operate_many(operation, &[channel]);
+        }
         let command = operation.command(channel)?;
         let response = self.send(&command, operation != Operation::Toggle)?;
         if response != "OK" {
             return Err(Error::other(format!("Pico rejected {command}: {response}")));
         }
         Ok(())
+    }
+
+    /// Read the shared controller label and the current lock state without
+    /// acquiring any shutters.
+    pub fn info(&self) -> io::Result<ControllerInfo> {
+        parse_info(self.session("info", json!({}), true)?)
+    }
+
+    /// Store a human-readable controller label when no channels are leased.
+    pub fn set_label(&self, label: &str) -> io::Result<()> {
+        validate_label(label)?;
+        self.session("set_label", json!({"label": label}), true)?;
+        Ok(())
+    }
+
+    /// Acquire all requested shutters atomically. The returned clone holds an
+    /// opaque session token; it is deliberately not exposed or printed.
+    pub fn claim(&self, channels: &[u8]) -> io::Result<Self> {
+        validate_channels(channels)?;
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        self.claim_with_token(channels, token)
+    }
+
+    fn claim_with_token(&self, channels: &[u8], token: String) -> io::Result<Self> {
+        validate_channels(channels)?;
+        self.session("claim", json!({"token": token, "channels": channels}), true)?;
+        Ok(Self {
+            host: self.host.clone(),
+            port: self.port,
+            timeout: self.timeout,
+            retries: self.retries,
+            token: Some(token),
+        })
+    }
+
+    /// Extend the active session lease. Calling this on an unclaimed client is
+    /// an error so callers cannot accidentally believe a lock exists.
+    pub fn renew(&self) -> io::Result<()> {
+        self.session_with_token("renew", json!({}), true)?;
+        Ok(())
+    }
+
+    /// Release this client's channels. It is idempotent at the Pico protocol
+    /// level and a no-op for clients that never acquired a lease.
+    pub fn release(&self) -> io::Result<()> {
+        let Some(_) = self.token else {
+            return Ok(());
+        };
+        self.session_with_token("release", json!({}), true)?;
+        Ok(())
+    }
+
+    /// Perform one all-or-nothing action over channels owned by this session.
+    pub fn operate_many(&self, operation: Operation, channels: &[u8]) -> io::Result<()> {
+        validate_channels(channels)?;
+        let action = match operation {
+            Operation::Open => "open",
+            Operation::Close => "close",
+            Operation::Toggle => "toggle",
+        };
+        // Toggle is intentionally never retried: a lost reply leaves the
+        // physical outcome ambiguous. Open and Close are idempotent.
+        self.session_with_token(
+            "operate",
+            json!({"action": action, "channels": channels}),
+            operation != Operation::Toggle,
+        )?;
+        Ok(())
+    }
+
+    fn session_with_token(&self, operation: &str, value: Value, retry: bool) -> io::Result<Value> {
+        let token = self.token.as_deref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::PermissionDenied,
+                "Acquire shutter channels before controlling them",
+            )
+        })?;
+        self.session(operation, merge(value, json!({"token": token})), retry)
+    }
+
+    fn session(&self, operation: &str, value: Value, retry: bool) -> io::Result<Value> {
+        let command = format!("SESSION {}", merge(value, json!({"op": operation})));
+        let raw = self.send(&command, retry)?;
+        if raw == "UNKNOWN" {
+            return Err(invalid(
+                "Update Pico firmware: upload sessions.py and the updated main.py",
+            ));
+        }
+        let value: Value = serde_json::from_str(&raw)
+            .map_err(|_| invalid("Invalid session response from Pico W"))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| invalid("Invalid session response from Pico W"))?;
+        match object.get("ok").and_then(Value::as_bool) {
+            Some(true) => Ok(value),
+            Some(false) => {
+                let code = object
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("invalid_request");
+                let kind = match code {
+                    "busy" => ErrorKind::WouldBlock,
+                    "lease_lost" => ErrorKind::PermissionDenied,
+                    "storage" => ErrorKind::Other,
+                    "invalid_request" => ErrorKind::InvalidInput,
+                    _ => ErrorKind::InvalidData,
+                };
+                Err(Error::new(
+                    kind,
+                    format!("Pico session rejected request: {code}"),
+                ))
+            }
+            None => Err(invalid("Invalid session response from Pico W")),
+        }
     }
 
     fn send(&self, command: &str, retry: bool) -> io::Result<String> {
@@ -124,6 +260,49 @@ impl Client {
         }
         Ok(response.trim().to_owned())
     }
+}
+
+fn merge(mut left: Value, right: Value) -> Value {
+    let left = left.as_object_mut().expect("session values are objects");
+    left.extend(
+        right
+            .as_object()
+            .expect("session values are objects")
+            .clone(),
+    );
+    Value::Object(left.clone())
+}
+
+fn validate_channels(channels: &[u8]) -> io::Result<()> {
+    if channels.is_empty() || channels.len() > 16 || channels.iter().any(|&channel| channel > 15) {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Channels must be unique values in 0..15",
+        ));
+    }
+    let mut ordered = channels.to_vec();
+    ordered.sort_unstable();
+    if ordered.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Channels must be unique values in 0..15",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_label(label: &str) -> io::Result<()> {
+    if label.is_empty()
+        || label.chars().count() > 32
+        || label.len() > 96
+        || label.chars().any(char::is_control)
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Label must be 1..32 printable characters",
+        ));
+    }
+    Ok(())
 }
 
 fn remaining(deadline: Instant) -> io::Result<Duration> {
@@ -251,5 +430,42 @@ mod tests {
         let (client, worker) = server(vec![b"UNKNOWN\n", b"CH0=0\n"]);
         assert_eq!(client.snapshot().unwrap().channels[&0].name(), "Unknown");
         assert_eq!(worker.join().unwrap(), ["STATE\n", "STATUS\n"]);
+    }
+
+    #[test]
+    fn session_claim_renew_operate_and_release_use_opaque_token() {
+        let info = b"{\"ok\":true,\"protocol\":2,\"device_id\":\"a0ff\",\"label\":\"Bay A\",\"lease_ms\":15000,\"channels\":[{\"id\":0,\"label\":\"CH00\",\"locked\":false}]}\n";
+        let (client, worker) = server(vec![
+            info,
+            b"{\"ok\":true}\n",
+            b"{\"ok\":true}\n",
+            b"{\"ok\":true}\n",
+            b"{\"ok\":true}\n",
+        ]);
+        assert_eq!(client.info().unwrap().label, "Bay A");
+        let leased = client.claim(&[0]).unwrap();
+        leased.renew().unwrap();
+        leased.operate_many(Operation::Open, &[0]).unwrap();
+        leased.release().unwrap();
+        let commands = worker.join().unwrap();
+        assert!(commands[0].starts_with("SESSION {\"op\":\"info\""));
+        assert!(commands[1].contains("\"op\":\"claim\""));
+        assert!(commands[2].contains("\"op\":\"renew\""));
+        assert!(commands[3].contains("\"action\":\"open\""));
+        assert!(commands[4].contains("\"op\":\"release\""));
+        assert!(!format!("{leased:?}").contains("token"));
+    }
+
+    #[test]
+    fn session_errors_and_input_are_not_silently_accepted() {
+        let (client, worker) = server(vec![b"{\"ok\":false,\"error\":\"busy\"}\n"]);
+        assert_eq!(
+            client.claim(&[0]).unwrap_err().kind(),
+            ErrorKind::WouldBlock
+        );
+        worker.join().unwrap();
+        assert!(client.claim(&[]).is_err());
+        assert!(client.claim(&[1, 1]).is_err());
+        assert!(client.set_label("\n").is_err());
     }
 }

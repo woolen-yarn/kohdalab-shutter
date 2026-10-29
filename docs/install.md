@@ -37,13 +37,35 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 
 ## Connect to Pico W / Pico Wへ接続
 
-1. Prepare and start the Pico W server. Firmware setup remains a separate [MicroPython upload step](rust-client.md).
-2. Open the desktop app, select **Find Pico W**, choose a controller and **Connect**.
-3. Use **Open / Close**, or **Open all / Close all**. Horizontal / Vertical and CH ↑ / CH ↓ affect display only.
+1. Update/start the Pico firmware as below, then choose **Find Pico W**.
+2. Select a controller by its label. Edit **Label → Save** while no one is using it; the name is stored on the Pico.
+3. Select the available channels and **Connect**. In-use channels are disabled; acquisition is atomic if another PC connects at the same time.
+4. Use Open / Close. **Open all / Close all** affect only your selected channels. Layout, order and local API are in **···**.
+5. **Disconnect**, or close the window, to release your channels. After a crash/network loss, the Pico releases them after 15 seconds; position is held.
 
-1. [Pico Wの設定手順](rust-client.md)に従ってサーバーを転送・起動します。初回転送にはPython/uv等が必要です。
-2. PCアプリの **Find Pico W** から機器を選択し、**Connect**で接続します。
-3. **Open／Close** または **Open all／Close all**で操作します。
+1. 下記手順でPicoを更新・起動し、**Find Pico W**で検索します。
+2. ラベルで機器を選びます。誰も使用していなければ **Label → Save**で名前を変更できます。
+3. 空いているCHを選んで **Connect**。使用中CHは選べず、複数人が同時に取得しても重複使用しません。
+4. 個別・一括のOpen／Closeは自分のCHだけに作用します。配置・順序・外部APIは **···**内です。
+5. **Disconnect**または画面を閉じて解放します。通信断・異常終了時は15秒で解放し、位置は維持します。
+
+## Pico firmware update / Pico側の更新
+
+v0.5.0 requires the channel-session firmware. An older Pico cannot enforce cross-PC ownership and the new GUI refuses to connect to it. With the Pico attached by USB, update these files from the v0.5.0 source archive:
+
+v0.5.0ではPico側にもCHロック機能が必要です。USBで接続し、v0.5.0ソース内の次の2ファイルを転送します。旧ファームウェアへ接続して、ロックがあるように見せることはありません。
+
+```sh
+uv run mpremote connect auto fs cp server/sessions.py :sessions.py fs cp server/main.py :main.py reset
+```
+
+Keep the existing `settings.py` (calibration, pins and IP), `wifi_config.py` and saved `device_config.json`. A fresh Pico still needs the complete [initial firmware setup](rust-client.md). The GUI does not flash hardware automatically.
+
+既存の`settings.py`（校正値・ピン・IP）と`wifi_config.py`、保存済みの`device_config.json`は上書きしません。新品Picoでは[初回セットアップ](rust-client.md)一式が必要です。アプリが自動で実機を書き換えることはありません。
+
+A connected CH repeats two short LED flashes with a pause, using green for Open and red for Close. An unclaimed CH keeps the waiting blink. Physical short presses cannot change a leased CH; long-press server stop remains available. Raw commands from old clients are also rejected for leased CHs.
+
+接続CHは緑（Open）・赤（Close）で二連点滅し、未使用CHは待機点滅を続けます。使用中CHへの物理ボタン短押し・旧クライアントからの操作も拒否します。長押しによるサーバー停止は引き続き可能です。
 
 For a hardware-free preview, Windows includes a **KohdaLab Shutter Demo** Start menu shortcut (or `Demo.cmd` in the portable ZIP). On Mac, run:
 

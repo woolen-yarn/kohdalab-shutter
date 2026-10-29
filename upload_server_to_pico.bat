@@ -32,7 +32,7 @@ if not exist "server\wifi_config.py" (
 )
 
 echo Uploading server files to Pico W...
-uv run mpremote connect auto fs cp server/main.py :main.py fs cp server/discovery.py :discovery.py fs cp server/pca9685.py :pca9685.py fs cp server/servo.py :servo.py fs cp server/settings.py :settings.py fs cp server/wifi_config.py :wifi_config.py reset
+uv run mpremote connect auto fs cp server/main.py :main.py fs cp server/discovery.py :discovery.py fs cp server/sessions.py :sessions.py fs cp server/pca9685.py :pca9685.py fs cp server/servo.py :servo.py fs cp server/settings.py :settings.py fs cp server/wifi_config.py :wifi_config.py reset
 if errorlevel 1 goto failed
 
 echo.

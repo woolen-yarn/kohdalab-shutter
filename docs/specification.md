@@ -165,3 +165,7 @@ stream `write` to avoid partial TCP replies.
 
 `STATE` は角度・目標・校正値・移動待ち/駆動/整定中の状態を返します。
 `STATUS` の既存仕様は維持します。どちらも位置センサー値ではありません。
+
+## Channel sessions / CH操作権
+
+`SESSION {json}\n` requests support `info`, `set_label`, `claim`, `renew`, `release` and `operate`. Responses contain `ok` plus data or an `error` code. `claim` takes an opaque 32-hex token and unique nonempty `channels`, and acquires all requested CHs atomically. Ownership expires after 15,000 ms without renewal; disjoint selections may coexist. `operate` validates ownership for every requested CH before accepting movement. Legacy raw commands and physical short presses cannot bypass a current lease. `release`/expiry preserve the last commanded state. Human labels are stored atomically in `device_config.json`; calibration/Wi-Fi remain separate. The loop bounds accepted connections and read deadlines so stalled clients cannot indefinitely block motion. Double-flash LEDs use 100 ms on, 100 ms off, 100 ms on, 900 ms off per connected CH.

@@ -42,6 +42,8 @@ struct Args {
 enum Command {
     Discover,
     Status,
+    Info,
+    Label { label: String },
     Open { channel: u8 },
     Close { channel: u8 },
     Toggle { channel: u8 },
@@ -95,13 +97,57 @@ fn execute(client: &Client, command: Command) -> io::Result<()> {
             println!("{}", format_status(&client.status()?));
             return Ok(());
         }
-        Command::Open { channel } => client.operate(Operation::Open, channel)?,
-        Command::Close { channel } => client.operate(Operation::Close, channel)?,
-        Command::Toggle { channel } => client.operate(Operation::Toggle, channel)?,
+        Command::Info => {
+            let info = client.info().map_err(firmware_error)?;
+            println!("{}\t{}\t{} ms", info.label, info.device_id, info.lease_ms);
+            for channel in info.channels {
+                println!(
+                    "CH{:02}\t{}\t{}",
+                    channel.id,
+                    channel.label,
+                    if channel.locked {
+                        "in use"
+                    } else {
+                        "available"
+                    }
+                );
+            }
+            return Ok(());
+        }
+        Command::Label { label } => {
+            client.set_label(&label).map_err(firmware_error)?;
+            println!("OK (label saved)");
+            return Ok(());
+        }
+        Command::Open { channel } => session_operate(client, Operation::Open, channel)?,
+        Command::Close { channel } => session_operate(client, Operation::Close, channel)?,
+        Command::Toggle { channel } => session_operate(client, Operation::Toggle, channel)?,
         Command::Discover => unreachable!(),
     }
     println!("OK (motion accepted)");
     Ok(())
+}
+
+fn session_operate(client: &Client, operation: Operation, channel: u8) -> io::Result<()> {
+    let leased = client.claim(&[channel]).map_err(firmware_error)?;
+    let result = leased.operate_many(operation, &[channel]);
+    // Release is attempted even after an operation failure; its error only
+    // replaces a successful operation because the operation result is more
+    // useful when physical state might be ambiguous.
+    let release = leased.release();
+    result.map_err(firmware_error)?;
+    release.map_err(firmware_error)
+}
+
+fn firmware_error(error: io::Error) -> io::Error {
+    if error.kind() == io::ErrorKind::InvalidData {
+        io::Error::new(
+            io::ErrorKind::Unsupported,
+            "This Pico W needs the multi-user firmware update before it can be controlled. Upload server/sessions.py and the updated server/main.py.",
+        )
+    } else {
+        error
+    }
 }
 
 fn shell(client: &Client) -> io::Result<()> {
@@ -133,7 +179,7 @@ fn shell(client: &Client) -> io::Result<()> {
                     eprintln!("ERROR: {error}");
                 }
             }
-            _ => eprintln!("Use status | open n | close n | toggle n | quit"),
+            _ => eprintln!("Use status | info | label NAME | open n | close n | toggle n | quit"),
         }
     }
 }

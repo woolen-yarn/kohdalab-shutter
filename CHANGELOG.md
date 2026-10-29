@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 — 2026-10-29
+
+- Split connection selection from compact controls: shared Pico labels, explicit available-CH selection, only acquired channels displayed, small status/version header, and layout/order/API settings in the overflow menu.
+- Added authoritative atomic per-CH Pico leases, renewal/release/expiry, legacy-client and physical-button lock enforcement, shared label persistence, and double-flash connected LEDs. Requires updated Pico main.py and new sessions.py; existing calibration/Wi-Fi settings remain intact.
+- Scoped external API and All actions to acquired channels. Verified three real GUIs sharing a simulated Pico without operating hardware.
+
 ## 0.4.3 — 2026-10-29
 
 - Added a Windows x64 Setup.exe with per-user installation, Start menu/Desktop shortcuts, in-place updates and an Apps uninstaller that preserves user settings and unrelated files. The portable ZIP remains available.

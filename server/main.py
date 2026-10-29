@@ -3,6 +3,7 @@ import ubinascii
 from discovery import DiscoveryResponder
 from pca9685 import PCA9685
 from servo import ServoBoard
+from sessions import DeviceLabel, Sessions
 from settings import (
     AUTO_START_SERVER,
     BUTTON_DEBOUNCE_MS,
@@ -30,6 +31,16 @@ import socket
 import time
 
 try:
+    import ujson as json
+except ImportError:
+    import json
+
+try:
+    from settings import DEVICE_LABEL
+except ImportError:
+    DEVICE_LABEL = "Pico W Shutter"
+
+try:
     from wifi_config import SSID, PASSWORD
 except ImportError:
     SSID = ""
@@ -49,6 +60,8 @@ class LedDeck:
         self.mode = self.NORMAL
         self._phase = False
         self._last_ms = time.ticks_ms()
+        self._blink_started = self._last_ms
+        self.claimed = set()
 
     def reflect(self):
         if self.mode != self.NORMAL:
@@ -72,37 +85,53 @@ class LedDeck:
         self.mode = mode
         self._phase = False
         self._last_ms = time.ticks_ms()
+        self._blink_started = self._last_ms
         if mode == self.NORMAL:
             self.reflect()
+
+    def set_claimed(self, channels):
+        claimed = set(channels)
+        if claimed != self.claimed:
+            self.claimed = claimed
+            self._last_ms = time.ticks_ms() - 50
+
+    def _state_led(self, index, enabled):
+        angle = self.servos.positions[index]
+        if angle == self.servos.open_angle(index):
+            self.green[index].value(enabled)
+            self.red[index].value(0)
+        elif angle == self.servos.close_angle(index):
+            self.red[index].value(enabled)
+            self.green[index].value(0)
+        else:
+            self.red[index].value(enabled)
+            self.green[index].value(enabled)
 
     def tick(self):
         if self.mode == self.NORMAL:
             return
 
         now = time.ticks_ms()
-        interval = 60 if self.mode == self.FAST else 250
+        interval = 60 if self.mode == self.FAST else 50
         if time.ticks_diff(now, self._last_ms) < interval:
             return
 
-        self._phase = not self._phase
         self._last_ms = now
 
         if self.mode == self.FAST:
+            self._phase = not self._phase
             for red, green in zip(self.red, self.green):
                 red.value(self._phase)
                 green.value(self._phase)
             return
 
-        for index, angle in enumerate(self.servos.positions):
-            if angle == self.servos.open_angle(index):
-                self.green[index].value(self._phase)
-                self.red[index].value(0)
-            elif angle == self.servos.close_angle(index):
-                self.red[index].value(self._phase)
-                self.green[index].value(0)
+        elapsed = time.ticks_diff(now, self._blink_started) % 1200
+        for index in range(len(self.channels)):
+            if index in self.claimed:
+                # Connected channel: two short flashes, then a long pause.
+                self._state_led(index, elapsed < 100 or 200 <= elapsed < 300)
             else:
-                self.red[index].value(self._phase)
-                self.green[index].value(self._phase)
+                self._state_led(index, (elapsed // 250) % 2 == 0)
 
 
 class ButtonDeck:
@@ -154,9 +183,10 @@ class ButtonDeck:
 
 
 class WifiServer:
-    def __init__(self, servos, leds):
+    def __init__(self, servos, leds, sessions):
         self.servos = servos
         self.leds = leds
+        self.sessions = sessions
         self.sock = None
         self.discovery = DiscoveryResponder(
             socket,
@@ -213,6 +243,8 @@ class WifiServer:
                 pass
             self.sock = None
         self.discovery.stop()
+        self.sessions.clear()
+        self.leds.set_claimed(())
         self.leds.set_mode(LedDeck.NORMAL)
         print("Server stopped")
         return True
@@ -222,15 +254,18 @@ class WifiServer:
             return
 
         self.discovery.poll()
+        self.leds.set_claimed(self.sessions.locked_channels())
 
-        while True:
+        # Keep the cooperative servo/LED loop responsive even when several
+        # desktop clients poll the controller at once.
+        for _ in range(8):
             try:
                 conn, _addr = self.sock.accept()
             except OSError:
                 break
 
             try:
-                command = self._readline(conn).upper()
+                command = self._readline(conn)
                 self._handle(command, conn)
             except Exception as exc:
                 print("Server error:", exc)
@@ -244,11 +279,13 @@ class WifiServer:
                 except Exception:
                     pass
 
-    def _readline(self, conn, max_length=256):
+    def _readline(self, conn, max_length=1024):
         conn.settimeout(0.05)
         started = time.ticks_ms()
         buffer = bytearray()
         while len(buffer) < max_length:
+            if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
+                return ""
             try:
                 chunk = conn.recv(1)
             except OSError:
@@ -257,9 +294,14 @@ class WifiServer:
                 if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
                     break
                 continue
-            if not chunk or chunk == b"\n":
+            if not chunk:
+                return ""
+            if chunk == b"\n":
                 break
             buffer += chunk
+        # Commands are line framed. Never operate on a truncated request.
+        if len(buffer) >= max_length:
+            return ""
         return bytes(buffer).decode().strip()
 
     def _connect_ap(self):
@@ -289,6 +331,17 @@ class WifiServer:
         return True
 
     def _handle(self, command, conn):
+        if command.startswith("SESSION "):
+            try:
+                body = json.loads(command[8:])
+            except Exception:
+                body = None
+            result = self.sessions.request(body, self._session_operate)
+            self.leds.set_claimed(self.sessions.locked_channels())
+            conn.write(json.dumps(result).encode() + b"\n")
+            return
+
+        command = command.upper()
         parts = command.split()
         if not parts:
             conn.write(b"UNKNOWN\n")
@@ -314,6 +367,9 @@ class WifiServer:
             conn.write(b"ERR\n")
             return
 
+        if self.sessions.is_locked(channel):
+            conn.write(b"LOCKED\n")
+            return
         if operation == "OPEN":
             ok = self.servos.open(channel)
         elif operation == "CLOSE":
@@ -326,6 +382,19 @@ class WifiServer:
             conn.write(b"OK\n")
         else:
             conn.write(b"ERR\n")
+
+    def _session_operate(self, action, channels):
+        for channel in channels:
+            if action == "open":
+                ok = self.servos.open(channel)
+            elif action == "close":
+                ok = self.servos.close(channel)
+            else:
+                ok = self.servos.toggle(channel)
+            if not ok:
+                return False
+        self.leds.reflect()
+        return True
 
 
 i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
@@ -342,7 +411,17 @@ servos = ServoBoard(
     release_pwm=SERVO_RELEASE_PWM,
 )
 leds = LedDeck(CHANNELS, servos)
-server = WifiServer(servos, leds)
+device_id = ubinascii.hexlify(unique_id()).decode()
+device_label = DeviceLabel(DEVICE_LABEL)
+sessions = Sessions(
+    CHANNELS,
+    device_id,
+    device_label.value,
+    time.ticks_ms,
+    time.ticks_diff,
+    device_label.save,
+)
+server = WifiServer(servos, leds, sessions)
 leds.reflect()
 
 
@@ -354,8 +433,9 @@ def on_button(channel, is_long_press):
             server.start()
         return
 
-    servos.toggle(channel)
-    leds.reflect()
+    if not sessions.is_locked(channel):
+        servos.toggle(channel)
+        leds.reflect()
 
 
 buttons = ButtonDeck(CHANNELS, on_button)

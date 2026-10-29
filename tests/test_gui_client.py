@@ -173,6 +173,20 @@ class GuiClientTests(unittest.TestCase):
         self.assertNotIn("port", request)
         client.close()
 
+    def test_connect_sends_selected_channels_and_rejects_invalid_selection(
+        self,
+    ) -> None:
+        client = GuiShutter(self.server.path, timeout=1)
+        client.connect(device_id="abcd", channels=[0, 2])
+        request = next(
+            call for call in self.server.calls if call["method"] == "connect"
+        )
+        self.assertEqual(request["channels"], [0, 2])
+        for channels in ([], [1, 1], [16], [True]):
+            with self.assertRaises(ValueError):
+                client.connect(channels=channels)
+        client.close()
+
     def test_order_setting_validates_and_sends_the_explicit_order(self) -> None:
         client = GuiShutter(self.server.path, timeout=1)
         receipt = client.set_order("descending")

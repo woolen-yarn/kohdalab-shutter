@@ -5,6 +5,10 @@ BUTTON_DEBOUNCE_MS = 50
 COMMAND_READ_TIMEOUT_MS = 1000
 AUTO_START_SERVER = False
 
+# A human-readable name shown by the desktop picker. It can also be changed
+# from the connection screen and will then be saved on the Pico W.
+DEVICE_LABEL = "Pico W Shutter"
+
 USE_STATIC_IP = True
 STATIC_IFCONFIG = (
     "10.32.145.232",  # ip

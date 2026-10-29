@@ -268,9 +268,18 @@ class GuiShutter:
         port: int | None = None,
         device_id: str | None = None,
         *,
+        channels: list[int] | None = None,
         request_id: str | None = None,
     ) -> Any:
         parameters: dict[str, Any] = {"host": host, "device_id": device_id}
+        if channels is not None:
+            if (
+                not channels
+                or any(type(ch) is not int or not 0 <= ch < 16 for ch in channels)
+                or len(set(channels)) != len(channels)
+            ):
+                raise ValueError("channels must be unique channel numbers in 0..15")
+            parameters["channels"] = channels
         if port is not None:
             parameters["port"] = port
         return self._mutation("connect", request_id=request_id, **parameters)
