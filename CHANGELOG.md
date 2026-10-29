@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 — 2026-10-29
+
+- Simplified each shutter to a CH number, Enter-to-apply name box and clickable light-window Toggle. Unconfirmed text is discarded on Escape or clicking elsewhere.
+- Moved Disconnect into the connection-name menu, compacted the status/version header, and arranged the connection picker as controllers beside a vertical channel list with a standard-sized Connect button.
+- Queued one manual Toggle during background polling without retrying commands after a transport failure. External API behavior and v0.6.0 Pico firmware remain unchanged.
+
 ## 0.6.0 — 2026-10-29
 
 - Removed All buttons from the compact GUI and promoted shared channel names above small physical CH identifiers.

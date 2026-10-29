@@ -107,6 +107,10 @@ struct App {
     info: Option<ControllerInfo>,
     device_label: String,
     channel_labels: BTreeMap<u8, String>,
+    name_edits: BTreeMap<u8, String>,
+    active_name: Option<(String, u8)>,
+    refreshing: bool,
+    queued_toggle: Option<u8>,
     dirty_device: bool,
     draft_device: Option<String>,
     dirty_channels: BTreeSet<u8>,
@@ -161,6 +165,10 @@ impl Default for App {
             info: None,
             device_label: String::new(),
             channel_labels: BTreeMap::new(),
+            name_edits: BTreeMap::new(),
+            active_name: None,
+            refreshing: false,
+            queued_toggle: None,
             dirty_device: false,
             draft_device: None,
             dirty_channels: BTreeSet::new(),
@@ -260,6 +268,7 @@ impl App {
     fn task(&mut self, job: impl FnOnce() -> std::io::Result<Reply> + Send + 'static) {
         let (sender, receiver) = mpsc::channel();
         self.pending = Some(receiver);
+        self.refreshing = false;
         self.error = false;
         std::thread::spawn(move || {
             let result = job().map_err(|e| e.to_string());
@@ -332,6 +341,9 @@ impl App {
         self.port = device.address.port();
         self.persist_preferences(true);
         self.selected.clear();
+        self.name_edits.clear();
+        self.active_name = None;
+        self.queued_toggle = None;
         self.dirty_device = false;
         self.draft_device = None;
         self.dirty_channels.clear();
@@ -589,6 +601,9 @@ impl App {
         let patch = self.label_patch();
         let client = self.client.take();
         self.settings_open = false;
+        self.active_name = None;
+        self.name_edits.clear();
+        self.queued_toggle = None;
         self.demo_connected = false;
         self.status.clear();
         self.state = Snapshot::default();
@@ -630,6 +645,7 @@ impl App {
                 let info = client.info()?;
                 Ok(Reply::Refreshed(state, info))
             });
+            self.refreshing = true;
         }
     }
 
@@ -708,6 +724,7 @@ impl App {
             }
         };
         self.pending = None;
+        self.refreshing = false;
         let api_error = result.as_ref().err().cloned();
         match result {
             Ok(Reply::Devices(devices, info)) => {
@@ -805,6 +822,7 @@ impl App {
                 self.next_refresh = Instant::now();
             }
             Err(error) => {
+                self.queued_toggle = None;
                 self.pending_release = false;
                 self.record(format!("ERROR: {error}"));
                 self.error = true;
@@ -825,6 +843,12 @@ impl App {
                 |error| Err(ApiError::new("transport", error)),
             );
             self.control.complete(&id, result);
+        }
+        if let Some(channel) = self.queued_toggle.take()
+            && self.connected()
+            && !self.control.owned()
+        {
+            self.operate(Operation::Toggle, vec![channel]);
         }
     }
 
@@ -1136,56 +1160,76 @@ impl App {
     fn connection_panel(&mut self, ui: &mut egui::Ui) {
         let manual = self.pending.is_none() && !self.control.owned();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Connect").size(23.0).strong());
+            ui.label(RichText::new("Connect").size(20.0).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .add_enabled(manual, egui::Button::new("Find Pico W").fill(BLUE))
+                    .add_enabled(
+                        manual,
+                        egui::Button::new("Find Pico W").min_size(Vec2::new(96.0, 28.0)),
+                    )
                     .clicked()
                 {
                     self.find();
                 }
             });
         });
-        ui.add_space(14.0);
-        let mut chosen = None;
-        egui::ScrollArea::vertical()
-            .id_salt("devices")
-            .max_height(174.0)
-            .show(ui, |ui| {
-                for device in &self.devices {
-                    let detail = self.device_info.get(&device.id);
-                    let label =
-                        detail.map_or("Pico W · update firmware", |info| info.label.as_str());
-                    let active = self.host == device.address.ip().to_string()
-                        && self.port == device.address.port();
-                    if ui
-                        .add_enabled(
-                            manual,
-                            egui::Button::new(format!(
-                                "{label}\n{}  ·  {}",
-                                device.address, device.id
-                            ))
-                            .selected(active)
-                            .min_size(Vec2::new(ui.available_width(), 52.0)),
-                        )
-                        .clicked()
-                    {
-                        chosen = Some(device.clone());
-                    }
-                }
-                if self.devices.is_empty() {
-                    ui.label(RichText::new("Find a controller on your network.").color(MUTED));
-                }
-            });
-        if let Some(device) = chosen {
-            self.select_device(&device);
-        }
         ui.add_space(12.0);
-        if let Some(info) = self.info.clone() {
-            ui.horizontal(|ui| {
+        ui.columns(2, |columns| {
+            columns[0].horizontal(|ui| {
+                ui.set_min_height(30.0);
+                ui.label(RichText::new("Controller").small().color(MUTED));
+            });
+            columns[0].add_space(6.0);
+            let mut chosen = None;
+            egui::ScrollArea::vertical()
+                .id_salt("controllers")
+                .max_height(200.0)
+                .show(&mut columns[0], |ui| {
+                    ui.set_min_height(180.0);
+                    for device in &self.devices {
+                        let label = self
+                            .device_info
+                            .get(&device.id)
+                            .map_or("Pico W", |info| info.label.as_str());
+                        let active = self.host == device.address.ip().to_string()
+                            && self.port == device.address.port();
+                        if ui
+                            .add_enabled(
+                                manual,
+                                egui::Button::new(format!("{label}\n{}", device.address.ip()))
+                                    .selected(active)
+                                    .wrap()
+                                    .min_size(Vec2::new(ui.available_width(), 50.0)),
+                            )
+                            .on_hover_text(format!("{} · {}", device.id, device.address))
+                            .clicked()
+                        {
+                            chosen = Some(device.clone());
+                        }
+                    }
+                    if self.devices.is_empty() {
+                        ui.label(
+                            RichText::new(if self.pending.is_some() {
+                                "Searching…"
+                            } else {
+                                "No controllers found"
+                            })
+                            .small()
+                            .color(MUTED),
+                        );
+                    }
+                });
+            if let Some(device) = chosen {
+                self.select_device(&device);
+            }
+            columns[1].horizontal(|ui| {
+                ui.set_min_height(30.0);
                 ui.label(RichText::new("Channels").small().color(MUTED));
                 if ui
-                    .add_enabled(manual, egui::Button::new("Refresh").small())
+                    .add_enabled(
+                        manual && self.info.is_some(),
+                        egui::Button::new("Refresh").small(),
+                    )
                     .clicked()
                     && !self.demo
                     && let Ok(client) = self.endpoint()
@@ -1193,59 +1237,89 @@ impl App {
                     self.task(move || client.info().map(Reply::Info));
                 }
             });
-            ui.horizontal_wrapped(|ui| {
-                for channel in &info.channels {
-                    let mut selected = self.selected.contains(&channel.id);
-                    let name = if channel.locked {
-                        format!("{} · In use", channel.label)
-                    } else {
-                        channel.label.clone()
-                    };
-                    if ui
-                        .add_enabled(
-                            manual && !channel.locked,
-                            egui::Checkbox::new(&mut selected, name),
-                        )
-                        .changed()
-                    {
-                        if selected {
-                            self.selected.insert(channel.id);
-                        } else {
-                            self.selected.remove(&channel.id);
+            columns[1].add_space(6.0);
+            egui::ScrollArea::vertical()
+                .id_salt("channel-selection")
+                .max_height(200.0)
+                .show(&mut columns[1], |ui| {
+                    ui.set_min_height(180.0);
+                    if let Some(info) = self.info.clone() {
+                        for channel in info.channels {
+                            let mut selected = self.selected.contains(&channel.id);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add_enabled(
+                                        manual && !channel.locked,
+                                        egui::Checkbox::new(
+                                            &mut selected,
+                                            format!("CH{:02}", channel.id),
+                                        ),
+                                    )
+                                    .changed()
+                                {
+                                    if selected {
+                                        self.selected.insert(channel.id);
+                                    } else {
+                                        self.selected.remove(&channel.id);
+                                    }
+                                }
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&channel.label).color(if channel.locked {
+                                            MUTED
+                                        } else {
+                                            TEXT
+                                        }),
+                                    )
+                                    .truncate(),
+                                )
+                                .on_hover_text(&channel.label);
+                            });
+                            if channel.locked {
+                                ui.label(RichText::new("In use").small().color(ORANGE));
+                            }
+                            ui.add_space(5.0);
                         }
+                    } else {
+                        ui.label(RichText::new("Select a controller").small().color(MUTED));
                     }
+                });
+        });
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::hover());
+            if self.pending.is_some() {
+                egui::Spinner::new().paint_at(ui, rect);
+            }
+            ui.label(
+                RichText::new(format!("{} selected", self.selected.len()))
+                    .small()
+                    .color(MUTED),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add_enabled(
+                        manual && self.info.is_some() && !self.selected.is_empty(),
+                        egui::Button::new("Connect")
+                            .fill(BLUE)
+                            .min_size(Vec2::new(104.0, 30.0)),
+                    )
+                    .clicked()
+                {
+                    self.connect();
                 }
             });
-            ui.add_space(18.0);
-            if ui
-                .add_enabled(
-                    manual && !self.selected.is_empty(),
-                    egui::Button::new("Connect")
-                        .fill(BLUE)
-                        .min_size(Vec2::new(ui.available_width(), 36.0)),
-                )
-                .clicked()
-            {
-                self.connect();
-            }
-        }
-        ui.add_space(8.0);
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), egui::Sense::hover());
-        if self.pending.is_some() {
-            egui::Spinner::new().paint_at(ui, rect);
-        }
+        });
         if !self.config_error.is_empty() {
             ui.label(RichText::new(&self.config_error).small().color(ORANGE));
         }
         if !self.preferences_error.is_empty() {
             ui.label(RichText::new(&self.preferences_error).small().color(ORANGE));
         }
-        if !self.message.is_empty() && (self.error || self.pending.is_some()) {
-            ui.label(RichText::new(&self.message).small().color(if self.error {
-                RED
-            } else {
-                MUTED
-            }));
+        if self.error {
+            ui.label(RichText::new(&self.message).small().color(RED));
         }
         ui.add_space(8.0);
         ui.collapsing("Settings", |ui| {
@@ -1460,7 +1534,7 @@ impl App {
                     .max_height(460.0)
                     .show(ui, |ui| {
                         ui.add_enabled_ui(!self.control.owned(), |ui| {
-                            ui.label(RichText::new("Names").small().color(MUTED));
+                            ui.label(RichText::new("Controller").small().color(MUTED));
                             ui.horizontal(|ui| {
                                 ui.label("Pico");
                                 if ui
@@ -1475,27 +1549,6 @@ impl App {
                                     self.changed_label();
                                 }
                             });
-                            let channels = self.ordered_channels();
-                            for channel in channels {
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new(format!("CH{channel:02}")).color(MUTED));
-                                    let value = self
-                                        .channel_labels
-                                        .entry(channel)
-                                        .or_insert_with(|| format!("CH{channel:02}"));
-                                    if ui
-                                        .add(
-                                            egui::TextEdit::singleline(value)
-                                                .char_limit(32)
-                                                .desired_width(300.0),
-                                        )
-                                        .changed()
-                                    {
-                                        self.dirty_channels.insert(channel);
-                                        self.changed_label();
-                                    }
-                                });
-                            }
                             ui.add_space(10.0);
                             ui.separator();
                             ui.add_space(6.0);
@@ -1549,50 +1602,148 @@ impl App {
         self.settings_open = open;
     }
 
+    fn commit_channel_name(&mut self, channel: u8, text: &str) -> bool {
+        let value = text.trim();
+        if value.is_empty()
+            || value.chars().count() > 32
+            || value.len() > 96
+            || value
+                .chars()
+                .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
+        {
+            self.config_error = "Name is empty or too long.".into();
+            return false;
+        }
+        if !self.selected.contains(&channel) || !self.connected() || self.control.owned() {
+            return false;
+        }
+        if value != self.channel_label(channel) {
+            self.channel_labels.insert(channel, value.into());
+            self.dirty_channels.insert(channel);
+            self.changed_label();
+            self.config_due = Some(Instant::now());
+        }
+        true
+    }
+
+    fn inline_channel_name(&mut self, ui: &mut egui::Ui, channel: u8) {
+        let current = self.channel_label(channel);
+        let key = (
+            self.info
+                .as_ref()
+                .map_or(self.host.as_str(), |info| info.device_id.as_str())
+                .to_owned(),
+            channel,
+        );
+        if self.active_name.as_ref() != Some(&key) {
+            self.name_edits.insert(channel, current.clone());
+        }
+        let response = ui
+            .add_enabled(
+                !self.control.owned(),
+                egui::TextEdit::singleline(
+                    self.name_edits.entry(channel).or_insert(current.clone()),
+                )
+                .id_salt(("channel-name", channel, self.host.as_str(), self.port))
+                .desired_width(ui.available_width())
+                .char_limit(32)
+                .horizontal_align(egui::Align::Center),
+            )
+            .on_hover_text("Edit name · Enter to apply");
+        if response.gained_focus() {
+            self.active_name = Some(key.clone());
+        }
+        if response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            response.surrender_focus();
+            self.active_name = None;
+            self.name_edits.insert(channel, current);
+            return;
+        }
+        if response.lost_focus() {
+            if self.active_name.as_ref() == Some(&key) {
+                self.active_name = None;
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                let value = self.name_edits.get(&channel).cloned().unwrap_or_default();
+                self.commit_channel_name(channel, &value);
+            } else {
+                self.name_edits.insert(channel, current);
+            }
+        }
+    }
+
+    fn request_toggle(&mut self, channel: u8) {
+        if !self.connected()
+            || !self.selected.contains(&channel)
+            || self.control.owned()
+            || self.queued_toggle.is_some()
+        {
+            return;
+        }
+        if self.pending.is_some() {
+            if self.refreshing {
+                self.queued_toggle = Some(channel);
+            }
+        } else {
+            self.operate(Operation::Toggle, vec![channel]);
+        }
+    }
+
     fn channels_panel(&mut self, ui: &mut egui::Ui) {
-        let manual = self.connected() && self.pending.is_none() && !self.control.owned();
+        let enabled = self.connected()
+            && (self.pending.is_none() || self.refreshing)
+            && self.queued_toggle.is_none()
+            && !self.control.owned();
         let channels = self.ordered_channels();
-        let mut action = None;
+        let device_id = self
+            .info
+            .as_ref()
+            .map_or("", |info| info.device_id.as_str())
+            .to_owned();
+        let mut toggle = None;
         egui::ScrollArea::both().id_salt("shutters").show(ui, |ui| {
             if self.layout == Layout::Horizontal {
+                let total = channels.len() as f32 * 166.0 - 10.0;
+                let inset = ((ui.available_width() - total) * 0.5).max(0.0);
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
-                    let total = channels.len() as f32 * 174.0 - 10.0;
-                    let inset = ((ui.available_width() - total) * 0.5).max(0.0);
                     if inset > 0.0 {
                         ui.add_space(inset);
                     }
-                    for channel in &channels {
-                        let name = self
-                            .state
-                            .channels
-                            .get(channel)
-                            .map_or("Unknown", |state| state.name());
-                        ui.push_id(channel, |ui| {
+                    for channel in channels {
+                        ui.push_id((&device_id, channel), |ui| {
                             card_frame().inner_margin(12).show(ui, |ui| {
                                 ui.vertical(|ui| {
-                                    ui.set_width(140.0);
-                                    let label = self.channel_label(*channel);
-                                    ui.add(
-                                        egui::Label::new(RichText::new(&label).strong().size(13.0))
-                                            .truncate(),
-                                    )
-                                    .on_hover_text(&label);
+                                    ui.set_width(130.0);
                                     ui.label(
                                         RichText::new(format!("CH{channel:02}"))
-                                            .size(10.0)
-                                            .color(MUTED),
+                                            .strong()
+                                            .size(13.0),
                                     );
-                                    ui.add_space(5.0);
-                                    ui.vertical_centered(|ui| {
-                                        shutter_window(ui, name, 0.60);
-                                        ui.label(
-                                            RichText::new(name).size(16.0).color(state_color(name)),
-                                        );
+                                    self.inline_channel_name(ui, channel);
+                                    ui.add_space(6.0);
+                                    let state = self
+                                        .state
+                                        .channels
+                                        .get(&channel)
+                                        .map_or("Unknown", |state| state.name());
+                                    let response = ui
+                                        .vertical_centered(|ui| {
+                                            ui.add_enabled_ui(enabled, |ui| {
+                                                shutter_window(ui, state, 0.68)
+                                            })
+                                            .inner
+                                        })
+                                        .inner;
+                                    response.widget_info(|| {
+                                        egui::WidgetInfo::labeled(
+                                            egui::WidgetType::Button,
+                                            enabled,
+                                            format!("Toggle CH{channel:02}: {state}"),
+                                        )
                                     });
-                                    ui.add_space(8.0);
-                                    if let Some(operation) = channel_actions(ui, name, manual) {
-                                        action = Some((operation, *channel));
+                                    if response.clicked() {
+                                        toggle = Some(channel);
                                     }
                                 });
                             });
@@ -1600,47 +1751,38 @@ impl App {
                     }
                 });
             } else {
-                for channel in &channels {
-                    let name = self
-                        .state
-                        .channels
-                        .get(channel)
-                        .map_or("Unknown", |state| state.name());
-                    ui.push_id(channel, |ui| {
+                for channel in channels {
+                    ui.push_id((&device_id, channel), |ui| {
                         card_frame().inner_margin(10).show(ui, |ui| {
-                            ui.set_min_width(ui.available_width().max(370.0));
+                            ui.set_min_width(ui.available_width().max(280.0));
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
-                                    ui.set_width(90.0);
-                                    let label = self.channel_label(*channel);
-                                    ui.add(
-                                        egui::Label::new(RichText::new(&label).strong()).truncate(),
-                                    )
-                                    .on_hover_text(&label);
+                                    ui.set_width((ui.available_width() - 120.0).max(130.0));
                                     ui.label(
                                         RichText::new(format!("CH{channel:02}"))
-                                            .size(10.0)
-                                            .color(MUTED),
+                                            .strong()
+                                            .size(13.0),
                                     );
+                                    self.inline_channel_name(ui, channel);
                                 });
-                                shutter_window(ui, name, 0.4);
-                                ui.label(RichText::new(name).color(state_color(name)));
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.allocate_ui_with_layout(
-                                            Vec2::new(150.0, 30.0),
-                                            egui::Layout::left_to_right(egui::Align::Center),
-                                            |ui| {
-                                                if let Some(operation) =
-                                                    channel_actions(ui, name, manual)
-                                                {
-                                                    action = Some((operation, *channel));
-                                                }
-                                            },
-                                        );
-                                    },
-                                );
+                                let state = self
+                                    .state
+                                    .channels
+                                    .get(&channel)
+                                    .map_or("Unknown", |state| state.name());
+                                let response = ui
+                                    .add_enabled_ui(enabled, |ui| shutter_window(ui, state, 0.50))
+                                    .inner;
+                                response.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::Button,
+                                        enabled,
+                                        format!("Toggle CH{channel:02}: {state}"),
+                                    )
+                                });
+                                if response.clicked() {
+                                    toggle = Some(channel);
+                                }
                             });
                         });
                     });
@@ -1648,9 +1790,112 @@ impl App {
                 }
             }
         });
-        if let Some((operation, channel)) = action {
-            self.operate(operation, vec![channel]);
+        if let Some(channel) = toggle {
+            self.request_toggle(channel);
         }
+    }
+
+    fn header(&mut self, ctx: &egui::Context) {
+        let connected = self.connected();
+        egui::TopBottomPanel::top("header")
+            .exact_height(44.0)
+            .show_separator_line(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(PANEL)
+                    .inner_margin(egui::Margin::symmetric(12, 7)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if connected {
+                        status_dot(ui, if self.error { RED } else { TEAL });
+                        let label = self
+                            .info
+                            .as_ref()
+                            .map_or(self.device_label.as_str(), |info| info.label.as_str())
+                            .to_owned();
+                        let problem = !self.config_error.is_empty()
+                            || !self.preferences_error.is_empty()
+                            || !self.api_error.is_empty();
+                        let reserve = if self.demo { 140.0 } else { 110.0 }
+                            + if problem { 24.0 } else { 0.0 };
+                        let width = (ui.available_width() - reserve).max(80.0);
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(width, 28.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(width);
+                                egui::containers::menu::MenuButton::from_button(
+                                    egui::Button::new(
+                                        RichText::new(format!("{label}  ▾")).strong().size(13.0),
+                                    )
+                                    .frame(false)
+                                    .truncate(),
+                                )
+                                .ui(ui, |ui| {
+                                    ui.label(RichText::new("Connected").small().color(TEAL));
+                                    ui.label(RichText::new(&label).strong());
+                                    ui.label(
+                                        RichText::new(format!("{}:{}", self.host, self.port))
+                                            .small()
+                                            .color(MUTED),
+                                    );
+                                    ui.separator();
+                                    if ui
+                                        .add_enabled(
+                                            self.pending.is_none() && !self.control.owned(),
+                                            egui::Button::new("Disconnect"),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.disconnect();
+                                        ui.close();
+                                    }
+                                })
+                                .0
+                                .on_hover_text("Connection options");
+                            },
+                        );
+                    } else {
+                        ui.label(RichText::new("KohdaLab Shutter").size(13.0).strong());
+                    }
+                    ui.label(
+                        RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                            .size(10.0)
+                            .color(MUTED),
+                    );
+                    if self.demo {
+                        ui.label(RichText::new("Demo").size(10.0).color(ORANGE));
+                    }
+                    if connected {
+                        let (rect, _) =
+                            ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
+                        if self.config_pending.is_some()
+                            || self.dirty_device
+                            || !self.dirty_channels.is_empty()
+                        {
+                            egui::Spinner::new().paint_at(ui, rect);
+                        }
+                        if (!self.config_error.is_empty()
+                            || !self.preferences_error.is_empty()
+                            || !self.api_error.is_empty())
+                            && ui
+                                .small_button(RichText::new("!").color(ORANGE))
+                                .on_hover_text("Settings need attention")
+                                .clicked()
+                        {
+                            self.settings_open = true;
+                        }
+                    }
+                    if connected {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("···").on_hover_text("Settings").clicked() {
+                                self.settings_open = true;
+                            }
+                        });
+                    }
+                });
+            });
     }
 
     fn desired_size(&self) -> Vec2 {
@@ -1658,13 +1903,13 @@ impl App {
             return Vec2::new(560.0, 560.0);
         }
         if !self.connected() {
-            return Vec2::new(540.0, 450.0);
+            return Vec2::new(540.0, 490.0);
         }
         let count = self.status.len().max(1) as f32;
         if self.layout == Layout::Horizontal {
-            Vec2::new((count * 176.0 + 18.0).clamp(300.0, 1160.0), 330.0)
+            Vec2::new((count * 166.0 + 26.0).clamp(280.0, 1160.0), 260.0)
         } else {
-            Vec2::new(490.0, (count * 86.0 + 98.0).min(820.0))
+            Vec2::new(350.0, (count * 98.0 + 68.0).min(820.0))
         }
     }
 
@@ -1679,100 +1924,7 @@ impl App {
                 "Connect · KohdaLab Shutter".into()
             }));
         }
-        egui::TopBottomPanel::top("header")
-            .show_separator_line(false)
-            .exact_height(if self.connected() { 64.0 } else { 44.0 })
-            .frame(
-                egui::Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(egui::Margin::symmetric(12, 8)),
-            )
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(if self.connected() {
-                            "Shutter"
-                        } else {
-                            "KohdaLab Shutter"
-                        })
-                        .size(13.0)
-                        .strong(),
-                    );
-                    ui.label(
-                        RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                            .size(10.0)
-                            .color(MUTED),
-                    );
-                    if self.demo {
-                        ui.label(RichText::new("Demo").size(10.0).color(ORANGE));
-                    }
-                    if self.connected() {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("···").on_hover_text("Settings").clicked() {
-                                self.settings_open = true;
-                            }
-                            if ui
-                                .add_enabled(
-                                    self.pending.is_none() && !self.control.owned(),
-                                    egui::Button::new("Disconnect").small(),
-                                )
-                                .clicked()
-                            {
-                                self.disconnect();
-                            }
-                        });
-                    }
-                });
-                if self.connected() {
-                    ui.horizontal(|ui| {
-                        status_dot(ui, if self.error { RED } else { TEAL });
-                        let status = format!(
-                            "{} · Connected",
-                            self.info
-                                .as_ref()
-                                .map_or(self.device_label.as_str(), |info| info.label.as_str())
-                        );
-                        let reserve = 24.0
-                            + if self.control.owned() { 28.0 } else { 0.0 }
-                            + if !self.config_error.is_empty() || !self.preferences_error.is_empty()
-                            {
-                                72.0
-                            } else {
-                                0.0
-                            };
-                        let width = (ui.available_width() - reserve).max(30.0);
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(width, 14.0),
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui| {
-                                ui.set_min_width(width);
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(&status).size(11.0).color(MUTED),
-                                    )
-                                    .truncate(),
-                                )
-                                .on_hover_text(&status);
-                            },
-                        );
-                        if (!self.config_error.is_empty() || !self.preferences_error.is_empty())
-                            && ui
-                                .small_button(RichText::new("Unsaved").color(ORANGE))
-                                .clicked()
-                        {
-                            self.settings_open = true;
-                        }
-                        if self.control.owned() {
-                            ui.label(RichText::new("API").size(10.0).color(ORANGE));
-                        }
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
-                        if self.pending.is_some() {
-                            egui::Spinner::new().paint_at(ui, rect);
-                        }
-                    });
-                }
-            });
+        self.header(ctx);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -1931,34 +2083,10 @@ fn status_dot(ui: &mut egui::Ui, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), 3.5, color);
 }
-fn channel_actions(ui: &mut egui::Ui, state: &str, enabled: bool) -> Option<Operation> {
-    let mut action = None;
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.columns(2, |columns| {
-            for (i, label, operation) in
-                [(0, "Open", Operation::Open), (1, "Close", Operation::Close)]
-            {
-                if columns[i]
-                    .add_sized(
-                        [columns[i].available_width(), 30.0],
-                        egui::Button::new(label)
-                            .fill(if state == label { BLUE } else { BUTTON })
-                            .corner_radius(6),
-                    )
-                    .clicked()
-                {
-                    action = Some(operation);
-                }
-            }
-        });
-    });
-    action
-}
-
 // Front-facing schematic of commanded state, not a measurement of transmitted light.
 fn shutter_window(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response {
     let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(174.0, 132.0) * scale, egui::Sense::hover());
+        ui.allocate_exact_size(Vec2::new(174.0, 132.0) * scale, egui::Sense::click());
     let painter = ui.painter();
     let centre = rect.center();
     let radius = 48.0 * scale;
@@ -2019,7 +2147,25 @@ fn shutter_window(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response 
             state_color(state),
         );
     }
-    response.on_hover_text("Commanded state; no position sensor")
+    if response.hovered() || response.has_focus() {
+        painter.circle_stroke(
+            centre,
+            radius + 7.0 * scale,
+            Stroke::new(
+                if response.is_pointer_button_down_on() {
+                    2.0_f32
+                } else {
+                    1.0_f32
+                },
+                BLUE,
+            ),
+        );
+    }
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!(
+            "{state} · Click to toggle. Commanded state; no position sensor."
+        ))
 }
 
 fn style(ctx: &egui::Context) {
@@ -2507,6 +2653,189 @@ mod tests {
         assert!(!contents.contains("token") && !contents.contains("lease"));
     }
 
+    fn ui_frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    app.desired_size(),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ctx| app.draw(ctx),
+        )
+    }
+
+    fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) -> egui::FullOutput {
+        ui_frame(
+            app,
+            ctx,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+        ui_frame(
+            app,
+            ctx,
+            vec![egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        )
+    }
+
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        }
+    }
+
+    fn text_position(output: &egui::FullOutput, text: &str) -> egui::Pos2 {
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| {
+                if let egui::epaint::Shape::Text(label) = &shape.shape
+                    && label.galley.job.text == text
+                {
+                    Some(label.pos + egui::vec2(5.0, 5.0))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| panic!("Missing text: {text}"))
+    }
+
+    #[test]
+    fn clicking_aperture_toggles_once_without_open_close_buttons() {
+        let mut app = App::demo();
+        let ctx = egui::Context::default();
+        style(&ctx);
+        let output = ui_frame(&mut app, &ctx, vec![]);
+        let centre = output
+            .shapes
+            .iter()
+            .find_map(|shape| {
+                if let egui::epaint::Shape::Circle(circle) = &shape.shape
+                    && (circle.radius - 48.0 * 0.68).abs() < 0.1
+                    && circle.fill == BG
+                {
+                    Some(circle.center)
+                } else {
+                    None
+                }
+            })
+            .expect("clickable aperture");
+        let before = app.demo_status[&0];
+        click(&mut app, &ctx, centre);
+        assert_ne!(app.demo_status[&0], before);
+        ui_frame(&mut app, &ctx, vec![]);
+        assert_ne!(app.demo_status[&0], before);
+        assert!(
+            !render_text(&mut app)
+                .iter()
+                .any(|(text, _)| text == "Open" || text == "Close")
+        );
+    }
+
+    #[test]
+    fn names_commit_on_enter_and_discard_on_escape_or_blur() {
+        let mut app = App::demo();
+        let ctx = egui::Context::default();
+        style(&ctx);
+        let output = ui_frame(&mut app, &ctx, vec![]);
+        let position = text_position(&output, "Pump");
+        click(&mut app, &ctx, position);
+        ui_frame(
+            &mut app,
+            &ctx,
+            vec![key(egui::Key::End), egui::Event::Text(" beam".into())],
+        );
+        assert_eq!(app.channel_label(0), "Pump");
+        ui_frame(&mut app, &ctx, vec![key(egui::Key::Enter)]);
+        assert_eq!(app.channel_label(0), "Pump beam");
+        assert_eq!(app.demo_status[&0], 0);
+        click(&mut app, &ctx, position);
+        ui_frame(
+            &mut app,
+            &ctx,
+            vec![
+                key(egui::Key::End),
+                egui::Event::Text(" discarded".into()),
+                key(egui::Key::Escape),
+            ],
+        );
+        assert_eq!(app.channel_label(0), "Pump beam");
+        click(&mut app, &ctx, position);
+        ui_frame(
+            &mut app,
+            &ctx,
+            vec![key(egui::Key::End), egui::Event::Text(" discarded".into())],
+        );
+        click(&mut app, &ctx, egui::pos2(10.0, 250.0));
+        assert_eq!(app.channel_label(0), "Pump beam");
+        assert_eq!(app.name_edits[&0], "Pump beam");
+    }
+
+    #[test]
+    fn connection_menu_exposes_disconnect_and_picker_channels_are_vertical() {
+        let mut app = App::demo();
+        let ctx = egui::Context::default();
+        style(&ctx);
+        let output = ui_frame(&mut app, &ctx, vec![]);
+        let position = text_position(&output, "Optics bench  ▾");
+        click(&mut app, &ctx, position);
+        let output = ui_frame(&mut app, &ctx, vec![]);
+        text_position(&output, "Disconnect");
+        app.disconnect();
+        let text = render_text(&mut app);
+        let positions: Vec<_> = (0..4)
+            .map(|ch| {
+                text.iter()
+                    .find(|(text, _)| text == &format!("CH{ch:02}"))
+                    .unwrap()
+                    .1
+            })
+            .collect();
+        for pair in positions.windows(2) {
+            assert_eq!(pair[0].x, pair[1].x);
+            assert!(pair[0].y < pair[1].y);
+        }
+    }
+
+    #[test]
+    fn polling_queues_only_one_toggle_and_transport_failure_cancels_it() {
+        let mut app = App::demo();
+        let (_sender, receiver) = mpsc::channel();
+        app.pending = Some(receiver);
+        app.refreshing = true;
+        app.request_toggle(0);
+        app.request_toggle(0);
+        assert_eq!(app.queued_toggle, Some(0));
+        let snapshot = Snapshot::demo(&app.demo_status);
+        let info = app.info.clone().unwrap();
+        deliver(&mut app, Ok(Reply::Refreshed(snapshot, info)));
+        assert_eq!(app.demo_status[&0], 90);
+        assert_eq!(app.queued_toggle, None);
+        app.queued_toggle = Some(0);
+        deliver(&mut app, Err("connection lost".into()));
+        assert_eq!(app.queued_toggle, None);
+        assert_eq!(app.demo_status[&0], 90);
+    }
+
     fn render_text(app: &mut App) -> Vec<(String, egui::Pos2)> {
         fn collect(shape: &egui::epaint::Shape, text: &mut Vec<(String, egui::Pos2)>) {
             match shape {
@@ -2583,7 +2912,8 @@ mod tests {
                 .iter()
                 .any(|(text, _)| text == "CH00" || text == "CH02" || text == "Find Pico W")
         );
-        assert!(text.iter().any(|(text, _)| text == "Disconnect"));
+        assert!(!text.iter().any(|(text, _)| text == "Disconnect"));
+        assert!(text.iter().any(|(text, _)| text.contains("Optics bench")));
         app.disconnect();
         let picker = render_text(&mut app);
         assert!(picker.iter().any(|(text, _)| text == "Find Pico W"));
