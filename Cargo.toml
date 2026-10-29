@@ -1,6 +1,6 @@
 [package]
 name = "kohdalab-shutter"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Rust desktop controller for the KohdaLab Pico W shutter"
@@ -13,6 +13,7 @@ gui = ["dep:eframe", "dep:image"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+kohdalab-control-protocol = { path = "crates/kohdalab-control-protocol" }
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 
 image = { version = "0.25", optional = true, default-features = false, features = ["png"] }

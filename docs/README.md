@@ -15,3 +15,8 @@
 Operational limits and safety responsibilities are in [SAFETY.md](../SAFETY.md). Planned work is in [ROADMAP.md](../ROADMAP.md).
 
 運用上の制約と安全上の責任は[SAFETY.md](../SAFETY.md)、今後の作業は[ROADMAP.md](../ROADMAP.md)に記載しています。
+
+## Suite integration / アプリ連携
+
+- [Common GUI control / 共通GUI API](reference/common-control-api.md)
+- [Common API validation / 共通APIの検証](validation/common-control-api.md)

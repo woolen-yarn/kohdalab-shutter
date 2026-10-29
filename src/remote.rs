@@ -3,6 +3,8 @@
 //! This module never controls hardware.  It authenticates and bounds socket
 //! work, then hands requests to the GUI thread through [`Request`].
 use serde_json::{Value, json};
+use kohdalab_control_protocol::descriptor as canonical_descriptor;
+use kohdalab_control_protocol::{is_common, response as common_response};
 use std::{
     io::{Read, Write},
     net::{Ipv4Addr, TcpListener, TcpStream},
@@ -57,9 +59,7 @@ impl Server {
             directory.join(format!("shutter-{}-{instance_id}.json", std::process::id()));
         let mut temporary =
             tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
-        serde_json::to_writer(
-            &mut temporary,
-            &json!({
+        let descriptor_json = canonical_descriptor(json!({
                 "protocol": 2,
                 "app": "kohdalab-shutter",
                 "host": "127.0.0.1",
@@ -68,8 +68,8 @@ impl Server {
                 "token": token,
                 "instance_id": instance_id,
                 "pid": std::process::id(),
-            }),
-        )
+            }), "kohdalab-shutter", 2);
+        serde_json::to_writer(&mut temporary, &descriptor_json)
         .map_err(|e| e.to_string())?;
         temporary.flush().map_err(|e| e.to_string())?;
         // NamedTempFile uses mode 0600 on Unix and persist publishes only a
@@ -170,30 +170,40 @@ fn serve(
         ),
         Ok(line) => match serde_json::from_slice::<Value>(&line) {
             Err(_) => envelope_error("invalid_request", "Request must be a JSON object"),
-            Ok(body) if body.get("token").and_then(Value::as_str) != Some(token) => {
-                envelope_error("authentication", "GUI API authentication failed")
-            }
             Ok(body) if !body.is_object() => {
                 envelope_error("invalid_request", "Request must be a JSON object")
             }
+            Ok(body) if body.get("token").and_then(Value::as_str) != Some(token) => {
+                let native = envelope_error("authentication", "GUI API authentication failed");
+                if is_common(&body) { common_response(&body, native) } else { native }
+            }
             Ok(body) => {
+                let common = is_common(&body);
                 let (reply, receive) = mpsc::sync_channel(1);
                 match sender.try_send(Request {
-                    body,
+                    body: body.clone(),
                     deadline,
                     reply,
                 }) {
                     Err(mpsc::TrySendError::Full(_)) => {
-                        envelope_error("busy", "GUI request queue is full")
+                        let native = envelope_error("busy", "GUI request queue is full");
+                        if common { common_response(&body, native) } else { native }
                     }
                     Err(mpsc::TrySendError::Disconnected(_)) => {
-                        envelope_error("unavailable", "GUI API is stopping")
+                        let native = envelope_error("unavailable", "GUI API is stopping");
+                        if common { common_response(&body, native) } else { native }
                     }
                     Ok(()) => match deadline.checked_duration_since(Instant::now()) {
                         Some(remaining) => receive
                             .recv_timeout(remaining)
-                            .unwrap_or_else(|_| envelope_error("timeout", "GUI request timed out")),
-                        None => envelope_error("timeout", "GUI request timed out"),
+                            .unwrap_or_else(|_| {
+                                let native = envelope_error("timeout", "GUI request timed out");
+                                if common { common_response(&body, native) } else { native }
+                            }),
+                        None => {
+                            let native = envelope_error("timeout", "GUI request timed out");
+                            if common { common_response(&body, native) } else { native }
+                        },
                     },
                 }
             }

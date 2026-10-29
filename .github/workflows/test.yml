@@ -49,6 +49,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --all-groups --frozen
 
+      - name: Common GUI control SDK (device-free)
+        run: uv run python -m unittest discover -s bindings/control -p "test_*.py" -v
       - name: Run lint
         run: uv run ruff check .
 

@@ -28,9 +28,9 @@ Choose a named controller on the left and channels in the vertical list on the r
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` when upgrading from firmware older than v0.6.0. v0.6.1 only changes the desktop GUI; a Pico already running v0.6.0 needs no update. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
+**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` when upgrading from firmware older than v0.6.0. v0.6.2 only changes the desktop GUI; a Pico already running v0.6.0 needs no update. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
 
-**v0.6.0より前のPicoには更新が必要です。** v0.6.0導入済みなら、v0.6.1でPicoを再更新する必要はありません。 `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
+**v0.6.0より前のPicoには更新が必要です。** v0.6.0導入済みなら、v0.6.2でPicoを再更新する必要はありません。 `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
 
 <details>
 <summary>Vertical layout / 縦並び</summary>
@@ -58,8 +58,8 @@ Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/k
 
 | Platform / OS | Download / ファイル |
 | --- | --- |
-| Windows 10/11 (x64) | `kohdalab-shutter-0.6.0-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
-| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.6.0-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+| Windows 10/11 (x64) | `kohdalab-shutter-0.6.2-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.6.2-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
 
 The first release is not publisher-signed or Apple-notarized; see the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware upload still requires separate MicroPython tools.
 
@@ -67,9 +67,9 @@ The first release is not publisher-signed or Apple-notarized; see the [installat
 
 ## Code signing / 署名・公証
 
-The published v0.6.0 files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
+The published v0.6.2 desktop files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
 
-公開中のv0.6.0の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
+公開中のv0.6.2デスクトップ版の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
 
 ## Automatic settings / 設定の自動保存
 
@@ -150,3 +150,7 @@ Tests do not move a shutter or connect hardware. See [Contributing](CONTRIBUTING
 ## License / ライセンス
 
 MIT. See [LICENSE](LICENSE).
+
+## Common GUI control / 共通GUI制御
+
+[Control Protocol 1 and Python/Notebook examples / 共通APIとPython・Notebook](docs/reference/common-control-api.md). The existing application API remains supported; operation payloads and safety policy are app-specific. Camera is read-only. / 既存APIは維持し、操作引数と安全方針は各アプリに従います。Cameraは読み取り専用です。

@@ -248,6 +248,11 @@ def package(platform, binaries, output, metadata):
         if not source.is_file() or not source.stat().st_size:
             raise FileNotFoundError(f"Missing native binary: {source}")
     write_readme(stage, platform)
+    shutil.copytree(
+        ROOT / "bindings" / "control",
+        stage / "bindings" / "control",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
     if platform == "windows-x64":
         for binary in BINARIES:
             shutil.copy2(binaries / (binary + suffix), stage)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — 2026-10-29
+
+- Add the authenticated local Control Protocol 1 adapter and shared Python SDK. Camera exposes read-only status/configuration; other apps retain their native ownership and safety policies.
+- Align common discovery, receipts, structured errors, PR templates and release categories. Existing measurement data and native clients remain supported.
+- GUI共通API・独立したPython SDK・PR/Releaseの記載項目を統一。既存測定とデータ形式を維持します。
+
 ## 0.6.1 — 2026-10-29
 
 - Simplified each shutter to a CH number, Enter-to-apply name box and clickable light-window Toggle. Unconfirmed text is discarded on Escape or clicking elsewhere.
