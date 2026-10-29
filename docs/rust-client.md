@@ -30,8 +30,8 @@ cargo build --release --locked --no-default-features --bin kohdalab-shutter
 CH ↑ は昇順（CH00から）、CH ↓ は降順（最大のCH番号から）です。
 表示だけを入れ替え、CH番号・配線の対応・サーボ状態は変更しません。
 起動時は `--order ascending` / `--order descending` でも指定できます。
-黒ベースの画面で、光の経路と遮光板の模式図を表示します。Openは光が通る図、Closeは遮られる図です。図の下のOpen／Closeで操作します。図と状態は指令・校正情報に基づき、光の透過を実測したものではありません。
-中央のPUSHはToggle、下部のOpen／Closeは明示的な開閉指令です。
+kohdalab-trkrと共通の黒・グレーの配色、枠線、青い選択ボタンを使用します。上部にはアプリ名とバージョンを表示します。
+丸い窓はOpenで扉が開いて光が見え、Closeで扉が閉じて光が隠れます。Movingは矢印、Unknownは「?」で表示します。図の下のOpen／Closeで操作し、一括操作は左パネルのAll channelsにまとめています。図と状態は指令・校正情報に基づき、光の透過を実測したものではありません。
 右パネルはなく、接続情報・外部API・履歴は左パネルに集約しています。
 
 Open／CloseはPicoの `CHANNELS` の校正値と、移動待ち・駆動・整定中の情報から判定します。
