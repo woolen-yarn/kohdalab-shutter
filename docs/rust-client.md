@@ -4,6 +4,10 @@ The desktop GUI and CLI use Rust; the Pico W remains on MicroPython. Existing se
 
 PC側GUI・CLIはRustを使い、Pico WはMicroPythonのままです。既存のサーボ配線とTCPコマンドは維持します。`client/`のPythonクライアントは互換用に残します。
 
+## Download the desktop app / PCアプリの取得
+
+[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)にWindows向けZIPとMac向けUniversalアプリ（DMG／ZIP）を用意しています。GUIの利用にRust・Pythonは不要です。[導入と初回起動](install.md)を参照してください。
+
 ## Build the desktop app / PCアプリのビルド
 
 [Rust公式インストーラー](https://www.rust-lang.org/tools/install)でstableを用意します。

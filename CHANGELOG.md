@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-10-29
+
+- Added downloadable Windows x64 ZIP and macOS Universal app/DMG packages, including dependency/font licenses, build origins and SHA-256 checksums.
+- Added tag-driven GitHub Releases publication after platform/package validation, with native Apple Silicon and Intel smoke checks.
 
 - Added numeric ascending/descending display order, CLI `--order`, and GUI API `set_order`; hardware channel identities stay fixed.
 - Added front-facing light-window graphics: sliding leaves reveal light for Open and cover it for Close, with distinct Moving / Unknown states.
