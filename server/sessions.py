@@ -93,7 +93,9 @@ class DeviceLabel:
                 # MicroPython's ujson consistently exposes dumps/loads, while
                 # dump is not available in every firmware build.
                 stream.write(json.dumps(config))
-            self.os.rename(temporary, self.path)
+            # Pico/MicroPython exposes rename; Windows CPython needs replace
+            # for an atomic overwrite of an existing file.
+            getattr(self.os, "replace", self.os.rename)(temporary, self.path)
         except Exception as error:
             try:
                 self.os.remove(temporary)
