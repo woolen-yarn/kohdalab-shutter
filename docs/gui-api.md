@@ -6,9 +6,9 @@ Pico接続はRust GUIが所有します。手動操作と外部APIは同じ制�
 
 ## Enable and attach / 有効化と接続
 
-Enable **Local control API** under **Settings** in the picker or **···** in the controls, or launch with `--gui-api`. Add `--demo` to use an isolated simulation. `--api-directory DIR` overrides the endpoint descriptor directory, and explicit startup errors terminate the launch rather than silently disabling the requested API.
+Enable **Local control API** under **Settings** in the picker or **··· → Settings** in the controls, or launch with `--gui-api`. Add `--demo` to use an isolated simulation. `--api-directory DIR` overrides the endpoint descriptor directory, and explicit startup errors terminate the launch rather than silently disabling the requested API.
 
-接続画面のSettingsまたは操作画面の「···」で有効にするか、`--gui-api` を指定します。`--demo` を併用すると実機へ通信しません。接続情報の保存先は `--api-directory DIR` で変更できます。
+接続画面のSettingsまたは操作画面の「··· → Settings」で有効にするか、`--gui-api` を指定します。`--demo` を併用すると実機へ通信しません。接続情報の保存先は `--api-directory DIR` で変更できます。
 
 ```sh
 cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --gui-api
@@ -96,3 +96,5 @@ Display order changes are session preferences. `set_order` never renumbers chann
 Hardware `connect` requires an explicit nonempty `channels` array, e.g. `connect(host="192.168.1.42", channels=[0, 2])`. The GUI atomically acquires those channels on the Pico; another GUI can acquire disjoint channels. A busy/expired Pico lease fails the connection/action. `status().channels` and All actions are scoped to the acquired channels. Discovery results include shared `label` and channel availability; `status` includes `device_label` and `selected_channels`. The ten-second local API lease is separate from the fifteen-second Pico lease, which the GUI renews while connected. Releasing Python control returns manual control to this GUI; `disconnect()` releases the Pico channels.
 
 実機の`connect`には使用CHを明示します。PicoがCH単位で操作権を管理し、別GUIは空きCHを利用できます。状態表示・一括開閉も取得CHに限定します。Python側の`release()`はGUI内の操作権を返し、`disconnect()`がPicoのCHを解放します。
+
+Shared names appear as `status().device_label` and each `status().channels[CH].label`. These are confirmed Pico values. All API actions remain available for automation and are scoped to acquired CHs; the GUI omits All buttons. Local API opt-in auto-restores on restart with newly generated credentials. Descriptor files remain under `.kohdalab/control`, separate from `.kohdalab/shutter/config.json`.

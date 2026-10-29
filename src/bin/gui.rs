@@ -70,21 +70,34 @@ struct Args {
     gui_api: bool,
     #[arg(long, requires = "gui_api")]
     api_directory: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "horizontal")]
-    layout: Layout,
+    /// Override the local preferences file (demo otherwise remains isolated)
+    #[arg(long)]
+    preferences: Option<PathBuf>,
+    /// Capture Settings in the isolated demo
+    #[arg(long, requires = "demo")]
+    settings: bool,
+    #[arg(long, value_enum)]
+    layout: Option<Layout>,
     /// Display order only; physical channel identifiers never change
-    #[arg(long, value_enum, default_value = "ascending")]
-    order: Order,
+    #[arg(long, value_enum)]
+    order: Option<Order>,
 }
 
 enum Reply {
     Devices(Vec<Device>, BTreeMap<String, ControllerInfo>),
     Info(ControllerInfo),
     Connected(Client, Snapshot, ControllerInfo),
-    Released(ControllerInfo),
-    Status(Snapshot),
+    Released(ControllerInfo, Option<String>),
+    Refreshed(Snapshot, ControllerInfo),
+    Config(Result<ControllerInfo, String>),
     Accepted(String),
 }
+#[derive(Clone, Default)]
+struct LabelPatch {
+    device: Option<String>,
+    channels: BTreeMap<u8, String>,
+}
+
 struct App {
     host: String,
     port: u16,
@@ -93,6 +106,21 @@ struct App {
     device_info: BTreeMap<String, ControllerInfo>,
     info: Option<ControllerInfo>,
     device_label: String,
+    channel_labels: BTreeMap<u8, String>,
+    dirty_device: bool,
+    draft_device: Option<String>,
+    dirty_channels: BTreeSet<u8>,
+    config_due: Option<Instant>,
+    config_pending: Option<LabelPatch>,
+    pending_release: bool,
+    config_error: String,
+    settings_open: bool,
+    preferences_path: Option<PathBuf>,
+    preferences_saved: kohdalab_shutter::preferences::Preferences,
+    preferences_candidate: kohdalab_shutter::preferences::Preferences,
+    preferences_due: Option<Instant>,
+    preferences_error: String,
+    preferences_blocked: bool,
     selected: BTreeSet<u8>,
     last_size: Option<Vec2>,
     client: Option<Client>,
@@ -116,6 +144,9 @@ struct App {
     order: Order,
     control: Control,
     api: Option<remote::Server>,
+    api_enabled: bool,
+    api_error: String,
+    api_directory: Option<PathBuf>,
     pending_api_job: Option<String>,
 }
 
@@ -129,6 +160,21 @@ impl Default for App {
             device_info: BTreeMap::new(),
             info: None,
             device_label: String::new(),
+            channel_labels: BTreeMap::new(),
+            dirty_device: false,
+            draft_device: None,
+            dirty_channels: BTreeSet::new(),
+            config_due: None,
+            config_pending: None,
+            pending_release: false,
+            config_error: String::new(),
+            settings_open: false,
+            preferences_path: None,
+            preferences_saved: Default::default(),
+            preferences_candidate: Default::default(),
+            preferences_due: None,
+            preferences_error: String::new(),
+            preferences_blocked: false,
             selected: BTreeSet::new(),
             last_size: None,
             client: None,
@@ -152,6 +198,9 @@ impl Default for App {
             order: Order::Ascending,
             control: Control::default(),
             api: None,
+            api_directory: None,
+            api_enabled: false,
+            api_error: String::new(),
             pending_api_job: None,
         }
     }
@@ -172,6 +221,14 @@ impl App {
         }
         app.info = app.device_info.get(&app.devices[0].id).cloned();
         app.device_label = app.info.as_ref().unwrap().label.clone();
+        app.channel_labels = app
+            .info
+            .as_ref()
+            .unwrap()
+            .channels
+            .iter()
+            .map(|ch| (ch.id, ch.label.clone()))
+            .collect();
         app.selected = (0..4).collect();
         app.connect();
         app.log
@@ -273,12 +330,23 @@ impl App {
     fn select_device(&mut self, device: &Device) {
         self.host = device.address.ip().to_string();
         self.port = device.address.port();
+        self.persist_preferences(true);
         self.selected.clear();
+        self.dirty_device = false;
+        self.draft_device = None;
+        self.dirty_channels.clear();
+        self.config_due = None;
+        self.channel_labels.clear();
+        self.config_error.clear();
         self.info = self.device_info.get(&device.id).cloned();
         self.device_label = self
             .info
             .as_ref()
             .map_or(String::new(), |info| info.label.clone());
+        if let Some(info) = self.info.clone() {
+            self.restore_channels(&info);
+            self.update_info(info);
+        }
         self.error = false;
         self.message.clear();
         if !self.demo {
@@ -292,25 +360,148 @@ impl App {
         }
     }
 
-    fn save_label(&mut self) {
-        if self.demo {
-            if let Some(info) = &mut self.info {
-                info.label = self.device_label.trim().to_owned();
-                self.device_info
-                    .insert(info.device_id.clone(), info.clone());
+    fn update_info(&mut self, info: ControllerInfo) {
+        if self
+            .draft_device
+            .as_ref()
+            .is_some_and(|id| id != &info.device_id)
+        {
+            self.dirty_device = false;
+            self.dirty_channels.clear();
+            self.config_due = None;
+            self.draft_device = None;
+            self.config_error =
+                "Unsaved names belonged to a different Pico and were not applied.".into();
+        }
+        if !self.dirty_device {
+            self.device_label = info.label.clone();
+        }
+        for channel in &info.channels {
+            if !self.dirty_channels.contains(&channel.id) {
+                self.channel_labels
+                    .insert(channel.id, channel.label.clone());
             }
+        }
+        self.device_info
+            .insert(info.device_id.clone(), info.clone());
+        self.info = Some(info);
+    }
+
+    fn channel_label(&self, channel: u8) -> String {
+        self.channel_labels
+            .get(&channel)
+            .filter(|label| !label.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("CH{channel:02}"))
+    }
+
+    fn changed_label(&mut self) {
+        self.draft_device = self.info.as_ref().map(|info| info.device_id.clone());
+        self.config_due = Some(Instant::now() + Duration::from_millis(700));
+        self.config_error.clear();
+    }
+
+    fn label_patch(&self) -> Result<LabelPatch, String> {
+        if self
+            .draft_device
+            .as_ref()
+            .is_some_and(|id| self.info.as_ref().is_none_or(|info| &info.device_id != id))
+        {
+            return Err("Names belong to a different Pico.".into());
+        }
+        let mut patch = LabelPatch::default();
+        if self.dirty_device {
+            patch.device = Some(self.device_label.trim().to_owned());
+        }
+        for ch in &self.dirty_channels {
+            patch.channels.insert(
+                *ch,
+                self.channel_labels
+                    .get(ch)
+                    .map_or("", String::as_str)
+                    .trim()
+                    .to_owned(),
+            );
+        }
+        for label in patch.device.iter().chain(patch.channels.values()) {
+            if label.is_empty()
+                || label.chars().count() > 32
+                || label.len() > 96
+                || label
+                    .chars()
+                    .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
+            {
+                return Err("Name is empty or too long.".into());
+            }
+        }
+        Ok(patch)
+    }
+
+    fn acknowledge_config(&mut self, patch: &LabelPatch, info: ControllerInfo) {
+        if patch
+            .device
+            .as_ref()
+            .is_some_and(|label| self.device_label.trim() == label)
+        {
+            self.dirty_device = false;
+        }
+        for (ch, label) in &patch.channels {
+            if self
+                .channel_labels
+                .get(ch)
+                .is_some_and(|value| value.trim() == label)
+            {
+                self.dirty_channels.remove(ch);
+            }
+        }
+        self.update_info(info);
+        if !self.dirty_device && self.dirty_channels.is_empty() {
+            self.draft_device = None;
+        }
+        self.config_error.clear();
+    }
+
+    fn autosave_labels(&mut self) {
+        if !self.connected()
+            || self.control.owned()
+            || self.pending.is_some()
+            || self.config_due.is_none_or(|due| Instant::now() < due)
+        {
             return;
         }
-        let label = self.device_label.trim().to_owned();
-        match self.endpoint() {
-            Ok(client) => self.task(move || {
-                client.set_label(&label)?;
-                client.info().map(Reply::Info)
-            }),
+        self.config_due = None;
+        let patch = match self.label_patch() {
+            Ok(patch) => patch,
             Err(error) => {
-                self.error = true;
-                self.message = error.to_string();
+                self.config_error = error;
+                return;
             }
+        };
+        if patch.device.is_none() && patch.channels.is_empty() {
+            return;
+        }
+        if self.demo {
+            if let Some(mut info) = self.info.clone() {
+                if let Some(label) = &patch.device {
+                    info.label = label.clone();
+                }
+                for ch in &mut info.channels {
+                    if let Some(label) = patch.channels.get(&ch.id) {
+                        ch.label = label.clone();
+                    }
+                }
+                self.acknowledge_config(&patch, info);
+            }
+        } else if let Some(client) = self.client.clone() {
+            self.config_pending = Some(patch.clone());
+            self.task(move || {
+                Ok(Reply::Config(
+                    client
+                        .set_config(patch.device.as_deref(), &patch.channels)
+                        .and_then(|()| client.info())
+                        .map_err(|error| format!("Names were not saved: {error}")),
+                ))
+            });
         }
     }
 
@@ -390,16 +581,33 @@ impl App {
     }
 
     fn disconnect(&mut self) {
+        self.persist_preferences(true);
+        if self.demo {
+            self.config_due = Some(Instant::now());
+            self.autosave_labels();
+        }
+        let patch = self.label_patch();
         let client = self.client.take();
+        self.settings_open = false;
         self.demo_connected = false;
         self.status.clear();
         self.state = Snapshot::default();
         self.last_update = None;
         self.message.clear();
         if let Some(client) = client {
+            self.pending_release = true;
             self.task(move || {
+                let save_error = match patch {
+                    Ok(patch) if patch.device.is_some() || !patch.channels.is_empty() => client
+                        .set_config(patch.device.as_deref(), &patch.channels)
+                        .err()
+                        .map(|error| format!("Names were not saved: {error}")),
+                    Err(error) => Some(error),
+                    _ => None,
+                };
+                // Always release channels even when storage is unavailable.
                 client.release()?;
-                client.info().map(Reply::Released)
+                client.info().map(|info| Reply::Released(info, save_error))
             });
         }
     }
@@ -418,7 +626,9 @@ impl App {
         } else if let Some(client) = self.client.clone() {
             self.task(move || {
                 client.renew()?;
-                client.snapshot().map(Reply::Status)
+                let state = client.snapshot()?;
+                let info = client.info()?;
+                Ok(Reply::Refreshed(state, info))
             });
         }
     }
@@ -513,6 +723,22 @@ impl App {
                 };
                 self.record(format!("Discovery complete: {} device(s)", devices.len()));
                 self.devices = devices;
+                if self.info.is_none()
+                    && let Some(device) = self
+                        .devices
+                        .iter()
+                        .find(|device| {
+                            self.preferences_candidate.last_device.as_deref()
+                                == Some(device.id.as_str())
+                        })
+                        .cloned()
+                {
+                    self.host = device.address.ip().to_string();
+                    self.port = device.address.port();
+                    if let Some(info) = self.device_info.get(&device.id).cloned() {
+                        self.restore_channels(&info);
+                    }
+                }
                 if let Some(info) = self
                     .devices
                     .iter()
@@ -532,28 +758,46 @@ impl App {
                     self.info = Some(info);
                 }
             }
-            Ok(Reply::Info(info) | Reply::Released(info)) => {
+            Ok(Reply::Info(info)) => {
+                if self.info.is_none() {
+                    self.restore_channels(&info);
+                }
                 self.selected.retain(|ch| {
                     info.channels
                         .iter()
                         .any(|entry| entry.id == *ch && !entry.locked)
                 });
-                self.device_label = info.label.clone();
-                self.device_info
-                    .insert(info.device_id.clone(), info.clone());
-                self.info = Some(info);
+                self.update_info(info);
                 self.message.clear();
             }
             Ok(Reply::Connected(client, snapshot, info)) => {
-                self.device_label = info.label.clone();
-                self.info = Some(info);
+                self.update_info(info);
                 self.client = Some(client);
                 self.apply_snapshot(snapshot);
                 self.message.clear();
             }
-            Ok(Reply::Status(status)) => {
+            Ok(Reply::Released(info, error)) => {
+                self.pending_release = false;
+                if let Some(error) = error {
+                    self.config_error = error;
+                } else {
+                    self.dirty_device = false;
+                    self.dirty_channels.clear();
+                    self.config_due = None;
+                }
+                self.update_info(info);
+            }
+            Ok(Reply::Refreshed(status, info)) => {
                 self.apply_snapshot(status);
+                self.update_info(info);
                 self.message.clear();
+            }
+            Ok(Reply::Config(result)) => {
+                let patch = self.config_pending.take().unwrap_or_default();
+                match result {
+                    Ok(info) => self.acknowledge_config(&patch, info),
+                    Err(error) => self.config_error = error,
+                }
             }
             Ok(Reply::Accepted(description)) => {
                 self.record(description.clone());
@@ -561,6 +805,7 @@ impl App {
                 self.next_refresh = Instant::now();
             }
             Err(error) => {
+                self.pending_release = false;
                 self.record(format!("ERROR: {error}"));
                 self.error = true;
                 self.message = error;
@@ -608,12 +853,18 @@ impl App {
             .map(|(&channel, state)| {
                 let mut value = serde_json::to_value(state).expect("channel state is serializable");
                 value["state"] = json!(state.name());
+                value["label"] = json!(
+                    self.info
+                        .as_ref()
+                        .and_then(|info| info.channels.iter().find(|entry| entry.id == channel))
+                        .map(|entry| entry.label.as_str())
+                );
                 (channel.to_string(), value)
             })
             .collect();
         json!({"connected":self.connected() && self.last_update.is_some(),"demo":self.demo,
             "layout":self.layout,"order":self.order,"display_order":self.ordered_channels(),"host":self.host,"port":self.port,"busy":self.pending.is_some(),
-            "owner":self.control.label(),"device_label":self.device_label,"selected_channels":self.selected,"channels":channels,"devices":self.devices_json(),
+            "owner":self.control.label(),"device_label":self.info.as_ref().map(|info|info.label.as_str()),"selected_channels":self.selected,"channels":channels,"devices":self.devices_json(),
             "message":self.message,"last_command":self.last_command,
             "state_semantics":"commanded_not_sensor_verified"})
     }
@@ -932,25 +1183,6 @@ impl App {
         ui.add_space(12.0);
         if let Some(info) = self.info.clone() {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Label").small().color(MUTED));
-                ui.add_enabled(
-                    manual && !info.channels.iter().any(|ch| ch.locked),
-                    egui::TextEdit::singleline(&mut self.device_label)
-                        .desired_width(260.0)
-                        .char_limit(32),
-                );
-                let valid = !self.device_label.trim().is_empty()
-                    && self.device_label.trim() != info.label
-                    && !info.channels.iter().any(|ch| ch.locked);
-                if ui
-                    .add_enabled(manual && valid, egui::Button::new("Save"))
-                    .clicked()
-                {
-                    self.save_label();
-                }
-            });
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
                 ui.label(RichText::new("Channels").small().color(MUTED));
                 if ui
                     .add_enabled(manual, egui::Button::new("Refresh").small())
@@ -1002,6 +1234,12 @@ impl App {
         if self.pending.is_some() {
             egui::Spinner::new().paint_at(ui, rect);
         }
+        if !self.config_error.is_empty() {
+            ui.label(RichText::new(&self.config_error).small().color(ORANGE));
+        }
+        if !self.preferences_error.is_empty() {
+            ui.label(RichText::new(&self.preferences_error).small().color(ORANGE));
+        }
         if !self.message.is_empty() && (self.error || self.pending.is_some()) {
             ui.label(RichText::new(&self.message).small().color(if self.error {
                 RED
@@ -1021,6 +1259,11 @@ impl App {
                         .add(egui::DragValue::new(&mut self.port).range(1..=65535))
                         .changed();
                     if host_changed || port_changed {
+                        self.dirty_device = false;
+                        self.dirty_channels.clear();
+                        self.channel_labels.clear();
+                        self.draft_device = None;
+                        self.config_due = None;
                         self.info = None;
                         self.selected.clear();
                         self.device_label.clear();
@@ -1047,7 +1290,7 @@ impl App {
     }
 
     fn automation_settings(&mut self, ui: &mut egui::Ui) {
-        let mut enabled = self.api.is_some();
+        let mut enabled = self.api_enabled;
         if ui
             .add_enabled(
                 !self.control.owned() && self.pending_api_job.is_none(),
@@ -1055,18 +1298,22 @@ impl App {
             )
             .changed()
         {
+            self.api_enabled = enabled;
+            self.api_error.clear();
             if enabled {
-                match remote::Server::start(None) {
+                match remote::Server::start(self.api_directory.clone()) {
                     Ok(server) => self.api = Some(server),
                     Err(error) => {
-                        self.error = true;
-                        self.message = error;
+                        self.api_error = format!("Local API could not start: {error}");
                     }
                 }
             } else {
                 self.api = None;
                 self.control.revoke();
             }
+        }
+        if !self.api_error.is_empty() {
+            ui.label(RichText::new(&self.api_error).small().color(ORANGE));
         }
         if let Some(label) = self.control.label() {
             ui.label(format!("Controlled by {label}"));
@@ -1077,6 +1324,221 @@ impl App {
                 self.control.revoke();
             }
         }
+    }
+
+    fn init_preferences(&mut self, path: Option<PathBuf>) {
+        self.preferences_path = path;
+        let Some(path) = &self.preferences_path else {
+            return;
+        };
+        match kohdalab_shutter::preferences::Preferences::load(path) {
+            Ok(preferences) => {
+                self.layout = if preferences.layout == "vertical" {
+                    Layout::Vertical
+                } else {
+                    Layout::Horizontal
+                };
+                self.order = if preferences.order == "descending" {
+                    Order::Descending
+                } else {
+                    Order::Ascending
+                };
+                self.broadcast = preferences.broadcast.clone();
+                self.host = preferences.manual_host.clone();
+                self.port = preferences.manual_port;
+                self.api_enabled |= preferences.local_control_api;
+                if self.api_enabled && self.api.is_none() {
+                    match remote::Server::start(self.api_directory.clone()) {
+                        Ok(server) => self.api = Some(server),
+                        Err(error) => {
+                            self.api_error = format!("Local API could not start: {error}")
+                        }
+                    }
+                }
+                self.preferences_saved = preferences.clone();
+                self.preferences_candidate = preferences;
+            }
+            Err(error) => {
+                self.preferences_blocked = true;
+                self.preferences_error = format!("Settings could not be loaded: {error}");
+            }
+        }
+    }
+
+    fn current_preferences(&self) -> kohdalab_shutter::preferences::Preferences {
+        let mut value = self.preferences_candidate.clone();
+        value.layout = if self.layout == Layout::Vertical {
+            "vertical"
+        } else {
+            "horizontal"
+        }
+        .into();
+        value.order = if self.order == Order::Descending {
+            "descending"
+        } else {
+            "ascending"
+        }
+        .into();
+        value.local_control_api = self.api_enabled;
+        value.broadcast = self.broadcast.clone();
+        value.manual_host = self.host.clone();
+        value.manual_port = self.port;
+        if let Some(info) = &self.info {
+            value.last_device = Some(info.device_id.clone());
+            let device = value.devices.entry(info.device_id.clone()).or_default();
+            device.selected_channels = self.selected.iter().copied().collect();
+            // Cache only committed Pico labels, never an unacknowledged edit.
+            device.label = info.label.clone();
+            device.channel_labels = info
+                .channels
+                .iter()
+                .map(|ch| (ch.id, ch.label.clone()))
+                .collect();
+        }
+        value
+    }
+
+    fn persist_preferences(&mut self, force: bool) {
+        if self.preferences_path.is_none() || self.preferences_blocked {
+            return;
+        }
+        let value = self.current_preferences();
+        if value != self.preferences_candidate {
+            self.preferences_candidate = value;
+            self.preferences_due = Some(Instant::now() + Duration::from_millis(700));
+        }
+        if self.preferences_candidate == self.preferences_saved {
+            self.preferences_due = None;
+            return;
+        }
+        if !force && self.preferences_due.is_none_or(|due| Instant::now() < due) {
+            return;
+        }
+        self.preferences_due = None;
+        match self
+            .preferences_candidate
+            .save(self.preferences_path.as_ref().unwrap())
+        {
+            Ok(()) => {
+                self.preferences_saved = self.preferences_candidate.clone();
+                self.preferences_error.clear();
+            }
+            Err(error) => {
+                self.preferences_error = format!("PC settings were not saved: {error}");
+            }
+        }
+    }
+
+    fn restore_channels(&mut self, info: &ControllerInfo) {
+        if let Some(device) = self.preferences_candidate.devices.get(&info.device_id) {
+            self.selected = device
+                .selected_channels
+                .iter()
+                .filter(|ch| {
+                    info.channels
+                        .iter()
+                        .any(|entry| entry.id == **ch && !entry.locked)
+                })
+                .copied()
+                .collect();
+        }
+    }
+
+    fn settings_panel(&mut self, ctx: &egui::Context) {
+        if !self.settings_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Settings")
+            .open(&mut open)
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(390.0)
+            .show(ctx, |ui| {
+                ui.add_enabled_ui(!self.control.owned(), |ui| {
+                    ui.label(RichText::new("Names").small().color(MUTED));
+                    ui.horizontal(|ui| {
+                        ui.label("Pico");
+                        if ui
+                            .add(
+                                egui::TextEdit::singleline(&mut self.device_label)
+                                    .char_limit(32)
+                                    .desired_width(300.0),
+                            )
+                            .changed()
+                        {
+                            self.dirty_device = true;
+                            self.changed_label();
+                        }
+                    });
+                    let channels = self.ordered_channels();
+                    for channel in channels {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("CH{channel:02}")).color(MUTED));
+                            let value = self
+                                .channel_labels
+                                .entry(channel)
+                                .or_insert_with(|| format!("CH{channel:02}"));
+                            if ui
+                                .add(
+                                    egui::TextEdit::singleline(value)
+                                        .char_limit(32)
+                                        .desired_width(300.0),
+                                )
+                                .changed()
+                            {
+                                self.dirty_channels.insert(channel);
+                                self.changed_label();
+                            }
+                        });
+                    }
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.label("Layout");
+                        ui.selectable_value(&mut self.layout, Layout::Horizontal, "Horizontal");
+                        ui.selectable_value(&mut self.layout, Layout::Vertical, "Vertical");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Order");
+                        ui.selectable_value(&mut self.order, Order::Ascending, "CH ↑");
+                        ui.selectable_value(&mut self.order, Order::Descending, "CH ↓");
+                    });
+                });
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(6.0);
+                self.automation_settings(ui);
+                ui.add_space(10.0);
+                if !self.config_error.is_empty() {
+                    ui.label(RichText::new(&self.config_error).small().color(ORANGE));
+                    if ui.button("Retry").clicked() {
+                        self.changed_label();
+                    }
+                }
+                if !self.preferences_error.is_empty() {
+                    ui.label(RichText::new(&self.preferences_error).small().color(ORANGE));
+                    if !self.preferences_blocked && ui.button("Retry PC save").clicked() {
+                        self.persist_preferences(true);
+                    }
+                }
+                if self.config_error.is_empty() && self.preferences_error.is_empty() {
+                    let pending = self.dirty_device
+                        || !self.dirty_channels.is_empty()
+                        || self.config_pending.is_some()
+                        || self.preferences_due.is_some()
+                        || (self.preferences_path.is_some()
+                            && self.current_preferences() != self.preferences_saved);
+                    ui.label(
+                        RichText::new(if pending { "Saving…" } else { "Saved" })
+                            .small()
+                            .color(MUTED),
+                    );
+                }
+            });
+        self.settings_open = open;
     }
 
     fn channels_panel(&mut self, ui: &mut egui::Ui) {
@@ -1102,10 +1564,16 @@ impl App {
                             card_frame().inner_margin(12).show(ui, |ui| {
                                 ui.vertical(|ui| {
                                     ui.set_width(140.0);
+                                    let label = self.channel_label(*channel);
+                                    ui.add(
+                                        egui::Label::new(RichText::new(&label).strong().size(13.0))
+                                            .truncate(),
+                                    )
+                                    .on_hover_text(&label);
                                     ui.label(
                                         RichText::new(format!("CH{channel:02}"))
-                                            .strong()
-                                            .size(13.0),
+                                            .size(10.0)
+                                            .color(MUTED),
                                     );
                                     ui.add_space(5.0);
                                     ui.vertical_centered(|ui| {
@@ -1134,7 +1602,19 @@ impl App {
                         card_frame().inner_margin(10).show(ui, |ui| {
                             ui.set_min_width(ui.available_width().max(370.0));
                             ui.horizontal(|ui| {
-                                ui.label(RichText::new(format!("CH{channel:02}")).strong());
+                                ui.vertical(|ui| {
+                                    ui.set_width(90.0);
+                                    let label = self.channel_label(*channel);
+                                    ui.add(
+                                        egui::Label::new(RichText::new(&label).strong()).truncate(),
+                                    )
+                                    .on_hover_text(&label);
+                                    ui.label(
+                                        RichText::new(format!("CH{channel:02}"))
+                                            .size(10.0)
+                                            .color(MUTED),
+                                    );
+                                });
                                 shutter_window(ui, name, 0.4);
                                 ui.label(RichText::new(name).color(state_color(name)));
                                 ui.with_layout(
@@ -1159,19 +1639,6 @@ impl App {
                     ui.add_space(6.0);
                 }
             }
-            if channels.len() > 1 {
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    for (label, operation) in [
-                        ("Open all", Operation::Open),
-                        ("Close all", Operation::Close),
-                    ] {
-                        if ui.add_enabled(manual, egui::Button::new(label)).clicked() {
-                            self.operate(operation, channels.clone());
-                        }
-                    }
-                });
-            }
         });
         if let Some((operation, channel)) = action {
             self.operate(operation, vec![channel]);
@@ -1179,17 +1646,17 @@ impl App {
     }
 
     fn desired_size(&self) -> Vec2 {
+        if self.settings_open {
+            return Vec2::new(560.0, 560.0);
+        }
         if !self.connected() {
-            return Vec2::new(540.0, 520.0);
+            return Vec2::new(540.0, 450.0);
         }
         let count = self.status.len().max(1) as f32;
         if self.layout == Layout::Horizontal {
-            Vec2::new(
-                (count * 176.0 + 18.0).clamp(300.0, 1160.0),
-                if count > 1.0 { 380.0 } else { 330.0 },
-            )
+            Vec2::new((count * 176.0 + 18.0).clamp(300.0, 1160.0), 330.0)
         } else {
-            Vec2::new(450.0, (count * 86.0 + 98.0).min(820.0))
+            Vec2::new(490.0, (count * 86.0 + 98.0).min(820.0))
         }
     }
 
@@ -1233,25 +1700,9 @@ impl App {
                     }
                     if self.connected() {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.menu_button("···", |ui| {
-                                ui.add_enabled_ui(!self.control.owned(), |ui| {
-                                    ui.selectable_value(
-                                        &mut self.layout,
-                                        Layout::Horizontal,
-                                        "Horizontal",
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.layout,
-                                        Layout::Vertical,
-                                        "Vertical",
-                                    );
-                                    ui.separator();
-                                    ui.selectable_value(&mut self.order, Order::Ascending, "CH ↑");
-                                    ui.selectable_value(&mut self.order, Order::Descending, "CH ↓");
-                                });
-                                ui.separator();
-                                self.automation_settings(ui);
-                            });
+                            if ui.button("···").on_hover_text("Settings").clicked() {
+                                self.settings_open = true;
+                            }
                             if ui
                                 .add_enabled(
                                     self.pending.is_none() && !self.control.owned(),
@@ -1267,11 +1718,33 @@ impl App {
                 if self.connected() {
                     ui.horizontal(|ui| {
                         status_dot(ui, if self.error { RED } else { TEAL });
-                        ui.label(
-                            RichText::new(format!("{} · Connected", self.device_label))
-                                .size(11.0)
-                                .color(MUTED),
+                        let status = format!(
+                            "{} · Connected",
+                            self.info
+                                .as_ref()
+                                .map_or(self.device_label.as_str(), |info| info.label.as_str())
                         );
+                        let reserve = 24.0
+                            + if self.control.owned() { 28.0 } else { 0.0 }
+                            + if !self.config_error.is_empty() || !self.preferences_error.is_empty()
+                            {
+                                72.0
+                            } else {
+                                0.0
+                            };
+                        ui.add_sized(
+                            [(ui.available_width() - reserve).max(30.0), 14.0],
+                            egui::Label::new(RichText::new(&status).size(11.0).color(MUTED))
+                                .truncate(),
+                        )
+                        .on_hover_text(&status);
+                        if (!self.config_error.is_empty() || !self.preferences_error.is_empty())
+                            && ui
+                                .small_button(RichText::new("Unsaved").color(ORANGE))
+                                .clicked()
+                        {
+                            self.settings_open = true;
+                        }
                         if self.control.owned() {
                             ui.label(RichText::new("API").size(10.0).color(ORANGE));
                         }
@@ -1296,6 +1769,7 @@ impl App {
                     egui::ScrollArea::vertical().show(ui, |ui| self.connection_panel(ui));
                 }
             });
+        self.settings_panel(ctx);
     }
 
     fn capture(&mut self, ctx: &egui::Context) {
@@ -1338,6 +1812,31 @@ impl App {
 
 impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.config_pending.is_some() && self.pending.is_some() && Instant::now() < deadline {
+            self.receive();
+            if self.pending.is_some() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        if self.demo {
+            self.config_due = Some(Instant::now());
+            self.autosave_labels();
+        }
+        if let Some(client) = self.client.clone()
+            && self.config_pending.is_none()
+            && let Ok(patch) = self.label_patch()
+            && (patch.device.is_some() || !patch.channels.is_empty())
+        {
+            match client
+                .set_config(patch.device.as_deref(), &patch.channels)
+                .and_then(|()| client.info())
+            {
+                Ok(info) => self.acknowledge_config(&patch, info),
+                Err(error) => self.config_error = error.to_string(),
+            }
+        }
+        self.persist_preferences(true);
         if let Some(client) = self.client.take() {
             let _ = client.release();
         }
@@ -1350,6 +1849,8 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.receive();
         self.process_api();
+        self.autosave_labels();
+        self.persist_preferences(false);
         if self.connected() && self.pending.is_none() && Instant::now() >= self.next_refresh {
             self.refresh();
         }
@@ -1373,7 +1874,7 @@ fn demo_info(id: &str, index: usize) -> ControllerInfo {
         channels: (0..4)
             .map(|id| ChannelInfo {
                 id,
-                label: format!("CH{id:02}"),
+                label: ["Pump", "Probe", "Reference", "Gate"][id as usize].into(),
                 locked: index == 1 && id < 2,
             })
             .collect(),
@@ -1636,6 +2137,17 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 App::default()
             };
+            let preferences_path = args.preferences.clone().or_else(|| {
+                if args.demo {
+                    None
+                } else {
+                    kohdalab_shutter::preferences::default_path()
+                }
+            });
+            app.api = api;
+            app.api_enabled = app.api.is_some();
+            app.api_directory = args.api_directory.clone();
+            app.init_preferences(preferences_path);
             if args.demo && !args.channels.is_empty() {
                 if args.channels.iter().any(|ch| *ch > 3) {
                     return Err("Demo channels must be in 0..3".into());
@@ -1646,9 +2158,16 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             if args.picker {
                 app.disconnect();
             }
-            app.layout = args.layout;
-            app.order = args.order;
-            app.api = api;
+            if let Some(layout) = args.layout {
+                app.layout = layout;
+            }
+            if let Some(order) = args.order {
+                app.order = order;
+            }
+            app.settings_open = args.settings;
+            if !args.demo && !args.gui_api {
+                app.find();
+            }
             app.screenshot = args.screenshot;
             app.screenshot_success = flag;
             Ok(Box::new(app))
@@ -1827,6 +2346,150 @@ mod tests {
         assert_eq!(app.demo_status[&2], before[&2]);
     }
 
+    #[test]
+    fn names_autosave_and_preferences_restore_without_connecting() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut app = App::demo();
+        app.init_preferences(Some(path.clone()));
+        app.selected = [1, 2].into();
+        app.layout = Layout::Vertical;
+        app.order = Order::Descending;
+        app.device_label = "Bench A".into();
+        app.dirty_device = true;
+        app.channel_labels.insert(1, "Probe beam".into());
+        app.dirty_channels.insert(1);
+        app.config_due = Some(Instant::now());
+        app.autosave_labels();
+        app.persist_preferences(true);
+        assert_eq!(app.info.as_ref().unwrap().label, "Bench A");
+        assert_eq!(app.info.as_ref().unwrap().channels[1].label, "Probe beam");
+        let mut restored = App::default();
+        restored.init_preferences(Some(path));
+        assert!(restored.layout == Layout::Vertical && restored.order == Order::Descending);
+        assert!(!restored.connected());
+        let mut info = app.info.clone().unwrap();
+        info.channels[2].locked = true;
+        restored.restore_channels(&info);
+        restored.update_info(info);
+        assert_eq!(restored.selected, BTreeSet::from([1]));
+        assert_eq!(restored.channel_label(1), "Probe beam");
+    }
+
+    #[test]
+    fn old_save_acknowledgement_cannot_overwrite_newer_name_edit() {
+        let mut app = App::demo();
+        app.channel_labels.insert(1, "Newer name".into());
+        app.dirty_channels.insert(1);
+        let patch = LabelPatch {
+            device: None,
+            channels: BTreeMap::from([(1, "Earlier name".into())]),
+        };
+        let mut info = app.info.clone().unwrap();
+        info.channels[1].label = "Earlier name".into();
+        app.acknowledge_config(&patch, info);
+        assert_eq!(app.channel_label(1), "Newer name");
+        assert!(app.dirty_channels.contains(&1));
+        assert_eq!(
+            app.current_preferences()
+                .devices
+                .values()
+                .next()
+                .unwrap()
+                .channel_labels[&1],
+            "Earlier name"
+        );
+    }
+
+    #[test]
+    fn failed_name_save_does_not_disconnect_or_erase_unsaved_draft() {
+        let mut app = App::demo();
+        app.device_label = "Unsaved name".into();
+        app.dirty_device = true;
+        let positions = app.status.clone();
+        app.config_pending = Some(LabelPatch {
+            device: Some("Unsaved name".into()),
+            channels: BTreeMap::new(),
+        });
+        deliver(
+            &mut app,
+            Ok(Reply::Config(Err("Storage unavailable".into()))),
+        );
+        assert!(app.connected());
+        assert_eq!(app.status, positions);
+        assert!(app.dirty_device);
+        assert_eq!(app.device_label, "Unsaved name");
+        assert_eq!(app.config_error, "Storage unavailable");
+    }
+
+    #[test]
+    fn closing_flushes_names_and_pc_settings_before_debounce() {
+        use eframe::App as _;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut app = App::demo();
+        app.init_preferences(Some(path.clone()));
+        app.device_label = "Before close".into();
+        app.dirty_device = true;
+        app.changed_label();
+        app.on_exit(None);
+        let loaded = kohdalab_shutter::preferences::Preferences::load(&path).unwrap();
+        assert_eq!(
+            loaded.devices.values().next().unwrap().label,
+            "Before close"
+        );
+    }
+
+    #[test]
+    fn main_window_shows_names_and_has_no_all_controls() {
+        let mut app = App::demo();
+        let text = render_text(&mut app);
+        assert!(text.iter().any(|(label, _)| label == "Probe"));
+        assert!(text.iter().any(|(label, _)| label == "CH01"));
+        assert!(
+            !text
+                .iter()
+                .any(|(label, _)| label == "Open all" || label == "Close all")
+        );
+    }
+
+    #[test]
+    fn unsaved_names_cannot_cross_controller_identity() {
+        let mut app = App::demo();
+        app.device_label = "Only for A".into();
+        app.dirty_device = true;
+        app.changed_label();
+        app.channel_labels.insert(0, "Only A channel".into());
+        app.dirty_channels.insert(0);
+        let other = demo_info("bb", 0);
+        app.update_info(other);
+        assert!(!app.dirty_device && app.dirty_channels.is_empty());
+        assert_eq!(app.channel_label(0), "Pump");
+        assert_ne!(app.device_label, "Only for A");
+        assert!(app.config_due.is_none());
+        assert!(app.config_error.contains("different Pico"));
+    }
+
+    #[test]
+    fn api_opt_in_is_restored_with_fresh_ephemeral_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        let preferences = kohdalab_shutter::preferences::Preferences {
+            local_control_api: true,
+            ..Default::default()
+        };
+        preferences.save(&path).unwrap();
+        let mut app = App {
+            api_directory: Some(directory.path().join("api")),
+            ..Default::default()
+        };
+        app.init_preferences(Some(path.clone()));
+        assert!(app.api.is_some());
+        assert!(app.current_preferences().local_control_api);
+        let contents = std::fs::read_to_string(path).unwrap();
+        assert!(!contents.contains("token") && !contents.contains("lease"));
+    }
+
     fn render_text(app: &mut App) -> Vec<(String, egui::Pos2)> {
         fn collect(shape: &egui::epaint::Shape, text: &mut Vec<(String, egui::Pos2)>) {
             match shape {
@@ -1847,7 +2510,7 @@ mod tests {
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    Vec2::new(1320.0, 700.0),
+                    app.desired_size(),
                 )),
                 ..Default::default()
             },

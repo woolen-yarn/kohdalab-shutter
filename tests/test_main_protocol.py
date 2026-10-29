@@ -212,3 +212,32 @@ def test_incomplete_continuous_request_hits_deadline_without_acting():
     server.leds = type("Leds", (), {"tick": lambda self: None})()
     assert server._readline(SlowConnection(clock)) == ""
     assert clock.now >= 1000
+
+
+def test_complete_maximum_unicode_label_patch_exceeds_old_limit_but_is_accepted():
+    clock = Clock()
+    symbols = pico_symbols(clock)
+    server = object.__new__(symbols["WifiServer"])
+    server.servos = FakeServos()
+    server.leds = type("Leds", (), {"tick": lambda self: None})()
+    command = "SESSION " + json.dumps(
+        {
+            "op": "set_config",
+            "token": TOKEN,
+            "label": "測定" * 16,
+            "channel_labels": {str(ch): "😀" * 24 for ch in range(16)},
+        }
+    )
+    assert len(command.encode()) > 4096
+
+    class FullConnection:
+        def __init__(self):
+            self.data = iter((command + "\n").encode())
+
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, _size):
+            return bytes([next(self.data)])
+
+    assert server._readline(FullConnection()) == command

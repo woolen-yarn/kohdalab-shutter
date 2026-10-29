@@ -12,7 +12,7 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 - Select a labelled Pico W and the channels you need in a separate connection screen.
 - Locks selected channels on the Pico; other PCs can use the remaining channels.
-- Shows only your channels in a compact dark control window, with Open / Close and scoped All actions.
+- Shows only your channels in a compact dark control window, with named shutters and individual Open / Close actions.
 
 - 接続画面で名前付きのPico Wと使用CHを選びます。
 - Pico側で選択CHだけをロックし、残りのCHは他のPCから使用できます。
@@ -22,13 +22,13 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 ![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-The connection screen lists shared device labels, IDs/IPs and available channels. Labels are stored on the Pico and shared across PCs. After Connect, only the acquired channels appear. A small status line and version sit at the top; Disconnect releases the channels. The ··· menu contains layout, order and local API settings. The dark palette follows kohdalab-trkr and the picker-to-controls flow follows kohdalab-camera. Images use simulated hardware.
+The connection screen lists shared device labels, IDs/IPs and available channels. Labels are stored on the Pico and shared across PCs. After Connect, only the acquired channels appear, using their names as the primary labels and small CH numbers for identification. A small status line and version sit at the top; Disconnect releases the channels. The ··· button opens Settings for Pico/channel names, layout, order and local API. Names and settings save automatically; All buttons are omitted. The dark palette follows kohdalab-trkr and the picker-to-controls flow follows kohdalab-camera. Images use simulated hardware.
 
-接続画面で機器のラベルと空いているCHを選び、Connectします。ラベルはPicoに保存され、他のPCにも共有されます。接続後は取得したCHだけを表示し、上部に小さなStatusとVersionを置きます。Disconnectでロックを解放します。配置・並び順・外部APIは「···」にまとめています。画像は模擬接続です。
+接続画面で機器のラベルと空いているCHを選び、Connectします。ラベルはPicoに保存され、他のPCにも共有されます。接続後は取得したCHだけを表示し、上部に小さなStatusとVersionを置きます。Disconnectでロックを解放します。「···」のSettingsにPico名・CH名・配置・並び順・外部APIをまとめ、自動保存します。Allボタンは表示しません。画像は模擬接続です。
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` before using v0.5.0. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
+**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` before using v0.6.0. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
 
 **Pico側の更新が必要です。** `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
 
@@ -58,8 +58,8 @@ Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/k
 
 | Platform / OS | Download / ファイル |
 | --- | --- |
-| Windows 10/11 (x64) | `kohdalab-shutter-0.5.0-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
-| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.5.0-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+| Windows 10/11 (x64) | `kohdalab-shutter-0.6.0-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.6.0-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
 
 The first release is not publisher-signed or Apple-notarized; see the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware upload still requires separate MicroPython tools.
 
@@ -67,9 +67,19 @@ The first release is not publisher-signed or Apple-notarized; see the [installat
 
 ## Code signing / 署名・公証
 
-The published v0.5.0 files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
+The published v0.6.0 files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
 
-公開中のv0.5.0の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
+公開中のv0.6.0の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
+
+## Automatic settings / 設定の自動保存
+
+Pico/channel names are shared and retained on the Pico in `device_config.json`. Only the owning GUI may rename a channel. After a short typing pause, valid changes save automatically; Settings shows Saving / Saved or an error without disconnecting the shutters. Calibration and Wi-Fi are kept separately.
+
+PC layout, order, selected channels, endpoint/broadcast and Local control API opt-in are retained in `~/.kohdalab/shutter/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config.json`). Authentication tokens are regenerated, not saved. Startup remembers the last device/available CHs but does not acquire channels or move shutters automatically. Corrupt, foreign or unsupported PC configuration files are not overwritten; no old files are migrated or deleted.
+
+Pico名・CH名はPico側に保存し、他のPCとも共有します。PC側の配置・昇降順・選択CH・接続設定・APIの有効無効も保存します。次回起動時に復元しますが、勝手に接続・駆動しません。API認証情報は保存せず、破損設定や他アプリの設定は上書きしません。
+
+![Settings](docs/images/kohdalab-shutter-settings.png)
 
 ## Parallel motion / 並列動作
 

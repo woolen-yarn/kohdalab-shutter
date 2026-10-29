@@ -1,3 +1,5 @@
+import json
+
 from server.sessions import DeviceLabel, LEASE_MS, Sessions, valid_label, valid_token
 
 
@@ -129,6 +131,240 @@ def test_device_label_is_persisted_and_invalid_file_falls_back(tmp_path):
     assert DeviceLabel("Default", str(path)).value == "Optics line"
     path.write_text('{"label":"bad\\nlabel"}', encoding="utf-8")
     assert DeviceLabel("Default", str(path)).value == "Default"
+
+
+def test_device_config_migrates_old_label_and_preserves_unknown_settings(tmp_path):
+    path = tmp_path / "device_config.json"
+    path.write_text(
+        '{"label":"Bench A","wifi_hint":"keep","channel_labels":{"0":"Pump"}}',
+        encoding="utf-8",
+    )
+    config = DeviceLabel("Default", str(path))
+    assert config.value == "Bench A"
+    assert config.channel_labels == {"0": "Pump"}
+    config.save("Bench B")
+    config.save_config({"channel_labels": {"1": "Probe"}})
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved == {
+        "label": "Bench B",
+        "wifi_hint": "keep",
+        "channel_labels": {"0": "Pump", "1": "Probe"},
+    }
+
+
+def test_set_config_persists_owned_channel_labels_and_overlays_info(tmp_path):
+    path = tmp_path / "device_config.json"
+    config = DeviceLabel("Default", str(path))
+    clock = Clock()
+    manager = Sessions(
+        CHANNELS,
+        "abc123",
+        config.value,
+        clock.ticks_ms,
+        clock.ticks_diff,
+        config.save,
+        config_store=config,
+    )
+    assert manager.request({"op": "set_label", "label": "Idle name"}) == {
+        "ok": True,
+        "label": "Idle name",
+    }
+    assert manager.claim(ONE, [0])["ok"]
+    assert manager.request(
+        {"op": "set_config", "token": ONE, "label": "Owned bench"}
+    ) == {"ok": True}
+    assert manager.request(
+        {
+            "op": "set_config",
+            "token": ONE,
+            "label": "Owned bench",
+            "channel_labels": {},
+        }
+    ) == {"ok": True}
+    assert manager.request(
+        {
+            "op": "set_config",
+            "token": ONE,
+            "label": "Polarization",
+            "channel_labels": {"0": "Excitation"},
+        }
+    ) == {"ok": True}
+    info = manager.info()
+    assert info["label"] == "Polarization"
+    assert [channel["label"] for channel in info["channels"]] == [
+        "Excitation",
+        "Output",
+        "Probe",
+    ]
+    restored = DeviceLabel("Default", str(path))
+    assert restored.value == "Polarization"
+    assert restored.channel_labels == {"0": "Excitation"}
+
+
+def test_device_config_rejects_invalid_patches_and_ignores_invalid_saved_channels(
+    tmp_path,
+):
+    path = tmp_path / "device_config.json"
+    path.write_text(
+        '{"channel_labels":{"0":"Good","01":"Old","x":"Bad","2":"bad\\n"}}',
+        encoding="utf-8",
+    )
+    config = DeviceLabel("Default", str(path))
+    assert config.channel_labels == {"0": "Good"}
+    for patch in (
+        {},
+        [],
+        {"other": "value"},
+        {"channel_labels": []},
+        {"channel_labels": {"": "Name"}},
+        {"channel_labels": {"no": "Name"}},
+        {"channel_labels": {"-1": "Name"}},
+        {"channel_labels": {"01": "Name"}},
+        {"channel_labels": {"0": "bad\nname"}},
+    ):
+        try:
+            config.save_config(patch)
+        except ValueError as error:
+            assert str(error) == "invalid_request"
+        else:
+            raise AssertionError("invalid config patch was accepted")
+
+
+def test_set_config_merges_disjoint_owners_without_overwriting_names(tmp_path):
+    path = tmp_path / "device_config.json"
+    config = DeviceLabel("Default", str(path))
+    clock = Clock()
+    manager = Sessions(
+        CHANNELS,
+        "abc123",
+        config.value,
+        clock.ticks_ms,
+        clock.ticks_diff,
+        config.save,
+        config_store=config,
+    )
+    assert manager.claim(ONE, [0])["ok"]
+    assert manager.claim(TWO, [1])["ok"]
+    assert manager.request(
+        {"op": "set_config", "token": ONE, "channel_labels": {"0": "Laser"}}
+    )["ok"]
+    assert manager.request(
+        {"op": "set_config", "token": TWO, "channel_labels": {"1": "Detector"}}
+    )["ok"]
+    assert DeviceLabel("Default", str(path)).channel_labels == {
+        "0": "Laser",
+        "1": "Detector",
+    }
+
+
+def test_set_config_rejects_unowned_or_invalid_changes_atomically(tmp_path):
+    path = tmp_path / "device_config.json"
+    config = DeviceLabel("Default", str(path))
+    clock = Clock()
+    manager = Sessions(
+        CHANNELS,
+        "abc123",
+        config.value,
+        clock.ticks_ms,
+        clock.ticks_diff,
+        config.save,
+        config_store=config,
+    )
+    assert manager.claim(ONE, [0])["ok"]
+    request = {
+        "op": "set_config",
+        "token": ONE,
+        "label": "Should not save",
+        "channel_labels": {"0": "Good", "1": "Unowned"},
+    }
+    assert manager.request(request)["error"] == "invalid_request"
+    assert manager.info()["label"] == "Default"
+    assert manager.info()["channels"][0]["label"] == "Input"
+    assert not path.exists()
+    assert (
+        manager.request(
+            {"op": "set_config", "token": ONE, "channel_labels": {"0": "bad\nlabel"}}
+        )["error"]
+        == "invalid_request"
+    )
+    assert (
+        manager.request({"op": "set_config", "token": ONE})["error"]
+        == "invalid_request"
+    )
+    assert (
+        manager.request({"op": "set_config", "token": "bad", "label": "Name"})["error"]
+        == "invalid_request"
+    )
+    assert (
+        manager.request({"op": "set_config", "token": TWO, "label": "Name"})["error"]
+        == "lease_lost"
+    )
+    assert (
+        manager.request({"op": "set_config", "token": ONE, "label": "bad\nlabel"})[
+            "error"
+        ]
+        == "invalid_request"
+    )
+    assert (
+        manager.request({"op": "set_config", "token": ONE, "channel_labels": []})[
+            "error"
+        ]
+        == "invalid_request"
+    )
+    assert (
+        manager.request({"op": "set_config", "token": ONE, "channel_labels": {}})[
+            "error"
+        ]
+        == "invalid_request"
+    )
+
+
+def test_set_config_legacy_constructor_keeps_device_label_compatibility():
+    manager, _clock, saved = sessions()
+    assert manager.claim(ONE, [0])["ok"]
+    assert manager.request(
+        {"op": "set_config", "token": ONE, "label": "Legacy bench"}
+    ) == {"ok": True}
+    assert saved == ["Legacy bench"]
+    assert (
+        manager.request(
+            {"op": "set_config", "token": ONE, "channel_labels": {"0": "Laser"}}
+        )["error"]
+        == "storage"
+    )
+
+
+def test_set_config_storage_failure_keeps_memory_unchanged(tmp_path):
+    class BrokenConfig:
+        channel_labels = {}
+
+        def save_config(self, _patch):
+            raise OSError("full")
+
+    clock = Clock()
+    manager = Sessions(
+        CHANNELS,
+        "abc123",
+        "Default",
+        clock.ticks_ms,
+        clock.ticks_diff,
+        lambda _label: None,
+        config_store=BrokenConfig(),
+    )
+    assert manager.claim(ONE, [0])["ok"]
+    assert (
+        manager.request(
+            {
+                "op": "set_config",
+                "token": ONE,
+                "label": "Saved?",
+                "channel_labels": {"0": "Named?"},
+            }
+        )["error"]
+        == "storage"
+    )
+    assert manager.info()["label"] == "Default"
+    assert manager.info()["channels"][0]["label"] == "Input"
 
 
 def test_storage_failures_and_remaining_session_rejections(tmp_path):

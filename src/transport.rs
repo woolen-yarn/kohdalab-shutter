@@ -86,6 +86,33 @@ impl Client {
         Ok(())
     }
 
+    /// Patch shared device/channel names without changing calibration or state.
+    pub fn set_config(
+        &self,
+        label: Option<&str>,
+        channels: &std::collections::BTreeMap<u8, String>,
+    ) -> io::Result<()> {
+        if label.is_none() && channels.is_empty() {
+            return Err(Error::new(ErrorKind::InvalidInput, "No names to save"));
+        }
+        let mut body = json!({});
+        if let Some(label) = label {
+            validate_label(label)?;
+            body["label"] = json!(label);
+        }
+        if !channels.is_empty() {
+            for (channel, label) in channels {
+                if *channel > 15 {
+                    return Err(Error::new(ErrorKind::InvalidInput, "Invalid channel"));
+                }
+                validate_label(label)?;
+            }
+            body["channel_labels"] = json!(channels);
+        }
+        self.session_with_token("set_config", body, true)?;
+        Ok(())
+    }
+
     /// Acquire all requested shutters atomically. The returned clone holds an
     /// opaque session token; it is deliberately not exposed or printed.
     pub fn claim(&self, channels: &[u8]) -> io::Result<Self> {
@@ -454,6 +481,33 @@ mod tests {
         assert!(commands[3].contains("\"action\":\"open\""));
         assert!(commands[4].contains("\"op\":\"release\""));
         assert!(!format!("{leased:?}").contains("token"));
+    }
+
+    #[test]
+    fn saves_only_the_explicit_name_patch_using_the_active_lease() {
+        let (client, worker) = server(vec![b"{\"ok\":true}\n", b"{\"ok\":true}\n"]);
+        let leased = client.claim(&[1]).unwrap();
+        leased
+            .set_config(
+                Some("Bench A"),
+                &std::collections::BTreeMap::from([(1, "Probe".into())]),
+            )
+            .unwrap();
+        let commands = worker.join().unwrap();
+        let claim: Value =
+            serde_json::from_str(commands[0].trim().strip_prefix("SESSION ").unwrap()).unwrap();
+        let saved: Value =
+            serde_json::from_str(commands[1].trim().strip_prefix("SESSION ").unwrap()).unwrap();
+        assert_eq!(
+            saved,
+            json!({"op":"set_config","token":claim["token"],"label":"Bench A","channel_labels":{"1":"Probe"}})
+        );
+        assert!(leased.set_config(None, &Default::default()).is_err());
+        assert!(
+            client
+                .set_config(Some("No lease"), &Default::default())
+                .is_err()
+        );
     }
 
     #[test]

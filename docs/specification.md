@@ -169,3 +169,9 @@ stream `write` to avoid partial TCP replies.
 ## Channel sessions / CH操作権
 
 `SESSION {json}\n` requests support `info`, `set_label`, `claim`, `renew`, `release` and `operate`. Responses contain `ok` plus data or an `error` code. `claim` takes an opaque 32-hex token and unique nonempty `channels`, and acquires all requested CHs atomically. Ownership expires after 15,000 ms without renewal; disjoint selections may coexist. `operate` validates ownership for every requested CH before accepting movement. Legacy raw commands and physical short presses cannot bypass a current lease. `release`/expiry preserve the last commanded state. Human labels are stored atomically in `device_config.json`; calibration/Wi-Fi remain separate. The loop bounds accepted connections and read deadlines so stalled clients cannot indefinitely block motion. Double-flash LEDs use 100 ms on, 100 ms off, 100 ms on, 900 ms off per connected CH.
+
+## Shared names and desktop persistence
+
+`set_config` takes an active session token and optional `label` / `channel_labels` patches. All names are validated before writing; channel names require ownership of each target CH. Device labels may be changed by an active owner. Updates atomically merge `device_config.json`, preserving other CHs and unknown fields; existing label-only files remain readable. The bounded 8192-byte line limit accommodates maximum supported Unicode label patches. No calibration or Wi-Fi data is changed.
+
+PC settings use a versioned `application: "kohdalab-shutter"` document at `~/.kohdalab/shutter/config.json`. Writes are atomic, changes are debounced, and corrupt/foreign/future-schema files are preserved. Layout/order/selected CHs/network/API opt-in and confirmed-name caches are saved; credentials and active ownership are not. No old-file migration is attempted.

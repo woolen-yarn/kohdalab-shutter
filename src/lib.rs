@@ -1,5 +1,6 @@
 pub mod control;
 pub mod discovery;
+pub mod preferences;
 pub mod protocol;
 pub mod remote;
 pub mod session;

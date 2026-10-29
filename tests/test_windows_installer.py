@@ -71,10 +71,7 @@ def test_static_template_is_machine_installed_and_preserves_unknown_files() -> N
     assert 'InstallDir "$PROGRAMFILES64\\Kohdalab\\KohdaLab Shutter"' in source
     assert "RequestExecutionLevel admin" in source
     assert "InstallDirRegKey" not in source
-    assert (
-        'StrCpy $INSTDIR "$PROGRAMFILES64\\Kohdalab\\KohdaLab Shutter"'
-        in source
-    )
+    assert 'StrCpy $INSTDIR "$PROGRAMFILES64\\Kohdalab\\KohdaLab Shutter"' in source
     assert "HKLM" in source
     assert "RMDir /r" not in source
     assert "Close KohdaLab Shutter before" in source
