@@ -31,7 +31,7 @@ def test_generated_include_installs_and_removes_only_payload_files(
     source = installer.generated_payload_include(payload(tmp_path))
     assert "!macro InstallPayload" in source
     assert 'SetOutPath "$INSTDIR\\licenses\\example"' in source
-    assert 'File /oname="LICENSE.txt"' in source
+    assert 'File "/oname=LICENSE.txt"' in source
     assert 'Delete "$INSTDIR\\licenses\\example\\LICENSE.txt"' in source
     assert 'RMDir "$INSTDIR\\licenses\\example"' in source
     assert 'RMDir "$INSTDIR\\licenses"' in source
@@ -94,3 +94,10 @@ def test_nsis_license_is_added_to_portable_payload(tmp_path: Path) -> None:
     assert "NSIS 3.12 bootstrap" in (candidate / "THIRD-PARTY-NOTICES.txt").read_text(
         encoding="utf-8"
     )
+
+
+def test_payload_filename_with_spaces_uses_quoted_nsis_option(tmp_path: Path) -> None:
+    candidate = payload(tmp_path)
+    (candidate / "notice with spaces.txt").write_text("notice", encoding="utf-8")
+    source = installer.generated_payload_include(candidate)
+    assert 'File "/oname=notice with spaces.txt"' in source

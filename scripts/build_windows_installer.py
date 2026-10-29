@@ -131,7 +131,7 @@ def generated_payload_include(payload: Path) -> str:
             lines.append(f'  SetOutPath "$INSTDIR{suffix}"')
             current_directory = directory
         name = relative.name.replace("$", "$$")
-        lines.append(f'  File /oname="{name}" "{nsis_path(payload / relative)}"')
+        lines.append(f'  File "/oname={name}" "{nsis_path(payload / relative)}"')
     lines.append("!macroend")
     lines.append("")
     lines.append("!macro RemovePayload")
