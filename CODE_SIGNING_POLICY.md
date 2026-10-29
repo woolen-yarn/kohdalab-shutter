@@ -27,7 +27,7 @@ The proposed exact signing allowlist is:
 - `kohdalab-shutter-gui.exe`
 - `kohdalab-shutter.exe`
 
-Both are built from this repository and embed CompanyName `Kohdalab`, ProductName `KohdaLab Shutter`, and the Cargo release version. There is no third-party helper, installer or uninstaller in this allowlist. Extending the list requires provider review.
+Both are built from this repository and embed CompanyName `Kohdalab`, ProductName `KohdaLab Shutter`, and the Cargo release version. There is no third-party helper, installer or uninstaller in this allowlist. Extending the list requires provider review. The downloadable NSIS Setup.exe and its generated uninstaller are currently unsigned and remain outside this two-executable scope; signing only Setup would not sign its embedded payload or uninstaller.
 
 The release workflow stages those two files in a separate unsigned workflow artifact. It does not submit a request or receive a signed file. See [application preparation](.signpath/README.md), [artifact configuration](.signpath/application-pe.xml), and [SignPath's GitHub origin verification](https://docs.signpath.io/trusted-build-systems/github).
 

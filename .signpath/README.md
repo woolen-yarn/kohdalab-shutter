@@ -15,7 +15,7 @@ Proposed maintainer and approver: the repository owner in [CODEOWNERS](../.githu
 - `signpath-input-windows-<commit>`: only `kohdalab-shutter-gui.exe` and `kohdalab-shutter.exe`.
 - `signing-review-windows-<commit>`: product metadata, current Authenticode status, and SHA-256 records.
 
-Review [application-pe.xml](application-pe.xml), [code signing policy](../CODE_SIGNING_POLICY.md), [privacy](../PRIVACY.md), and the public source. No upstream standalone executable, installer, driver or uninstaller is included in this scope. A future expansion requires provider approval.
+Review [application-pe.xml](application-pe.xml), [code signing policy](../CODE_SIGNING_POLICY.md), [privacy](../PRIVACY.md), and the public source. No upstream standalone executable, installer, driver or uninstaller is included in this scope. The downloadable NSIS Setup.exe and generated uninstaller are unsigned, outside this scope. Signing them requires a separate provider-approved installer/uninstaller flow after the payload is signed. A future expansion requires provider approval.
 
 ## Owner actions
 

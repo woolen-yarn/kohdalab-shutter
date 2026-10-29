@@ -14,6 +14,9 @@ on:
       - '.github/workflows/release.yml'
       - 'scripts/package_release.py'
       - 'tests/test_release_package.py'
+      - 'scripts/build_windows_installer.py'
+      - 'tests/test_windows_installer.py'
+      - 'packaging/windows/**'
       - 'assets/dependency-licenses/**'
   push:
     tags: ['v*']
@@ -128,6 +131,12 @@ jobs:
         run: cargo +stable metadata --locked --format-version 1 > build-metadata.json
       - name: Package and verify native apps
         run: python scripts/package_release.py --platform ${{ matrix.platform }} --binaries build/release --metadata build-metadata.json --output dist
+      - name: Verify Windows setup, reinstall and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])"
+          ./scripts/check_windows_installer.ps1 -Installer "dist/kohdalab-shutter-$v-windows-x64-Setup.exe" -Version $v
       - name: Upload release candidates
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
@@ -135,6 +144,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
+            dist/*-Setup.exe
             dist/*.zip
             dist/*.dmg
             dist/BUILD-*.json
@@ -200,8 +210,8 @@ jobs:
           import hashlib, json, os, pathlib
           root = pathlib.Path('release-assets')
           tag = os.environ['RELEASE_TAG']
-          expected = {f'kohdalab-shutter-{tag[1:]}-windows-x64.zip', f'kohdalab-shutter-{tag[1:]}-macos-universal.zip', f'kohdalab-shutter-{tag[1:]}-macos-universal.dmg'}
-          actual = {p.name for p in root.iterdir() if p.suffix in ('.zip', '.dmg')}
+          expected = {f'kohdalab-shutter-{tag[1:]}-windows-x64-Setup.exe', f'kohdalab-shutter-{tag[1:]}-windows-x64.zip', f'kohdalab-shutter-{tag[1:]}-macos-universal.zip', f'kohdalab-shutter-{tag[1:]}-macos-universal.dmg'}
+          actual = {p.name for p in root.iterdir() if p.suffix in ('.zip', '.dmg', '.exe')}
           assert actual == expected, (actual, expected)
           validated = set()
           for report in root.glob('BUILD-*.json'):

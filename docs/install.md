@@ -6,8 +6,12 @@ Download the current version from [GitHub Releases](https://github.com/woolen-ya
 
 | Platform / OS | Download / 配布ファイル | Start / 起動方法 |
 | --- | --- | --- |
-| Windows 10/11, x64 | `kohdalab-shutter-<version>-windows-x64.zip` | Extract the entire ZIP, then open `kohdalab-shutter-gui.exe`. / ZIP全体を展開し、`kohdalab-shutter-gui.exe`を起動 |
+| Windows 10/11, x64 | `kohdalab-shutter-<version>-windows-x64-Setup.exe` | Run Setup, then open KohdaLab Shutter from Start or the desktop. / Setupを実行後、スタートメニューまたはデスクトップから起動 |
 | macOS 13+, Apple Silicon / Intel | `kohdalab-shutter-<version>-macos-universal.dmg` | Open the DMG, drag `KohdaLab Shutter.app` to Applications, then open the app. / DMGを開き、アプリをApplicationsへドラッグして起動 |
+
+The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for the current user without administrator rights, under `%LOCALAPPDATA%\Programs\Kohdalab\KohdaLab Shutter`. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
+
+WindowsのZIP版も引き続き利用できます。Setup版は管理者権限不要で現在のユーザーへインストールします。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
 
 The Mac ZIP is an alternative to the DMG; both contain the same universal app. Windows ARM64 and Linux binaries are not provided in this release.
 
@@ -41,9 +45,9 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 2. PCアプリの **Find Pico W** から機器を選択し、**Connect**で接続します。
 3. **Open／Close** または **Open all／Close all**で操作します。
 
-For a hardware-free preview, Windows includes `Demo.cmd`. On Mac, run:
+For a hardware-free preview, Windows includes a **KohdaLab Shutter Demo** Start menu shortcut (or `Demo.cmd` in the portable ZIP). On Mac, run:
 
-実機なしで試す場合、Windowsは同梱の`Demo.cmd`、Macは次のコマンドを使用します。
+実機なしで試す場合、Windowsはスタートメニューの **KohdaLab Shutter Demo**（ZIP版は`Demo.cmd`）、Macは次のコマンドを使用します。
 
 ```sh
 open -a 'KohdaLab Shutter' --args --demo
@@ -51,9 +55,9 @@ open -a 'KohdaLab Shutter' --args --demo
 
 ## CLI and automation / CLIと外部制御
 
-The Windows ZIP includes `kohdalab-shutter.exe`. On Mac, the CLI is inside the app:
+The Windows installer and ZIP include `kohdalab-shutter.exe`. On Mac, the CLI is inside the app:
 
-WindowsのZIPには`kohdalab-shutter.exe`を同梱しています。MacのCLIはアプリ内にあります。
+Windowsのインストール先とZIPには`kohdalab-shutter.exe`を同梱しています。MacのCLIはアプリ内にあります。
 
 ```sh
 '/Applications/KohdaLab Shutter.app/Contents/MacOS/kohdalab-shutter' --help
@@ -63,6 +67,6 @@ The GUI's **Local control API** supports Python/Jupyter through the [Python clie
 
 ## Checksums and contents / 配布物の確認
 
-`SHA256SUMS.txt` lists checksums for the ZIP/DMG files. `BUILD-*.json` records the exact source commit and artifact hashes. Each app includes the project license and dependency/font notices. Do not copy the example Wi-Fi file into a release with real credentials.
+`SHA256SUMS.txt` lists checksums for the Setup/ZIP/DMG files. `BUILD-*.json` records the exact source commit and artifact hashes. Each app includes the project license and dependency/font notices. Do not copy the example Wi-Fi file into a release with real credentials.
 
-`SHA256SUMS.txt`にZIP・DMGのハッシュ、`BUILD-*.json`にビルド元コミットを記録しています。ライセンスと依存ライブラリ・フォントの表記も同梱します。Wi-Fiパスワード等の個人設定は含めません。
+`SHA256SUMS.txt`にSetup・ZIP・DMGのハッシュ、`BUILD-*.json`にビルド元コミットを記録しています。ライセンスと依存ライブラリ・フォントの表記も同梱します。Wi-Fiパスワード等の個人設定は含めません。

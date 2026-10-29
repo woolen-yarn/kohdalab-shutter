@@ -194,7 +194,8 @@ def add_notices(destination, metadata):
 
 def write_readme(destination, platform):
     instructions = (
-        "Extract this entire ZIP, then double-click kohdalab-shutter-gui.exe.\n"
+        "Setup: install, then open KohdaLab Shutter from Start or the desktop.\n"
+        "Portable ZIP: extract it entirely, then open kohdalab-shutter-gui.exe.\n"
         "Demo.cmd opens the simulated interface without connecting hardware.\n"
         if platform == "windows-x64"
         else "Drag KohdaLab Shutter.app to Applications, then open it.\n"
@@ -213,6 +214,23 @@ def write_readme(destination, platform):
         encoding="utf-8",
     )
     shutil.copy2(ROOT / "LICENSE", destination / "LICENSE")
+
+
+def build_windows_setup(stage, output):
+    installer = output / f"{stage.name}-Setup.exe"
+    run(
+        sys.executable,
+        str(ROOT / "scripts/build_windows_installer.py"),
+        "--payload-dir",
+        str(stage.resolve()),
+        "--version",
+        version(),
+        "--output",
+        str(installer.resolve()),
+    )
+    if not installer.is_file() or not installer.stat().st_size:
+        raise RuntimeError(f"Installer was not created: {installer}")
+    return installer
 
 
 def package(platform, binaries, output, metadata):
@@ -313,7 +331,13 @@ def package(platform, binaries, output, metadata):
         else executable / "kohdalab-shutter-gui"
     )
     run(str(gui.resolve()), "--help")
+    assets = []
+    if platform == "windows-x64":
+        assets.append(build_windows_setup(stage, output))
+    else:
+        assets.append(output / f"{name}.dmg")
     archive = output / f"{name}.zip"
+    assets.append(archive)
     if platform == "macos-universal":
         # ditto preserves app executable permissions, symlinks and bundle metadata.
         run(
@@ -345,8 +369,7 @@ def package(platform, binaries, output, metadata):
                 "commit": run("git", "rev-parse", "HEAD").stdout.strip(),
                 "assets": {
                     p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-                    for p in sorted(output.glob(f"{name}.*"))
-                    if p.suffix in (".zip", ".dmg")
+                    for p in sorted(assets)
                 },
             },
             indent=2,

@@ -1,9 +1,9 @@
 ## Changes / 変更内容
 
-- **Parallel All actions:** updated Pico settings allow all configured channels to move concurrently instead of waiting for the previous channel's movement and settling delay.
-- **Connect / Disconnect:** both controls are visible in the Connection panel.
-- **Stable layout:** background status polling no longer inserts a Connected message above the shutter cards, and the progress indicator uses fixed geometry. Horizontal and Vertical layouts stay in place during refreshes.
-- Includes the shared KohdaLab signing-policy preparation and Windows product metadata. These binaries are still not publisher-signed/Apple-notarized; no production signing is claimed.
+- **Windows Setup.exe:** install KohdaLab Shutter for the current user without administrator rights. Launch from the Start menu or desktop; a Demo shortcut is also included.
+- Run the new Setup with the app closed to update. Uninstall through Windows Settings → Apps. User settings and unrelated files are preserved.
+- WindowsのSetup形式に対応しました。インストール後はスタートメニュー・デスクトップから起動できます。更新は新しいSetupの実行、削除はWindowsの「設定 → アプリ」から行えます。
+- The portable Windows ZIP and Mac Universal DMG/ZIP remain available. Parallel All actions, Connect/Disconnect and the stable dark GUI from v0.4.2 are included.
 
 **Pico update required for parallel movement:** edit `SERVO_MAX_ACTIVE` in the device's existing `settings.py` to the channel count (e.g. `4` for four channels), then restart. Preserve calibrated angles, wiring and Wi-Fi/IP settings. The source default is `SERVO_MAX_ACTIVE = len(CHANNELS)` after the channel definitions. Updating only the desktop cannot change the device's current limit.
 
@@ -11,13 +11,13 @@
 
 ## Downloads / ダウンロード
 
-- **Windows 10/11 (x64):** download `kohdalab-shutter-0.4.2-windows-x64.zip`, extract it, then open `kohdalab-shutter-gui.exe`. `Demo.cmd` opens a hardware-free preview.
-- **Mac (macOS 13+, Apple Silicon + Intel):** download `kohdalab-shutter-0.4.2-macos-universal.dmg`, then drag `KohdaLab Shutter.app` to Applications. The ZIP is an alternative containing the same app.
+- **Windows 10/11 (x64):** `kohdalab-shutter-0.4.3-windows-x64-Setup.exe`. The ZIP is an alternative for portable use.
+- **Mac (macOS 13+, Apple Silicon + Intel):** `kohdalab-shutter-0.4.3-macos-universal.dmg`. Drag KohdaLab Shutter.app to Applications; the ZIP contains the same app.
 
 **No Rust or Python installation is needed to run the desktop app.** Initial Pico firmware setup and Python/Jupyter integration remain separate steps.
 
-Builds are **not publisher-signed or Apple-notarized**; Windows or macOS may prompt on first launch. Read the [installation guide](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md). The Mac app is ad-hoc signed for integrity; SignPath acceptance and Apple enrollment/credentials remain pending.
+Windows Setup, its uninstaller and application executables are **unsigned**. The Mac app is ad-hoc signed and **not Apple-notarized**. Existing first-launch prompts may remain; SignPath acceptance and Apple enrollment/credentials are pending. See the [installation guide](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md).
 
-Validation includes Windows/Mac/Linux tests and builds, native packaging/metadata checks, Intel Mac package checks, simulated GUI/API checks, fixed-position egui rendering during pending refreshes and simulated parallel Pico movement. Physical Pico/Wi-Fi/servo validation remains an owner hardware check.
+Release checks include native Windows installation/reinstallation/uninstallation, shortcuts and registry entries, packaged CLI startup, platform tests/builds, Mac app verification and SHA-256 verification before publication. Physical Pico/Wi-Fi/servo checks remain separate.
 
 [Installation / 導入](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md) · [Pico W setup / 実機設定](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/rust-client.md) · [External API / 外部制御](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/gui-api.md)
