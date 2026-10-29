@@ -1456,87 +1456,95 @@ impl App {
             .resizable(false)
             .default_width(390.0)
             .show(ctx, |ui| {
-                ui.add_enabled_ui(!self.control.owned(), |ui| {
-                    ui.label(RichText::new("Names").small().color(MUTED));
-                    ui.horizontal(|ui| {
-                        ui.label("Pico");
-                        if ui
-                            .add(
-                                egui::TextEdit::singleline(&mut self.device_label)
-                                    .char_limit(32)
-                                    .desired_width(300.0),
-                            )
-                            .changed()
-                        {
-                            self.dirty_device = true;
-                            self.changed_label();
-                        }
-                    });
-                    let channels = self.ordered_channels();
-                    for channel in channels {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("CH{channel:02}")).color(MUTED));
-                            let value = self
-                                .channel_labels
-                                .entry(channel)
-                                .or_insert_with(|| format!("CH{channel:02}"));
-                            if ui
-                                .add(
-                                    egui::TextEdit::singleline(value)
-                                        .char_limit(32)
-                                        .desired_width(300.0),
-                                )
-                                .changed()
-                            {
-                                self.dirty_channels.insert(channel);
+                egui::ScrollArea::vertical()
+                    .max_height(460.0)
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(!self.control.owned(), |ui| {
+                            ui.label(RichText::new("Names").small().color(MUTED));
+                            ui.horizontal(|ui| {
+                                ui.label("Pico");
+                                if ui
+                                    .add(
+                                        egui::TextEdit::singleline(&mut self.device_label)
+                                            .char_limit(32)
+                                            .desired_width(300.0),
+                                    )
+                                    .changed()
+                                {
+                                    self.dirty_device = true;
+                                    self.changed_label();
+                                }
+                            });
+                            let channels = self.ordered_channels();
+                            for channel in channels {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(format!("CH{channel:02}")).color(MUTED));
+                                    let value = self
+                                        .channel_labels
+                                        .entry(channel)
+                                        .or_insert_with(|| format!("CH{channel:02}"));
+                                    if ui
+                                        .add(
+                                            egui::TextEdit::singleline(value)
+                                                .char_limit(32)
+                                                .desired_width(300.0),
+                                        )
+                                        .changed()
+                                    {
+                                        self.dirty_channels.insert(channel);
+                                        self.changed_label();
+                                    }
+                                });
+                            }
+                            ui.add_space(10.0);
+                            ui.separator();
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                ui.label("Layout");
+                                ui.selectable_value(
+                                    &mut self.layout,
+                                    Layout::Horizontal,
+                                    "Horizontal",
+                                );
+                                ui.selectable_value(&mut self.layout, Layout::Vertical, "Vertical");
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Order");
+                                ui.selectable_value(&mut self.order, Order::Ascending, "CH ↑");
+                                ui.selectable_value(&mut self.order, Order::Descending, "CH ↓");
+                            });
+                        });
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(6.0);
+                        self.automation_settings(ui);
+                        ui.add_space(10.0);
+                        if !self.config_error.is_empty() {
+                            ui.label(RichText::new(&self.config_error).small().color(ORANGE));
+                            if ui.button("Retry").clicked() {
                                 self.changed_label();
                             }
-                        });
-                    }
-                    ui.add_space(10.0);
-                    ui.separator();
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        ui.label("Layout");
-                        ui.selectable_value(&mut self.layout, Layout::Horizontal, "Horizontal");
-                        ui.selectable_value(&mut self.layout, Layout::Vertical, "Vertical");
+                        }
+                        if !self.preferences_error.is_empty() {
+                            ui.label(RichText::new(&self.preferences_error).small().color(ORANGE));
+                            if !self.preferences_blocked && ui.button("Retry PC save").clicked() {
+                                self.persist_preferences(true);
+                            }
+                        }
+                        if self.config_error.is_empty() && self.preferences_error.is_empty() {
+                            let pending = self.dirty_device
+                                || !self.dirty_channels.is_empty()
+                                || self.config_pending.is_some()
+                                || self.preferences_due.is_some()
+                                || (self.preferences_path.is_some()
+                                    && self.current_preferences() != self.preferences_saved);
+                            ui.label(
+                                RichText::new(if pending { "Saving…" } else { "Saved" })
+                                    .small()
+                                    .color(MUTED),
+                            );
+                        }
                     });
-                    ui.horizontal(|ui| {
-                        ui.label("Order");
-                        ui.selectable_value(&mut self.order, Order::Ascending, "CH ↑");
-                        ui.selectable_value(&mut self.order, Order::Descending, "CH ↓");
-                    });
-                });
-                ui.add_space(10.0);
-                ui.separator();
-                ui.add_space(6.0);
-                self.automation_settings(ui);
-                ui.add_space(10.0);
-                if !self.config_error.is_empty() {
-                    ui.label(RichText::new(&self.config_error).small().color(ORANGE));
-                    if ui.button("Retry").clicked() {
-                        self.changed_label();
-                    }
-                }
-                if !self.preferences_error.is_empty() {
-                    ui.label(RichText::new(&self.preferences_error).small().color(ORANGE));
-                    if !self.preferences_blocked && ui.button("Retry PC save").clicked() {
-                        self.persist_preferences(true);
-                    }
-                }
-                if self.config_error.is_empty() && self.preferences_error.is_empty() {
-                    let pending = self.dirty_device
-                        || !self.dirty_channels.is_empty()
-                        || self.config_pending.is_some()
-                        || self.preferences_due.is_some()
-                        || (self.preferences_path.is_some()
-                            && self.current_preferences() != self.preferences_saved);
-                    ui.label(
-                        RichText::new(if pending { "Saving…" } else { "Saved" })
-                            .small()
-                            .color(MUTED),
-                    );
-                }
             });
         self.settings_open = open;
     }
@@ -1732,13 +1740,21 @@ impl App {
                             } else {
                                 0.0
                             };
-                        ui.add_sized(
-                            [(ui.available_width() - reserve).max(30.0), 14.0],
-                            egui::Label::new(RichText::new(&status).size(11.0).color(MUTED))
-                                .truncate()
-                                .halign(egui::Align::Min),
-                        )
-                        .on_hover_text(&status);
+                        let width = (ui.available_width() - reserve).max(30.0);
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(width, 14.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(width);
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&status).size(11.0).color(MUTED),
+                                    )
+                                    .truncate(),
+                                )
+                                .on_hover_text(&status);
+                            },
+                        );
                         if (!self.config_error.is_empty() || !self.preferences_error.is_empty())
                             && ui
                                 .small_button(RichText::new("Unsaved").color(ORANGE))
