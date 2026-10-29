@@ -108,7 +108,7 @@ class ChannelCard(QFrame):
             self.badge.setText("CLOSE")
             self.badge.setObjectName("badgeClose")
         else:
-            self.badge.setText("UNKNOWN")
+            self.badge.setText("MOVING")
             self.badge.setObjectName("badgeUnknown")
         self.badge.style().unpolish(self.badge)
         self.badge.style().polish(self.badge)
@@ -223,9 +223,13 @@ class App(QMainWindow):
         summary_layout.addWidget(self.summary_label)
 
         self.open_all_button = QPushButton("Open All")
-        self.open_all_button.clicked.connect(lambda: self.run_command("open", self._known_channels()))
+        self.open_all_button.clicked.connect(
+            lambda: self.run_command("open", self._known_channels())
+        )
         self.close_all_button = QPushButton("Close All")
-        self.close_all_button.clicked.connect(lambda: self.run_command("close", self._known_channels()))
+        self.close_all_button.clicked.connect(
+            lambda: self.run_command("close", self._known_channels())
+        )
         summary_buttons = QHBoxLayout()
         summary_buttons.addWidget(self.open_all_button)
         summary_buttons.addWidget(self.close_all_button)
@@ -471,9 +475,13 @@ class App(QMainWindow):
                 return
             self.client = context["client"]
             self.current_status = result
-            self.connection_label.setText(f"Connected to {self.client.host}:{self.client.port}")
+            self.connection_label.setText(
+                f"Connected to {self.client.host}:{self.client.port}"
+            )
             self.statusBar().showMessage("Connected")
-            self.setWindowTitle(f"Kohda Lab Shutter - {self.client.host}:{self.client.port}")
+            self.setWindowTitle(
+                f"Kohda Lab Shutter - {self.client.host}:{self.client.port}"
+            )
             self._sync_channels(result)
             self._apply_status(result)
             self._set_connected(True)
@@ -534,15 +542,21 @@ class App(QMainWindow):
         self._clear_channels()
         for index, channel in enumerate(channels):
             card = ChannelCard(channel)
-            card.close_button.clicked.connect(lambda checked=False, ch=channel: self.run_command("close", [ch]))
-            card.open_button.clicked.connect(lambda checked=False, ch=channel: self.run_command("open", [ch]))
-            card.toggle_button.clicked.connect(lambda checked=False, ch=channel: self.run_command("toggle", [ch]))
+            card.close_button.clicked.connect(
+                lambda checked=False, ch=channel: self.run_command("close", [ch])
+            )
+            card.open_button.clicked.connect(
+                lambda checked=False, ch=channel: self.run_command("open", [ch])
+            )
+            card.toggle_button.clicked.connect(
+                lambda checked=False, ch=channel: self.run_command("toggle", [ch])
+            )
             self.channel_layout.insertWidget(index, card)
             self.channel_cards[channel] = card
         self._set_actions_enabled(self.client is not None and not self.command_inflight)
 
     def _apply_status(self, status):
-        open_count = close_count = unknown_count = 0
+        open_count = close_count = moving_count = 0
         for channel, card in self.channel_cards.items():
             angle = status.get(channel)
             card.set_angle(angle)
@@ -551,14 +565,16 @@ class App(QMainWindow):
             elif angle == CLOSE_ANGLE:
                 close_count += 1
             else:
-                unknown_count += 1
+                moving_count += 1
 
         self.summary_label.setText(
-            f"{len(self.channel_cards)} channels | open {open_count} | close {close_count} | unknown {unknown_count}"
+            f"{len(self.channel_cards)} channels | open {open_count} | close {close_count} | moving {moving_count}"
         )
         self.last_update_label.setText(f"Last update: {time.strftime('%H:%M:%S')}")
         if self.client:
-            self.connection_label.setText(f"Connected to {self.client.host}:{self.client.port}")
+            self.connection_label.setText(
+                f"Connected to {self.client.host}:{self.client.port}"
+            )
         self.statusBar().showMessage("Status updated")
 
     def _mark_error(self, error):

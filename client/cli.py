@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Sequence
 import sys
 
 from .protocol import DEFAULT_HOST, DEFAULT_PORT, format_status
@@ -7,16 +8,22 @@ from .transport import ShutterClient
 COMMANDS = {"status", "open", "close", "toggle"}
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     legacy_host = None
     if argv and not argv[0].startswith("-") and argv[0].lower() not in COMMANDS:
         legacy_host = argv.pop(0)
 
-    parser = argparse.ArgumentParser(description="Control the Pico W shutter server over TCP")
-    parser.add_argument("--host", "--ip", default=legacy_host or DEFAULT_HOST, help="Pico W IP address")
+    parser = argparse.ArgumentParser(
+        description="Control the Pico W shutter server over TCP"
+    )
+    parser.add_argument(
+        "--host", "--ip", default=legacy_host or DEFAULT_HOST, help="Pico W IP address"
+    )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="TCP port")
-    parser.add_argument("--timeout", type=float, default=2.0, help="Socket timeout in seconds")
+    parser.add_argument(
+        "--timeout", type=float, default=2.0, help="Socket timeout in seconds"
+    )
     parser.add_argument("--retries", type=int, default=5, help="Connection retry count")
 
     subparsers = parser.add_subparsers(dest="command")
@@ -32,7 +39,9 @@ def main(argv=None):
     toggle_parser.add_argument("channel", type=int)
 
     args = parser.parse_args(argv)
-    client = ShutterClient(args.host, args.port, timeout=args.timeout, retries=args.retries)
+    client = ShutterClient(
+        args.host, args.port, timeout=args.timeout, retries=args.retries
+    )
 
     if args.command is None:
         run_shell(client)
@@ -45,20 +54,30 @@ def main(argv=None):
         raise SystemExit(1) from exc
 
 
-def run_command(client, command, channel=None):
+def run_command(client: ShutterClient, command: str, channel: int | None = None) -> str:
     if command == "status":
         return format_status(client.status())
     if command == "open":
+        if channel is None:
+            raise ValueError("channel number required")
         return client.open(channel)
     if command == "close":
+        if channel is None:
+            raise ValueError("channel number required")
         return client.close(channel)
     if command == "toggle":
+        if channel is None:
+            raise ValueError("channel number required")
         return client.toggle(channel)
     return client.send(command)
 
 
-def run_shell(client):
-    print("Connected to {}:{}. Commands: status | open n | close n | toggle n | quit".format(*client.address))
+def run_shell(client: ShutterClient) -> None:
+    print(
+        "Connected to {}:{}. Commands: status | open n | close n | toggle n | quit".format(
+            *client.address
+        )
+    )
     while True:
         try:
             line = input("[{}] > ".format(client.host)).strip()
@@ -82,5 +101,7 @@ def run_shell(client):
             print("ERROR:", exc)
 
 
-if __name__ == "__main__":
+if (
+    __name__ == "__main__"
+):  # pragma: no cover - exercised through the console entry point
     main()

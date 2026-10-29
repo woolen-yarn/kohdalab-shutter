@@ -1,14 +1,17 @@
-# Initial Setup
+# Initial setup / 初期設定
 
-This guide prepares a Windows control PC or a macOS development machine for KohdaLab Shutter Controller.
+This guide prepares a control PC or development machine. A Rust build is the normal desktop path; Python/uv is only needed to maintain the Pico W or use the compatibility client.
 
-## 1. Install Tools
+このガイドは制御PCまたは開発PCを準備します。PCアプリの標準はRustビルドです。Python/uvはPico Wの保守と互換クライアントにだけ必要です。
+
+## 1. Install tools / ツールの導入
 
 ### Windows PowerShell
 
-Install Git, GitHub CLI, and uv:
+Install Rust, Git, GitHub CLI, and uv:
 
 ```powershell
+winget install --id Rustlang.Rustup -e
 winget install --id Git.Git -e --source winget
 winget install --id GitHub.cli -e --source winget
 winget install --id astral-sh.uv -e --source winget
@@ -20,6 +23,7 @@ Close and reopen PowerShell, then check:
 git --version
 gh --version
 uv --version
+cargo --version
 ```
 
 ### macOS
@@ -27,7 +31,7 @@ uv --version
 Install Homebrew if needed, then install the tools:
 
 ```bash
-brew install git gh uv
+brew install rust git gh uv
 ```
 
 Check:
@@ -38,7 +42,7 @@ gh --version
 uv --version
 ```
 
-## 2. Configure Git and GitHub
+## 2. Configure Git and GitHub / Git・GitHubの設定
 
 Set your Git identity once per machine:
 
@@ -56,40 +60,49 @@ gh auth setup-git
 
 Use the browser login flow when prompted. For private repositories, confirm that `gh auth status` shows an authenticated account with repository access.
 
-## 3. Clone the Repository
+## 3. Clone the repository / リポジトリの取得
 
-For the KohdaLab organization repository:
-
-```bash
-gh repo clone Kohdalab/kohdalab-shutter
-cd kohdalab-shutter
-```
-
-For the personal mirror:
+Clone the repository / リポジトリを取得します:
 
 ```bash
 gh repo clone woolen-yarn/kohdalab-shutter
 cd kohdalab-shutter
 ```
 
-## 4. Create the Python Environment
+## 4. Build the Rust desktop app / Rustデスクトップアプリのビルド
+
+Install stable Rust from https://www.rust-lang.org/tools/install. On Windows, include the Visual Studio C++ Build Tools.
+
+```sh
+cargo build --release --locked
+cargo run --bin kohdalab-shutter -- discover
+cargo run --bin kohdalab-shutter-gui
+```
+
+See [Pico W setup and discovery](rust-client.md) for firmware updates and USB IP inspection. Python is needed for Pico uploads and compatibility clients.
+
+## 5. Create the Python environment / Python環境の作成
 
 Install dependencies:
 
 ```bash
-uv sync --frozen
+uv sync --all-extras --frozen
 ```
 
-## 5. Verify the Environment
+## 6. Verify / 確認
 
 Run the hardware-free checks first:
 
 ```bash
-uv run python -m compileall client server
-uv run python -m client.cli --help
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+uv run ruff check .
+uv run mypy
+uv run pytest --cov --cov-report=term-missing
 ```
 
-## 6. Configure Wi-Fi Credentials
+## 7. Configure Wi-Fi credentials / Wi-Fi認証情報の設定
 
 Create the local Wi-Fi config from the example:
 
@@ -99,23 +112,23 @@ cp server/wifi_config.example.py server/wifi_config.py
 
 Edit `server/wifi_config.py` for the local network. Do not commit this file.
 
-## 7. Run the Tools
+## 8. Operate / 操作
 
 CLI:
 
 ```bash
-uv run python -m client.cli --help
+cargo run --bin kohdalab-shutter -- --help
 ```
 
 GUI:
 
 ```bash
-uv run python -m client.gui
+cargo run --bin kohdalab-shutter-gui
 ```
 
 Pico W deployment uses `mpremote`; see [Usage guide](usage.md) for hardware notes.
 
-## 8. Recommended Git Workflow
+## 9. Recommended Git workflow / 推奨Git手順
 
 Work through pull requests rather than pushing directly to `main`:
 
@@ -128,9 +141,9 @@ git push -u origin feature/my-change
 gh pr create
 ```
 
-The `main` branch requires the Ubuntu and Windows checks to pass before merge.
+Confirm the CI checks pass before merging into `main`.
 
-## References
+## References / 参考
 
 - uv installation: https://docs.astral.sh/uv/getting-started/installation/
 - GitHub CLI: https://github.com/cli/cli

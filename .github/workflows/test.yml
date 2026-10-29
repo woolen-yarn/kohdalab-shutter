@@ -3,35 +3,169 @@ name: Test
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   test:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        python-version: ["3.13", "3.14"]
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Verify dependency lock is current
+        run: uv lock --check
+
+      - name: Install Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --all-extras --all-groups --frozen
 
-      - name: Compile Python files
-        run: uv run python -m compileall client server
+      - name: Run lint
+        run: uv run ruff check .
 
-      - name: Check CLI help
-        run: uv run python -m client.cli --help
+      - name: Check formatting
+        run: uv run ruff format --check client server tests
+
+      - name: Run strict core type checks
+        run: uv run mypy
+
+      - name: Run tests with complete core branch coverage
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+  package:
+    name: Package smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.13"
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Validate metadata and wheel contents
+        run: |
+          uv sync --only-group package --frozen
+          uv run --only-group package twine check --strict dist/*
+          uv run --only-group package check-wheel-contents dist/*.whl
+
+      - name: Install and smoke-test wheel
+        run: |
+          uv venv .wheel-venv
+          uv pip install --python .wheel-venv/bin/python dist/*.whl
+          .wheel-venv/bin/kohdalab-shutter --help
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install locked dependencies
+        run: uv sync --all-extras --all-groups --frozen
+
+      - name: Audit locked dependencies
+        run: uv run pip-audit
+
+  rust:
+    name: Rust / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Linux GUI build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev libegl1-mesa-dev libwayland-dev libxkbcommon-dev
+      - name: Set up stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Check Rust formatting
+        run: cargo fmt --check
+      - name: Check Rust code
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test Rust client and mock network servers
+        run: cargo test --locked --all-targets
+      - name: Build native clients
+        run: cargo build --release --locked
+      - name: Check CLI entry point
+        run: cargo run --locked --bin kohdalab-shutter -- --help
+
+  # Keep the existing protected-branch contexts. Both gates require every
+  # Python/Rust platform, packaging check, and dependency audit to succeed.
+  required:
+    name: ${{ matrix.context }}
+    needs: [test, package, audit, rust]
+    if: ${{ always() }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - context: ubuntu-latest
+            runner: ubuntu-24.04
+          - context: windows-latest
+            runner: windows-2025
+    steps:
+      - name: Require the complete validation suite
+        env:
+          CHECK_RESULTS: ${{ join(needs.*.result, ',') }}
+        run: python -c "import os, sys; sys.exit(0 if all(result == 'success' for result in os.environ['CHECK_RESULTS'].split(',')) else 1)"

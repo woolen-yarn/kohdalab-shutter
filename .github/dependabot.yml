@@ -18,3 +18,12 @@ updates:
         patterns:
           - "mpremote"
           - "pyside6"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      rust-desktop:
+        patterns:
+          - "*"

@@ -1,6 +1,13 @@
-# KohdaLab Shutter Controller Usage Guide
+# Usage guide / 使用方法
 
-This guide keeps the detailed operating notes for KohdaLab Shutter Controller. For first-time machine setup, see [Initial setup](initial_setup.md).
+The standard desktop application is the Rust GUI and CLI. [Pico W setup and discovery](rust-client.md) covers automatic discovery and USB IP inspection. The Python desktop client below remains for compatibility.
+
+PC側の標準アプリはRust GUI・CLIです。自動検索とUSBでのIP確認は[Pico Wの設定と検索](rust-client.md)を参照してください。以下のPythonデスクトップクライアントは互換用です。
+
+
+This guide keeps detailed hardware and operating notes. For first-time setup, see [Initial setup](initial_setup.md).
+
+このガイドはハードウェアと操作の詳細を扱います。初回設定は[初期設定](initial_setup.md)を参照してください。
 
 ## Overview / 概要
 
@@ -15,6 +22,7 @@ This guide keeps the detailed operating notes for KohdaLab Shutter Controller. F
 ├── server/              # MicroPython code copied to the Pico W / Pico Wへ転送するコード
 │   ├── main.py          # Buttons, LEDs, Wi-Fi server, servo control
 │   ├── pca9685.py       # PCA9685 PWM driver
+│   ├── servo.py         # Validated non-blocking motion scheduler
 │   ├── settings.py      # Pin mapping, IP, port, channel definitions
 │   ├── wifi_config.py   # Local Wi-Fi credentials, do not share
 │   └── wifi_config.example.py
@@ -125,10 +133,21 @@ uv run python -m client.cli 10.32.145.232 status
 ```powershell
 uv run mpremote connect auto fs cp server/main.py :main.py
 uv run mpremote connect auto fs cp server/pca9685.py :pca9685.py
+uv run mpremote connect auto fs cp server/servo.py :servo.py
 uv run mpremote connect auto fs cp server/settings.py :settings.py
 uv run mpremote connect auto fs cp server/wifi_config.py :wifi_config.py
 uv run mpremote connect auto reset
 ```
+
+## Servo stall prevention / サーボのスタック対策
+
+**JP:** 既定設定では、サーボを 3 度ずつ 20 ms 間隔で動かし、同時に動かすのは 1 台だけです。目標角で 500 ms 待った後、PCA9685 の PWM を OFF にします。これにより電源電圧降下と、機械端に押し付け続けるストール電流を抑えます。設定は `server/settings.py` の `SERVO_*` にあります。
+
+**EN:** By default, servos move in 3-degree steps every 20 ms, one at a time. After 500 ms at the target, the PCA9685 output is disabled. This reduces supply dips and continuous stall current against a mechanical stop. Tune the `SERVO_*` values in `server/settings.py`.
+
+**JP:** PWM 解放後にシャッターが自重で戻る機構だけは `SERVO_RELEASE_PWM=False` を検討できます。ただし発熱・唸りが戻るため、先にリンク機構と open/close 角を調整してください。位置センサーや電流センサーがない構成では、物理的な詰まりをソフトウェアだけで検出できません。
+
+**EN:** Consider `SERVO_RELEASE_PWM=False` only if the shutter falls back after release. Continuous torque also restores heating and buzzing, so adjust the linkage and calibrated angles first. Without position or current feedback, software cannot positively detect a physical jam.
 
 **JP:** 起動直後は `AUTO_START_SERVER = False` なので、任意のチャンネルボタンを 3 秒以上長押しすると Wi-Fi サーバが開始します。起動時からサーバを開始したい場合は [server/settings.py](../server/settings.py) の `AUTO_START_SERVER` を `True` にします。
 

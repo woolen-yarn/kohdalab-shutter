@@ -1,54 +1,82 @@
-# KohdaLab Shutter Controller
+<img src="assets/kohdalab-shutter.svg" width="64" height="64" align="right" alt="KohdaLab Shutter icon">
 
-[![Test](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml/badge.svg)](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml)
+# KohdaLab Shutter
+
+[![CI](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml/badge.svg)](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.13-blue)
 
-KohdaLab Shutter Controller controls servo-driven optical shutters over Wi-Fi using a Raspberry Pi Pico W and PCA9685 PWM driver.
+Rust desktop controller and MicroPython Pico W firmware for servo-driven optical shutters.
+Rust製デスクトップコントローラーと、サーボ式光シャッター用Pico W MicroPythonファームウェアです。
 
-## What It Does
+[Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
 
-- Runs MicroPython control code on a Pico W.
-- Provides PC-side CLI and PySide6 GUI tools.
-- Controls multiple shutter channels over a simple TCP protocol.
-- Keeps Wi-Fi credentials out of version control.
+- Discovers running Pico W shutter servers on the local network and requires an explicit device selection.
+- Controls any reported channel count with per-channel and all-channel Open / Close actions.
+- Keeps servo control on the Pico W: stepped motion, one-at-a-time scheduling, and PWM release after settling.
 
-## Quick Start
+- 稼働中のPico Wをローカルネットワーク内で検索し、対象機器を明示的に選択します。
+- STATUS応答に含まれるチャンネル数に応じて、個別・一括の開閉操作を表示します。
+- サーボ制御はPico W上で実行し、段階駆動・同時駆動制限・停止後のPWM解放を行います。
 
-For a new PC, start with the setup guide:
+## Interface / 画面
 
-- [Initial setup](docs/initial_setup.md)
+![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-After setup:
+The left panel finds and connects a Pico W, the centre panel controls the reported channels, and the right panel retains connection and action messages. The image is simulated; no shutter hardware is connected.
 
-```powershell
-uv sync --frozen
-uv run python -m client.cli --help
-uv run python -m client.gui
+左でPico Wを検索・接続し、中央でチャンネルを操作します。右には接続・操作メッセージを残します。画像はシミュレーションであり、実機は接続していません。
+
+## Downloads / ダウンロード
+
+Rust desktop version `0.3.0` is under development. There is no packaged Windows or macOS release yet; build it from this repository. Python/uv remains necessary only to upload or inspect the Pico W firmware and for the compatibility client.
+
+Rustデスクトップ版`0.3.0`は開発中です。Windows/macOS向けの配布パッケージはまだありません。このリポジトリからビルドしてください。Python/uvはPico Wファームウェアの転送・確認と互換クライアントにだけ必要です。
+
+## Supported hardware / 対応ハードウェア
+
+| Role / 役割 | Current implementation / 現在の実装 |
+| --- | --- |
+| Controller / 制御器 | Raspberry Pi Pico W running MicroPython / MicroPythonを実行するRaspberry Pi Pico W |
+| Servo PWM / サーボPWM | PCA9685, one board, up to 16 outputs / PCA9685 1枚、最大16出力 |
+| Desktop / PC | Rust GUI and CLI on Windows, macOS, or Linux / Windows・macOS・Linux向けRust GUI・CLI |
+
+## Quick start / はじめに
+
+Explore the interface without connecting hardware / 実機に接続せず画面を試す:
+
+```sh
+cargo run --locked --bin kohdalab-shutter-gui -- --demo
 ```
 
-Run checks:
+1. Install stable Rust and build `cargo build --release --locked`. / stable Rustを導入してビルドします。
+2. Prepare `server/wifi_config.py`, connect the Pico W by USB, and upload the server once. / Wi-Fi設定を用意し、Pico WをUSB接続してサーバーを一度転送します。
+3. Start the Pico W server by holding a channel switch for three seconds, unless `AUTO_START_SERVER` is enabled. / `AUTO_START_SERVER`が無効なら、チャンネルスイッチを3秒長押ししてサーバーを開始します。
+4. Start `cargo run --locked --bin kohdalab-shutter-gui`, choose **Find Pico W**, select the intended device, then connect. / GUIを起動し、**Find Pico W**から対象機器を選んで接続します。
 
-```powershell
-uv run python -m compileall client server
-uv run python -m client.cli --help
+The first firmware upload and DHCP/fixed-IP choice are described in [Pico W setup and discovery / Pico Wの設定と検索](docs/rust-client.md). Discovery requires that the PC and Pico W can exchange local UDP traffic; use the USB fallback if the laboratory network blocks it.
+
+初回転送とDHCP・固定IPの選択は[Pico Wの設定と検索](docs/rust-client.md)を参照してください。検索にはPCとPico WのローカルUDP通信が必要です。研究室ネットワークで遮断される場合はUSB確認を使用します。
+
+## Development / 開発
+
+```sh
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+uv run ruff check .
+uv run mypy
+uv run pytest --cov --cov-report=term-missing
 ```
 
-## Documentation
+Tests do not move a shutter or connect hardware. See [Contributing](CONTRIBUTING.md) and [Safety notes](SAFETY.md) before a physical test.
 
-- [Initial setup](docs/initial_setup.md): install Git, GitHub CLI, uv, clone the repository, and verify the environment.
-- [Usage guide](docs/usage.md): hardware overview, Wi-Fi setup, CLI, GUI, and expansion notes.
-- [Specification](docs/specification.md): TCP protocol and channel behavior.
-- [Purchase list](docs/purchase-list.md): hardware purchasing notes.
-- [Windows setup](docs/windows_setup.md): Windows PC preparation notes.
-- [Roadmap](ROADMAP.md): planned milestones.
-- [Safety notes](SAFETY.md): safety assumptions and operator responsibilities.
-- [Contributing](CONTRIBUTING.md): development workflow and pull request expectations.
+テストはシャッターを動かさず、実機にも接続しません。実機試験の前に[開発ガイド](CONTRIBUTING.md)と[安全上の注意](SAFETY.md)を確認してください。
 
-## Project Status
+## Related projects / 関連プロジェクト
 
-`v0.1.0` is the repository baseline: licensing, CI, branch protection, dependency maintenance, and documentation structure are in place. Device robustness and simulated transports are planned next.
+- [KohdaLab IV](https://github.com/woolen-yarn/kohdalab-iv): DC I-V / V-I measurement desktop application.
+- [KohdaLab TRKR](https://github.com/woolen-yarn/kohdalab-trkr): time-resolved Kerr rotation measurement desktop application.
 
-## License
+## License / ライセンス
 
 MIT. See [LICENSE](LICENSE).
