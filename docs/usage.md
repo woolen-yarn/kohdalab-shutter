@@ -134,6 +134,8 @@ uv run python -m client.cli 10.32.145.232 status
 uv run mpremote connect auto fs cp server/main.py :main.py
 uv run mpremote connect auto fs cp server/pca9685.py :pca9685.py
 uv run mpremote connect auto fs cp server/servo.py :servo.py
+uv run mpremote connect auto fs cp server/discovery.py :discovery.py
+uv run mpremote connect auto fs cp server/sessions.py :sessions.py
 uv run mpremote connect auto fs cp server/settings.py :settings.py
 uv run mpremote connect auto fs cp server/wifi_config.py :wifi_config.py
 uv run mpremote connect auto reset
@@ -141,9 +143,9 @@ uv run mpremote connect auto reset
 
 ## Servo stall prevention / サーボのスタック対策
 
-**JP:** 既定設定では、サーボを 3 度ずつ 20 ms 間隔で動かし、同時に動かすのは 1 台だけです。目標角で 500 ms 待った後、PCA9685 の PWM を OFF にします。これにより電源電圧降下と、機械端に押し付け続けるストール電流を抑えます。設定は `server/settings.py` の `SERVO_*` にあります。
+**JP:** 既定設定では、サーボを 3 度ずつ 20 ms 間隔で動かし、設定されたCHを並列で駆動します。目標角で 500 ms 待った後、PCA9685 の PWM を OFF にします。これにより電源電圧降下と、機械端に押し付け続けるストール電流を抑えます。設定は `server/settings.py` の `SERVO_*` にあります。
 
-**EN:** By default, servos move in 3-degree steps every 20 ms, one at a time. After 500 ms at the target, the PCA9685 output is disabled. This reduces supply dips and continuous stall current against a mechanical stop. Tune the `SERVO_*` values in `server/settings.py`.
+**EN:** By default, servos move in 3-degree steps every 20 ms, with configured channels moving in parallel. After 500 ms at the target, the PCA9685 output is disabled. This reduces supply dips and continuous stall current against a mechanical stop. Tune the `SERVO_*` values in `server/settings.py`.
 
 **JP:** PWM 解放後にシャッターが自重で戻る機構だけは `SERVO_RELEASE_PWM=False` を検討できます。ただし発熱・唸りが戻るため、先にリンク機構と open/close 角を調整してください。位置センサーや電流センサーがない構成では、物理的な詰まりをソフトウェアだけで検出できません。
 

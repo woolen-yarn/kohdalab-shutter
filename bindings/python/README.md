@@ -12,7 +12,7 @@ Install the client in your Python environment / 使用するPython環境へイ�
 python -m pip install ./bindings/python
 ```
 
-Start the GUI with `--gui-api`, or enable **Local control API** in the left panel. For hardware-free exploration / 実機なしで確認する場合:
+Start the GUI with `--gui-api`, or enable **Local control API** under Settings in the picker or ··· in the controls. For hardware-free exploration / 実機なしで確認する場合:
 
 ```sh
 cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --gui-api
@@ -32,9 +32,9 @@ with GuiShutter() as shutter:
     shutter.wait(shutter.close(0)["id"], timeout=5)
 ```
 
-For real hardware, connect in the GUI first, or await `connect(host="...")` before another operation. `find_devices()` returns a discovery job; its completed `result.devices` lists IDs and addresses for `connect(device_id=...)`.
+For real hardware, connect in the GUI first, or await `connect(host="...", channels=[0, 2])` before another operation. `find_devices()` returns a discovery job; its completed `result.devices` lists labels, IDs, addresses and channel availability for `connect(device_id=...)`.
 
-実機では先にGUIで接続するか、`connect(host="...")` が返すジョブの完了を待ってから次の操作を行います。`find_devices()` は検索ジョブを返し、完了後の `result.devices` にIDとアドレスが入ります。IDは `connect(device_id=...)` に渡せます。
+実機では先にGUIで接続するか、`connect(host="...", channels=[0, 2])` が返すジョブの完了を待ってから次の操作を行います。`find_devices()` は検索ジョブを返し、完了後の `result.devices` にラベル・ID・アドレス・CHの空き状況が入ります。IDは `connect(device_id=...)` に渡せます。
 
 ## Ownership and results / 操作権と結果
 

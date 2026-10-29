@@ -10,21 +10,27 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
 
-- Discovers running Pico W shutter servers on the local network and requires an explicit device selection.
-- Controls any reported channel count with per-channel and all-channel Open / Close actions.
-- Keeps servo control on the Pico W: stepped motion, parallel channel motion, and PWM release after settling.
+- Select a labelled Pico W and the channels you need in a separate connection screen.
+- Locks selected channels on the Pico; other PCs can use the remaining channels.
+- Shows only your channels in a compact dark control window, with Open / Close and scoped All actions.
 
-- 稼働中のPico Wをローカルネットワーク内で検索し、対象機器を明示的に選択します。
-- STATUS応答に含まれるチャンネル数に応じて、個別・一括の開閉操作を表示します。
-- サーボ制御はPico W上で実行し、段階駆動・全CHの並列動作・停止後のPWM解放を行います。
+- 接続画面で名前付きのPico Wと使用CHを選びます。
+- Pico側で選択CHだけをロックし、残りのCHは他のPCから使用できます。
+- 操作画面は使用CHだけを表示する小型の黒テーマです。
 
 ## Interface / 画面
 
 ![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-The left panel finds a Pico W and has explicit Connect / Disconnect controls, the centre shows light-window graphics and Open / Close controls in a horizontal row. Choose Horizontal or Vertical to change the layout, and CH ↑ / CH ↓ to change the channel display order; all-channel actions, connection details and activity stay in the left panel. The dark palette and blue controls follow kohdalab-trkr, with the version beside the app title. The image is simulated; no shutter hardware is connected.
+The connection screen lists shared device labels, IDs/IPs and available channels. Labels are stored on the Pico and shared across PCs. After Connect, only the acquired channels appear. A small status line and version sit at the top; Disconnect releases the channels. The ··· menu contains layout, order and local API settings. The dark palette follows kohdalab-trkr and the picker-to-controls flow follows kohdalab-camera. Images use simulated hardware.
 
-左でPico Wを検索し、Connect／Disconnectで接続・切断します。中央の丸い窓で開閉状態を確認し、その下のOpen／Closeで操作します。kohdalab-trkrと共通の黒テーマ・青いボタンを使用し、上部にバージョンを表示します。Horizontal／Verticalで配置、CH ↑／CH ↓で昇順・降順を切り替え、一括開閉・接続情報・履歴は左パネルに集約しています。画像はシミュレーションであり、実機は接続していません。
+接続画面で機器のラベルと空いているCHを選び、Connectします。ラベルはPicoに保存され、他のPCにも共有されます。接続後は取得したCHだけを表示し、上部に小さなStatusとVersionを置きます。Disconnectでロックを解放します。配置・並び順・外部APIは「···」にまとめています。画像は模擬接続です。
+
+![Connection picker](docs/images/kohdalab-shutter-connect.png)
+
+**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` before using v0.5.0. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
+
+**Pico側の更新が必要です。** `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
 
 <details>
 <summary>Vertical layout / 縦並び</summary>
@@ -52,8 +58,8 @@ Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/k
 
 | Platform / OS | Download / ファイル |
 | --- | --- |
-| Windows 10/11 (x64) | `kohdalab-shutter-0.4.3-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
-| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.4.3-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+| Windows 10/11 (x64) | `kohdalab-shutter-0.5.0-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.5.0-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
 
 The first release is not publisher-signed or Apple-notarized; see the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware upload still requires separate MicroPython tools.
 
@@ -61,9 +67,9 @@ The first release is not publisher-signed or Apple-notarized; see the [installat
 
 ## Code signing / 署名・公証
 
-The published v0.4.3 files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
+The published v0.5.0 files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
 
-公開中のv0.4.3の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
+公開中のv0.5.0の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
 
 ## Parallel motion / 並列動作
 

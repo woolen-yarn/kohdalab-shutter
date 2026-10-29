@@ -64,7 +64,7 @@ Connect the Pico W by USB and confirm MicroPython is installed.
 uv run mpremote connect auto fs cp server/main.py :main.py
 uv run mpremote connect auto fs cp server/pca9685.py :pca9685.py
 uv run mpremote connect auto fs cp server/servo.py :servo.py
-uv run mpremote connect auto fs cp server/discovery.py :discovery.py
+uv run mpremote connect auto fs cp server/discovery.py :discovery.py fs cp server/sessions.py :sessions.py
 uv run mpremote connect auto fs cp server/settings.py :settings.py
 uv run mpremote connect auto fs cp server/wifi_config.py :wifi_config.py
 uv run mpremote connect auto reset

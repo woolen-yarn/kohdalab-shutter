@@ -1,23 +1,23 @@
 ## Changes / 変更内容
 
-- **Windows Setup.exe:** install KohdaLab Shutter for the current user without administrator rights. Launch from the Start menu or desktop; a Demo shortcut is also included.
-- Run the new Setup with the app closed to update. Uninstall through Windows Settings → Apps. User settings and unrelated files are preserved.
-- WindowsのSetup形式に対応しました。インストール後はスタートメニュー・デスクトップから起動できます。更新は新しいSetupの実行、削除はWindowsの「設定 → アプリ」から行えます。
-- The portable Windows ZIP and Mac Universal DMG/ZIP remain available. Parallel All actions, Connect/Disconnect and the stable dark GUI from v0.4.2 are included.
+- **Separate connection screen:** select a labelled Pico W, choose available CHs, then Connect. Labels are saved on the Pico and shared by every PC.
+- **CH locking:** selected channels are locked on the Pico. Other users can use the remaining CHs; overlapping selections are rejected atomically.
+- **Compact controls:** only selected CHs, a small status/version header, Open/Close and scoped All actions. Layout/order/API options are in ···.
+- **Connected LEDs:** each acquired CH repeats two short flashes. Disconnect releases immediately; network loss/crashes release after 15 seconds while holding shutter state.
 
-**Pico update required for parallel movement:** edit `SERVO_MAX_ACTIVE` in the device's existing `settings.py` to the channel count (e.g. `4` for four channels), then restart. Preserve calibrated angles, wiring and Wi-Fi/IP settings. The source default is `SERVO_MAX_ACTIVE = len(CHANNELS)` after the channel definitions. Updating only the desktop cannot change the device's current limit.
+## Pico update required / Pico側の更新が必要です
 
-**並列動作にはPico側の設定変更も必要です。** 実機の既存`settings.py`で`SERVO_MAX_ACTIVE`をCH数（4台なら`4`）へ変更し、再起動してください。校正角度・ピン・Wi-Fi/IP設定は変更しません。GUIだけの更新では実機の同時駆動数は変わりません。
+Upload v0.5.0 `server/main.py` and new `server/sessions.py` by USB, then restart. Preserve your calibrated `settings.py`, Wi-Fi credentials and saved `device_config.json`. Old firmware is refused by the new GUI because it cannot enforce these locks. [Update instructions](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md#pico-firmware-update--pico側の更新)
+
+Picoの`main.py`と新しい`sessions.py`を転送してください。既存の校正・ピン・Wi-Fi/IP設定は保持します。GUIだけの更新ではCHロック・二連点滅は使えません。
 
 ## Downloads / ダウンロード
 
-- **Windows 10/11 (x64):** `kohdalab-shutter-0.4.3-windows-x64-Setup.exe`. The ZIP is an alternative for portable use.
-- **Mac (macOS 13+, Apple Silicon + Intel):** `kohdalab-shutter-0.4.3-macos-universal.dmg`. Drag KohdaLab Shutter.app to Applications; the ZIP contains the same app.
+- Windows x64: `kohdalab-shutter-0.5.0-windows-x64-Setup.exe` (portable ZIP also available).
+- macOS 13+, Apple Silicon/Intel: `kohdalab-shutter-0.5.0-macos-universal.dmg` (ZIP also available).
 
-**No Rust or Python installation is needed to run the desktop app.** Initial Pico firmware setup and Python/Jupyter integration remain separate steps.
+No Rust/Python is required for the desktop app. Windows remains unsigned; Mac is ad-hoc signed and not notarized, pending provider setup.
 
-Windows Setup, its uninstaller and application executables are **unsigned**. The Mac app is ad-hoc signed and **not Apple-notarized**. Existing first-launch prompts may remain; SignPath acceptance and Apple enrollment/credentials are pending. See the [installation guide](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md).
+Validated with multi-PC protocol simulations and three real GUI processes connected to a simulated Pico: disjoint CH sharing, overlap rejection, scoped All actions and disconnect release. Physical Pico/LED/servo validation remains a separate hardware check; no hardware is flashed automatically.
 
-Release checks include native Windows installation/reinstallation/uninstallation, shortcuts and registry entries, packaged CLI startup, platform tests/builds, Mac app verification and SHA-256 verification before publication. Physical Pico/Wi-Fi/servo checks remain separate.
-
-[Installation / 導入](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md) · [Pico W setup / 実機設定](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/rust-client.md) · [External API / 外部制御](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/gui-api.md)
+[Installation](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md) · [External API](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/gui-api.md)

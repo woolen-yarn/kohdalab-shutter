@@ -6,9 +6,9 @@ Pico接続はRust GUIが所有します。手動操作と外部APIは同じ制�
 
 ## Enable and attach / 有効化と接続
 
-Enable **Local control API** in the sidebar, or launch with `--gui-api`. Add `--demo` to use an isolated simulation. `--api-directory DIR` overrides the endpoint descriptor directory, and explicit startup errors terminate the launch rather than silently disabling the requested API.
+Enable **Local control API** under **Settings** in the picker or **···** in the controls, or launch with `--gui-api`. Add `--demo` to use an isolated simulation. `--api-directory DIR` overrides the endpoint descriptor directory, and explicit startup errors terminate the launch rather than silently disabling the requested API.
 
-左パネルで有効にするか、`--gui-api` を指定します。`--demo` を併用すると実機へ通信しません。接続情報の保存先は `--api-directory DIR` で変更できます。
+接続画面のSettingsまたは操作画面の「···」で有効にするか、`--gui-api` を指定します。`--demo` を併用すると実機へ通信しません。接続情報の保存先は `--api-directory DIR` で変更できます。
 
 ```sh
 cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --gui-api
@@ -23,7 +23,7 @@ See the [Python client guide](../bindings/python/README.md) for complete example
 from kohdalab_shutter import GuiShutter
 
 with GuiShutter() as shutter:
-    connected = shutter.connect(host="192.168.1.42")
+    connected = shutter.connect(host="192.168.1.42", channels=[0, 2])
     shutter.wait(connected["id"], timeout=10)
     action = shutter.open(0)
     shutter.wait(action["id"], timeout=10)
@@ -42,7 +42,7 @@ All requests include `token` and either `method` or the TRKR-style alias `action
 | --- | --- |
 | Read-only / 参照 | `capabilities`, `status`, `config`, `result` (`id`) |
 | Ownership / 操作権 | `acquire` (`client`, optional `label`), `heartbeat`, `release` |
-| Connection / 接続 | `discover`, `connect` (`host` or `device_id`, optional `port`), `disconnect` |
+| Connection / 接続 | `discover`, `connect` (`host` or `device_id`, required `channels`, optional `port`), `disconnect` |
 | Shutters / 開閉 | `open`, `close`, `toggle` (`channel`); `open_all`, `close_all` |
 | Display / 表示 | `set_layout` (`layout`: `horizontal` or `vertical`); `set_order` (`order`: `ascending` or `descending`) |
 
@@ -52,7 +52,7 @@ Success is `{"ok":true,"result":...,"data":...}`; `data` is a compatibility alia
 
 ## Ownership / 操作権
 
-The first Python mutation, or entering `with GuiShutter()`, acquires one exclusive lease. The client heartbeats every two seconds and the GUI expires it after ten seconds without renewal. An external-control banner and sidebar owner label identify the controller; ordinary manual inputs are locked. **Take control** revokes that client after the current command task finishes. An expired/revoked client must create a new client UUID to acquire again. Voluntary release permits reuse.
+The first Python mutation, or entering `with GuiShutter()`, acquires one exclusive lease. The client heartbeats every two seconds and the GUI expires it after ten seconds without renewal. The header API indicator and the ··· menu identify the external controller; ordinary manual inputs are locked. **Take control** revokes that client after the current command task finishes. An expired/revoked client must create a new client UUID to acquire again. Voluntary release permits reuse.
 
 変更操作は排他的な操作権を取得します。操作中の外部クライアント名をGUIに表示し、手動入力をロックします。Take controlで操作権を取り戻せます。失効・取り消し後の古いクライアントは再取得できません。
 
@@ -90,3 +90,9 @@ The native script launches its own demo GUI in an isolated temporary API directo
 Display order changes are session preferences. `set_order` never renumbers channels or sends a hardware command. JSON `channels` remains keyed by the physical CH number; use `display_order` to reproduce the on-screen sequence.
 
 表示順はセッション内の設定です。`set_order` はCH番号を変更せず、実機へ指令を送りません。画面順を再現するときは `display_order` を使用します。
+
+## Shared Pico channels / 複数PCでの使用
+
+Hardware `connect` requires an explicit nonempty `channels` array, e.g. `connect(host="192.168.1.42", channels=[0, 2])`. The GUI atomically acquires those channels on the Pico; another GUI can acquire disjoint channels. A busy/expired Pico lease fails the connection/action. `status().channels` and All actions are scoped to the acquired channels. Discovery results include shared `label` and channel availability; `status` includes `device_label` and `selected_channels`. The ten-second local API lease is separate from the fifteen-second Pico lease, which the GUI renews while connected. Releasing Python control returns manual control to this GUI; `disconnect()` releases the Pico channels.
+
+実機の`connect`には使用CHを明示します。PicoがCH単位で操作権を管理し、別GUIは空きCHを利用できます。状態表示・一括開閉も取得CHに限定します。Python側の`release()`はGUI内の操作権を返し、`disconnect()`がPicoのCHを解放します。
