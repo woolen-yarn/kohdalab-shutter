@@ -40,16 +40,18 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 1. Update/start the Pico firmware as below, then choose **Find Pico W**.
 2. Select a controller by its label. Names are shown on both connection and control screens.
 3. Select the available channels and **Connect**. In-use channels are disabled; acquisition is atomic if another PC connects at the same time.
-4. Use Open / Close. Open **··· → Settings** to edit the Pico name, channel names, layout, order and local API. Changes save automatically; there are no All buttons.
-5. **Disconnect**, or close the window, to release your channels. After a crash/network loss, the Pico releases them after 15 seconds; position is held.
+4. Click a light window to toggle its shutter. Edit its name below the CH number and press **Enter** to apply; Escape or clicking elsewhere cancels unconfirmed text. **··· → Settings** contains Pico name, layout, order and local API. Confirmed names and settings save automatically.
+5. Choose **controller name ▾ → Disconnect**, or close the window, to release your channels. After a crash/network loss, the Pico releases them after 15 seconds; position is held.
 
 1. 下記手順でPicoを更新・起動し、**Find Pico W**で検索します。
 2. ラベルで機器を選びます。名前は接続後のSettingsで変更できます。
 3. 空いているCHを選んで **Connect**。使用中CHは選べず、複数人が同時に取得しても重複使用しません。
-4. 個別のOpen／Closeで操作します。Pico名・CH名・配置・順序・外部APIは **··· → Settings**にまとめ、自動保存します。Allボタンはありません。
-5. **Disconnect**または画面を閉じて解放します。通信断・異常終了時は15秒で解放し、位置は維持します。
+4. 光の窓を押すと開閉を切り替えます。CH番号の下の名前欄を編集し、**Enter**で確定します。Escapeや欄外クリックは未確定の編集を戻します。**··· → Settings**にPico名・配置・順序・外部APIをまとめ、確定した名前と設定を自動保存します。
+5. **接続名 ▾ → Disconnect**または画面を閉じて解放します。通信断・異常終了時は15秒で解放し、位置は維持します。
 
 ## Pico firmware update / Pico側の更新
+
+v0.6.1 is a desktop-only update: no Pico update is needed if v0.6.0 firmware is already installed.
 
 v0.6.0 requires the updated channel-session firmware for shared channel-name persistence. An older Pico cannot enforce cross-PC ownership and the new GUI refuses to connect to it. With the Pico attached by USB, update these files from the v0.6.0 source archive:
 
@@ -105,8 +107,8 @@ these user settings and never resets the Pico.
 
 ## Automatic settings / 設定の自動保存
 
-Edit Pico and channel names in **··· → Settings** after connecting. Valid names save on the Pico after a short pause; other connected PCs receive the new names on refresh. Only your acquired CHs can be renamed. Changes patch only edited fields, preserving other users' channel names, calibration, network and unknown config fields. Saving failures keep the control window open and display an error/Retry.
+Edit a channel name directly below its CH number and press **Enter** to apply; Escape or clicking elsewhere discards unconfirmed text. Edit the Pico name in **··· → Settings**. Confirmed channel names save automatically, and valid Pico names save after a short pause; other connected PCs receive the new names on refresh. Only your acquired CHs can be renamed. Changes patch only edited fields, preserving other users' channel names, calibration, network and unknown config fields. Saving failures keep the control window open and display an error/Retry.
 
 PC settings auto-save to the application-owned config file listed above. It includes layout/order, CH selection, broadcast/manual endpoint and API opt-in, plus a cache of confirmed names. It excludes session tokens and never automatically re-acquires channels. Unknown JSON fields survive; corrupt, unsupported and foreign application files remain untouched. Old settings/installations are not automatically migrated or deleted. If an older per-user shortcut launches v0.5.0, start the new Program Files application; remove the old installation manually only when you no longer need it.
 
-Settings内で入力後、短く待つと自動保存します。名前はPicoへ、表示・接続・APIの設定はPCへ保存します。保存失敗時はエラーを表示し、開閉操作の接続は維持します。古いファイルやインストールは自動削除しません。旧ショートカットから旧版が起動する場合はProgram Files内の新版を使用してください。
+CH名は操作画面の入力欄でEnterを押すと確定し、自動保存します。Pico名はSettings内で入力後、短く待つと自動保存します。名前はPicoへ、表示・接続・APIの設定はPCへ保存します。保存失敗時はエラーを表示し、開閉操作の接続は維持します。古いファイルやインストールは自動削除しません。旧ショートカットから旧版が起動する場合はProgram Files内の新版を使用してください。

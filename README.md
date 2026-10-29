@@ -12,7 +12,7 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 - Select a labelled Pico W and the channels you need in a separate connection screen.
 - Locks selected channels on the Pico; other PCs can use the remaining channels.
-- Shows only your channels in a compact dark control window, with named shutters and individual Open / Close actions.
+- Shows only your channels in a compact dark control window, with editable names and clickable light-window switches.
 
 - 接続画面で名前付きのPico Wと使用CHを選びます。
 - Pico側で選択CHだけをロックし、残りのCHは他のPCから使用できます。
@@ -22,15 +22,15 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 ![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-The connection screen lists shared device labels, IDs/IPs and available channels. Labels are stored on the Pico and shared across PCs. After Connect, only the acquired channels appear, using their names as the primary labels and small CH numbers for identification. A small status line and version sit at the top; Disconnect releases the channels. The ··· button opens Settings for Pico/channel names, layout, order and local API. Names and settings save automatically; All buttons are omitted. The dark palette follows kohdalab-trkr and the picker-to-controls flow follows kohdalab-camera. Images use simulated hardware.
+Choose a named controller on the left and channels in the vertical list on the right, then Connect. In the compact control window, each CH number sits above its name box. Click the name to edit and press Enter to apply; Escape or clicking elsewhere discards unconfirmed text. Click the light window to toggle the shutter. The connection-name menu contains Disconnect; ··· opens Settings for the Pico name, layout, order and local API. Confirmed names and settings save automatically. Labels are shared through the Pico. The dark palette follows kohdalab-trkr; images use simulated hardware.
 
-接続画面で機器のラベルと空いているCHを選び、Connectします。ラベルはPicoに保存され、他のPCにも共有されます。接続後は取得したCHだけを表示し、上部に小さなStatusとVersionを置きます。Disconnectでロックを解放します。「···」のSettingsにPico名・CH名・配置・並び順・外部APIをまとめ、自動保存します。Allボタンは表示しません。画像は模擬接続です。
+接続画面は左で機器、右の縦並びで使用CHを選び、Connectします。操作画面はCH番号の下に名前の入力欄を置き、クリックで編集・Enterで確定します。Escapeや欄外のクリックでは未確定の編集を戻します。光の窓を押すと開閉を切り替えます。上部の接続名メニューにDisconnect、「···」のSettingsにPico名・配置・並び順・外部APIをまとめました。確定した名前と設定は自動保存し、名前はPicoを通じて他のPCにも共有します。黒テーマはkohdalab-trkrと統一しています。画像は模擬接続です。
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` before using v0.6.0. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
+**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` when upgrading from firmware older than v0.6.0. v0.6.1 only changes the desktop GUI; a Pico already running v0.6.0 needs no update. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
 
-**Pico側の更新が必要です。** `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
+**v0.6.0より前のPicoには更新が必要です。** v0.6.0導入済みなら、v0.6.1でPicoを再更新する必要はありません。 `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
 
 <details>
 <summary>Vertical layout / 縦並び</summary>

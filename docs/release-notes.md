@@ -1,24 +1,26 @@
 ## Changes / 変更内容
 
-- Removed the GUI All buttons; each shutter is identified primarily by its name, with a small CH number.
-- **··· → Settings** now groups Pico name, CH names, layout, order and Local control API. Valid edits save automatically after a short pause; Saved is shown only after acknowledgement. Save failures leave controls connected and allow Retry.
-- Pico/CH names are persisted on the Pico and shared with other PCs. Atomic patches preserve other users' names, calibration, Wi-Fi and unrelated config keys.
-- PC preferences use `~/.kohdalab/shutter/config.json` (`%USERPROFILE%\.kohdalab\shutter\config.json` on Windows). Layout/order/CH selection/network/API opt-in restore automatically; ownership and credentials never persist, and startup does not automatically acquire hardware.
-- Windows Setup now installs to `C:\Program Files\Kohdalab\KohdaLab Shutter` for all users and requires administrator approval. Mac uses `/Applications/KohdaLab Shutter.app`. Existing files/installations are not automatically migrated or deleted.
+- Click the light window to toggle a shutter; separate Open/Close buttons are removed.
+- Each CH number sits above its editable name box. Click to edit, Enter to apply. Escape or clicking elsewhere discards unconfirmed edits. Confirmed names save automatically and remain shared through the Pico.
+- Disconnect is in the connection-name menu at the top. Status and version share one compact header; ··· opens Settings for Pico name, layout, order and local API.
+- The connection picker places controllers on the left and a vertical CH list on the right, with a standard-sized Connect button at the bottom.
+- A click during background polling waits for that refresh once. Commands are never retried after a lost reply. External API behavior is unchanged.
+
+CH番号・名前欄・光の窓だけに操作画面を整理しました。名前はEnterで確定し自動保存、光の窓を押すと開閉を切り替えます。Disconnectは上部の接続名メニューにまとめました。接続画面は機器と縦並びのCH一覧を左右に配置しています。
 
 ## Pico update / Pico側の更新
 
-Update both `server/main.py` and `server/sessions.py` from v0.6.0. Preserve existing `settings.py`, Wi-Fi credentials and `device_config.json`; the existing device name is retained. Desktop update alone cannot provide persistent CH names.
+**No Pico update is needed if v0.6.0 firmware is already installed.** This release changes only the desktop GUI. For firmware older than v0.6.0, follow the [Pico update instructions](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md#pico-firmware-update--pico側の更新). Existing calibration, Wi-Fi settings and saved names are preserved; no hardware is flashed automatically.
 
-Pico側の`main.py`と`sessions.py`も更新してください。既存の校正・Wi-Fi・保存済みラベルは上書きしません。実機への自動転送は行いません。
+v0.6.0導入済みのPicoは再更新不要です。旧ファームウェアからは導入手順に従って更新してください。
 
 ## Downloads / ダウンロード
 
-- Windows x64: `kohdalab-shutter-0.6.0-windows-x64-Setup.exe` (portable ZIP also available).
-- macOS 13+, Apple Silicon/Intel: `kohdalab-shutter-0.6.0-macos-universal.dmg` (ZIP also available).
+- Windows x64: `kohdalab-shutter-0.6.1-windows-x64-Setup.exe` (portable ZIP also available).
+- macOS 13+, Apple Silicon/Intel: `kohdalab-shutter-0.6.1-macos-universal.dmg` (ZIP also available).
 
 Windows remains unsigned; Mac remains ad-hoc signed and not notarized pending provider setup.
 
-Validation covers atomic label persistence, ownership checks, rapid edits/late acknowledgements, save failure, restart restoration, corrupt/foreign config preservation, MicroPython runtime compatibility, and native packaging/install tests. Physical Pico/servo/LED checks remain separate; no hardware was flashed automatically.
+Validation includes actual egui pointer/keyboard interactions, single queued Toggle and failure cancellation, channel ownership, isolated multi-GUI/API sessions and native packaging checks. Images use simulated hardware; physical Pico/servo checks remain separate.
 
 [Install/update](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md)
