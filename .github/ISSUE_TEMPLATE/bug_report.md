@@ -21,7 +21,8 @@ assignees: ""
 ## Environment
 
 - PC OS:
-- Python / uv version:
+- Rust desktop version:
+- Python / uv version (firmware tools or compatibility client):
 - Repository commit or version:
 - Pico W MicroPython version if known:
 

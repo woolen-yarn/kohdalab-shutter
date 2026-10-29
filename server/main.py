@@ -1,8 +1,14 @@
-from machine import I2C, Pin
+from machine import I2C, Pin, unique_id
+import ubinascii
+from discovery import DiscoveryResponder
 from pca9685 import PCA9685
+from servo import ServoBoard
 from settings import (
     AUTO_START_SERVER,
+    BUTTON_DEBOUNCE_MS,
     CHANNELS,
+    COMMAND_READ_TIMEOUT_MS,
+    DISCOVERY_PORT,
     I2C_BUS,
     I2C_FREQ,
     I2C_SCL_PIN,
@@ -10,6 +16,11 @@ from settings import (
     LONG_PRESS_MS,
     PCA9685_ADDRESS,
     PCA9685_ANGLE_OFFSET,
+    SERVO_MAX_ACTIVE,
+    SERVO_RELEASE_DELAY_MS,
+    SERVO_RELEASE_PWM,
+    SERVO_STEP_DEGREES,
+    SERVO_STEP_INTERVAL_MS,
     SERVER_PORT,
     STATIC_IFCONFIG,
     USE_STATIC_IP,
@@ -23,54 +34,6 @@ try:
 except ImportError:
     SSID = ""
     PASSWORD = ""
-
-
-class ServoBoard:
-    def __init__(self, channels):
-        self.channels = channels
-        i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
-        self._pwm = PCA9685(i2c, address=PCA9685_ADDRESS, angle_offset=PCA9685_ANGLE_OFFSET)
-        self.angles = [channel["close"] for channel in channels]
-        self.update_all()
-
-    def count(self):
-        return len(self.channels)
-
-    def valid_channel(self, index):
-        return 0 <= index < self.count()
-
-    def close_angle(self, index):
-        return self.channels[index]["close"]
-
-    def open_angle(self, index):
-        return self.channels[index]["open"]
-
-    def set(self, index, angle):
-        if not self.valid_channel(index):
-            return False
-        self.angles[index] = angle
-        self._pwm.set_servo_angle(self.channels[index]["servo"], angle)
-        return True
-
-    def open(self, index):
-        return self.set(index, self.open_angle(index))
-
-    def close(self, index):
-        return self.set(index, self.close_angle(index))
-
-    def toggle(self, index):
-        if not self.valid_channel(index):
-            return False
-        if self.angles[index] == self.close_angle(index):
-            return self.open(index)
-        return self.close(index)
-
-    def update_all(self):
-        for index, angle in enumerate(self.angles):
-            self._pwm.set_servo_angle(self.channels[index]["servo"], angle)
-
-    def status_text(self):
-        return ",".join("CH{}={}".format(index, angle) for index, angle in enumerate(self.angles))
 
 
 class LedDeck:
@@ -90,9 +53,15 @@ class LedDeck:
     def reflect(self):
         if self.mode != self.NORMAL:
             return
-        for index, angle in enumerate(self.servos.angles):
+        for index, angle in enumerate(self.servos.positions):
             self.red[index].value(1 if angle == self.servos.close_angle(index) else 0)
             self.green[index].value(1 if angle == self.servos.open_angle(index) else 0)
+            if angle not in (
+                self.servos.close_angle(index),
+                self.servos.open_angle(index),
+            ):
+                self.red[index].value(1)
+                self.green[index].value(1)
 
     def set_mode(self, mode):
         if self.mode == mode:
@@ -124,18 +93,26 @@ class LedDeck:
                 green.value(self._phase)
             return
 
-        for index, angle in enumerate(self.servos.angles):
+        for index, angle in enumerate(self.servos.positions):
             if angle == self.servos.open_angle(index):
                 self.green[index].value(self._phase)
                 self.red[index].value(0)
-            else:
+            elif angle == self.servos.close_angle(index):
                 self.red[index].value(self._phase)
                 self.green[index].value(0)
+            else:
+                self.red[index].value(self._phase)
+                self.green[index].value(self._phase)
 
 
 class ButtonDeck:
     def __init__(self, channels, callback):
-        self.switches = [Pin(channel["switch"], Pin.IN, Pin.PULL_UP) for channel in channels]
+        self.switches = [
+            Pin(channel["switch"], Pin.IN, Pin.PULL_UP) for channel in channels
+        ]
+        self._raw = [pin.value() for pin in self.switches]
+        self._stable = list(self._raw)
+        self._changed_at = [time.ticks_ms()] * len(channels)
         self._pressed_at = [None] * len(channels)
         self._long_pressing = [False] * len(channels)
         self.callback = callback
@@ -143,13 +120,26 @@ class ButtonDeck:
     def poll(self):
         now = time.ticks_ms()
         for index, pin in enumerate(self.switches):
-            if not pin.value():
-                if self._pressed_at[index] is None:
-                    self._pressed_at[index] = now
-                elif not self._long_pressing[index]:
+            raw = pin.value()
+            if raw != self._raw[index]:
+                self._raw[index] = raw
+                self._changed_at[index] = now
+                continue
+
+            if raw == self._stable[index]:
+                if not raw and self._pressed_at[index] is not None:
                     if time.ticks_diff(now, self._pressed_at[index]) >= LONG_PRESS_MS:
-                        self._long_pressing[index] = True
-                        print("Long press CH{}".format(index))
+                        if not self._long_pressing[index]:
+                            self._long_pressing[index] = True
+                            print("Long press CH{}".format(index))
+                continue
+
+            if time.ticks_diff(now, self._changed_at[index]) < BUTTON_DEBOUNCE_MS:
+                continue
+
+            self._stable[index] = raw
+            if not raw:
+                self._pressed_at[index] = now
                 continue
 
             if self._pressed_at[index] is not None:
@@ -168,6 +158,12 @@ class WifiServer:
         self.servos = servos
         self.leds = leds
         self.sock = None
+        self.discovery = DiscoveryResponder(
+            socket,
+            ubinascii.hexlify(unique_id()).decode(),
+            SERVER_PORT,
+            DISCOVERY_PORT,
+        )
         self.running = False
 
     def start(self):
@@ -179,13 +175,28 @@ class WifiServer:
             self.leds.set_mode(LedDeck.NORMAL)
             return False
 
-        self.sock = socket.socket()
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("0.0.0.0", SERVER_PORT))
-        self.sock.listen(8)
-        self.sock.settimeout(0)
+        try:
+            self.sock = socket.socket()
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.sock.bind(("0.0.0.0", SERVER_PORT))
+            self.sock.listen(8)
+            self.sock.settimeout(0)
+        except Exception as exc:
+            print("TCP server start failed:", exc)
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
+            self.discovery.stop()
+            self.leds.set_mode(LedDeck.NORMAL)
+            return False
         self.running = True
         self.leds.set_mode(LedDeck.BLINK)
+
+        if not self.discovery.start():
+            print("UDP discovery unavailable; TCP control remains available")
 
         ip = network.WLAN(network.STA_IF).ifconfig()[0]
         print("Server listening on {}:{}".format(ip, SERVER_PORT))
@@ -201,6 +212,7 @@ class WifiServer:
             except Exception:
                 pass
             self.sock = None
+        self.discovery.stop()
         self.leds.set_mode(LedDeck.NORMAL)
         print("Server stopped")
         return True
@@ -208,6 +220,8 @@ class WifiServer:
     def poll(self):
         if not self.running:
             return
+
+        self.discovery.poll()
 
         while True:
             try:
@@ -231,13 +245,18 @@ class WifiServer:
                     pass
 
     def _readline(self, conn, max_length=256):
-        conn.settimeout(5)
+        conn.settimeout(0.05)
+        started = time.ticks_ms()
         buffer = bytearray()
         while len(buffer) < max_length:
             try:
                 chunk = conn.recv(1)
             except OSError:
-                break
+                self.servos.tick()
+                self.leds.tick()
+                if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
+                    break
+                continue
             if not chunk or chunk == b"\n":
                 break
             buffer += chunk
@@ -259,6 +278,7 @@ class WifiServer:
                 if time.ticks_diff(time.ticks_ms(), started) > 10_000:
                     print("Wi-Fi timeout")
                     return False
+                self.servos.tick()
                 self.leds.tick()
                 time.sleep(0.3)
 
@@ -303,7 +323,19 @@ class WifiServer:
             conn.send(b"ERR\n")
 
 
-servos = ServoBoard(CHANNELS)
+i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
+pwm = PCA9685(i2c, address=PCA9685_ADDRESS, angle_offset=PCA9685_ANGLE_OFFSET)
+servos = ServoBoard(
+    CHANNELS,
+    pwm,
+    time.ticks_ms,
+    time.ticks_diff,
+    step_degrees=SERVO_STEP_DEGREES,
+    step_interval_ms=SERVO_STEP_INTERVAL_MS,
+    release_delay_ms=SERVO_RELEASE_DELAY_MS,
+    max_active=SERVO_MAX_ACTIVE,
+    release_pwm=SERVO_RELEASE_PWM,
+)
 leds = LedDeck(CHANNELS, servos)
 server = WifiServer(servos, leds)
 leds.reflect()
@@ -339,6 +371,8 @@ if AUTO_START_SERVER:
 
 while True:
     buttons.poll()
+    servos.tick()
+    leds.reflect()
     sync_led_mode()
     leds.tick()
     server.poll()
