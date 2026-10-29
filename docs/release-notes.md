@@ -1,26 +1,25 @@
+# KohdaLab Shutter 0.6.2
+
 ## Changes / 変更内容
 
-- Click the light window to toggle a shutter; separate Open/Close buttons are removed.
-- Each CH number sits above its editable name box. Click to edit, Enter to apply. Escape or clicking elsewhere discards unconfirmed edits. Confirmed names save automatically and remain shared through the Pico.
-- Disconnect is in the connection-name menu at the top. Status and version share one compact header; ··· opens Settings for Pico name, layout, order and local API.
-- The connection picker places controllers on the left and a vertical CH list on the right, with a standard-sized Connect button at the bottom.
-- A click during background polling waits for that refresh once. Commands are never retried after a lost reply. External API behavior is unchanged.
+Add Control Protocol 1 with opaque ownership, canonical operation receipts and the same standalone Python SDK as the desktop suite. Keep the compact light-window GUI and native API. Package common SDK sources and align GitHub maintenance conventions.
 
-CH番号・名前欄・光の窓だけに操作画面を整理しました。名前はEnterで確定し自動保存、光の窓を押すと開閉を切り替えます。Disconnectは上部の接続名メニューにまとめました。接続画面は機器と縦並びのCH一覧を左右に配置しています。
+## Compatibility and migration / 互換性と移行
 
-## Pico update / Pico側の更新
-
-**No Pico update is needed if v0.6.0 firmware is already installed.** This release changes only the desktop GUI. For firmware older than v0.6.0, follow the [Pico update instructions](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md#pico-firmware-update--pico側の更新). Existing calibration, Wi-Fi settings and saved names are preserved; no hardware is flashed automatically.
-
-v0.6.0導入済みのPicoは再更新不要です。旧ファームウェアからは導入手順に従って更新してください。
+Hold-last-state release is unchanged and reports cleanup `not_required`; commanded position is not measured optical transmission. No Pico update is needed when compatible v0.6.0 firmware is already installed. Firmware and desktop versions remain separate. No hardware is flashed automatically.
 
 ## Downloads / ダウンロード
 
-- Windows x64: `kohdalab-shutter-0.6.1-windows-x64-Setup.exe` (portable ZIP also available).
-- macOS 13+, Apple Silicon/Intel: `kohdalab-shutter-0.6.1-macos-universal.dmg` (ZIP also available).
+Windows x64 Setup/portable ZIP; macOS universal ZIP/DMG; corresponding source, dependency notices and checksums. Windows is unsigned; Mac is ad hoc signed, not Developer ID signed or notarized.
 
-Windows remains unsigned; Mac remains ad-hoc signed and not notarized pending provider setup.
+[Release packages](https://github.com/woolen-yarn/kohdalab-shutter/releases). Existing older releases remain available.
 
-Validation includes actual egui pointer/keyboard interactions, single queued Toggle and failure cancellation, channel ownership, isolated multi-GUI/API sessions and native packaging checks. Images use simulated hardware; physical Pico/servo checks remain separate.
+## Validation and provenance / 検証と出所
 
-[Install/update](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md)
+Local Rust application/common suites: 63 passed. Actual Demo GUI covered native regression plus common open/result/wait, duplicate receipts and truthful release cleanup. Package/installer tests passed. Platform CI validates Windows/macOS packages.
+
+The common Python SDK has seven device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
+
+## 日本語
+
+共通GUI APIを追加しました。解放時の状態保持と既存操作を維持し、光学センサーによる確認とは区別します。互換ファームウェアv0.6.0導入済みならPicoの更新は不要です。実機を新たに動かした検証は行っていません。
