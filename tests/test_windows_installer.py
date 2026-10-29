@@ -64,18 +64,15 @@ def test_windows_file_version(value: str, expected: str) -> None:
     assert installer.windows_file_version(value) == expected
 
 
-def test_static_template_is_per_user_and_preserves_unknown_files() -> None:
+def test_static_template_is_machine_installed_and_preserves_unknown_files() -> None:
     source = (ROOT / "packaging/windows/KohdaLab-Shutter.nsi").read_text(
         encoding="utf-8"
     )
-    assert 'InstallDir "$LOCALAPPDATA\\Programs\\Kohdalab\\KohdaLab Shutter"' in source
-    assert "RequestExecutionLevel user" in source
+    assert 'InstallDir "$PROGRAMFILES64\\Kohdalab\\KohdaLab Shutter"' in source
+    assert "RequestExecutionLevel admin" in source
     assert "InstallDirRegKey" not in source
-    assert (
-        'StrCpy $INSTDIR "$LOCALAPPDATA\\Programs\\Kohdalab\\KohdaLab Shutter"'
-        in source
-    )
-    assert "HKLM" not in source
+    assert 'StrCpy $INSTDIR "$PROGRAMFILES64\\Kohdalab\\KohdaLab Shutter"' in source
+    assert "HKLM" in source
     assert "RMDir /r" not in source
     assert "Close KohdaLab Shutter before" in source
     assert "KohdaLabShutter" in source
@@ -101,3 +98,12 @@ def test_payload_filename_with_spaces_uses_quoted_nsis_option(tmp_path: Path) ->
     (candidate / "notice with spaces.txt").write_text("notice", encoding="utf-8")
     source = installer.generated_payload_include(candidate)
     assert 'File "/oname=notice with spaces.txt"' in source
+
+
+def test_lifecycle_validation_uses_machine_shortcuts_and_app_owned_settings():
+    source = (ROOT / "scripts/check_windows_installer.ps1").read_text()
+    assert "GetFolderPath('CommonPrograms')" in source
+    assert "GetFolderPath('CommonDesktopDirectory')" in source
+    assert "$productKey='HKLM:" in source
+    assert "'.kohdalab\\shutter'" in source
+    assert "WindowsBuiltInRole]::Administrator" in source

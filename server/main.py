@@ -279,7 +279,7 @@ class WifiServer:
                 except Exception:
                     pass
 
-    def _readline(self, conn, max_length=1024):
+    def _readline(self, conn, max_length=8192):
         conn.settimeout(0.05)
         started = time.ticks_ms()
         buffer = bytearray()
@@ -420,6 +420,7 @@ sessions = Sessions(
     time.ticks_ms,
     time.ticks_diff,
     device_label.save,
+    config_store=device_label,
 )
 server = WifiServer(servos, leds, sessions)
 leds.reflect()

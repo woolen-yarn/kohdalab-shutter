@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build KohdaLab Shutter's per-user Windows Setup.exe from a portable payload.
+"""Build KohdaLab Shutter's machine-wide Windows Setup.exe from a portable payload.
 
 NSIS 3.12 is downloaded only if ``makensis`` is unavailable. Its official
 binary archive is accepted only when it matches the pinned SHA-256 below, and

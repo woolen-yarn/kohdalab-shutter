@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-10-29
+
+- Removed All buttons from the compact GUI and promoted shared channel names above small physical CH identifiers.
+- Consolidated Pico/channel names, layout, order and API settings in Settings, with debounced automatic saving and explicit failure/retry state.
+- Added atomic shared-name patches on Pico and application-identified PC preferences at ~/.kohdalab/shutter/config.json; restored choices never auto-acquire hardware. Preserved unknown fields and protected corrupt/foreign settings.
+- Unified Windows installation under Program Files with admin/HKLM and all-user shortcuts, matching the other KohdaLab apps. Existing data/old installations are not deleted or migrated.
+
 ## 0.5.0 — 2026-10-29
 
 - Split connection selection from compact controls: shared Pico labels, explicit available-CH selection, only acquired channels displayed, small status/version header, and layout/order/API settings in the overflow menu.

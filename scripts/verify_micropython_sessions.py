@@ -64,13 +64,45 @@ def main():
             clock.ticks_ms,
             clock.ticks_diff,
             label.save,
+            config_store=label,
         )
         require(
             manager.request({"op": "info"})["label"] == "レーザー入口", "info label"
         )
         require(manager.claim(first, [0])["ok"], "first claim")
+        require(
+            manager.request(
+                {
+                    "op": "set_config",
+                    "token": first,
+                    "label": "偏光ベンチ",
+                    "channel_labels": {"0": "励起光"},
+                }
+            )["ok"],
+            "owned config update",
+        )
+        saved = DeviceLabel("Default", path)
+        require(saved.value == "偏光ベンチ", "device label did not persist")
+        require(
+            saved.channel_labels.get("0") == "励起光",
+            "channel label did not persist",
+        )
+        require(
+            manager.info()["channels"][0]["label"] == "励起光",
+            "info did not overlay channel label",
+        )
         require(manager.claim(second, [0])["error"] == "busy", "overlap claim")
         require(manager.claim(second, [1])["ok"], "independent claim")
+        require(
+            manager.request(
+                {"op": "set_config", "token": second, "channel_labels": {"1": "検出"}}
+            )["ok"],
+            "second owned channel label",
+        )
+        require(
+            DeviceLabel("Default", path).channel_labels == {"0": "励起光", "1": "検出"},
+            "channel labels did not merge",
+        )
         require(
             manager.operate(
                 first,

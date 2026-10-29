@@ -9,9 +9,9 @@ Download the current version from [GitHub Releases](https://github.com/woolen-ya
 | Windows 10/11, x64 | `kohdalab-shutter-<version>-windows-x64-Setup.exe` | Run Setup, then open KohdaLab Shutter from Start or the desktop. / Setupを実行後、スタートメニューまたはデスクトップから起動 |
 | macOS 13+, Apple Silicon / Intel | `kohdalab-shutter-<version>-macos-universal.dmg` | Open the DMG, drag `KohdaLab Shutter.app` to Applications, then open the app. / DMGを開き、アプリをApplicationsへドラッグして起動 |
 
-The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for the current user without administrator rights, under `%LOCALAPPDATA%\Programs\Kohdalab\KohdaLab Shutter`. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
+The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for all users under `%ProgramFiles%\Kohdalab\KohdaLab Shutter` and requires administrator approval. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
 
-WindowsのZIP版も引き続き利用できます。Setup版は管理者権限不要で現在のユーザーへインストールします。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
+WindowsのZIP版も引き続き利用できます。Setup版は管理者の許可を得て全ユーザー向けに `%ProgramFiles%\Kohdalab\KohdaLab Shutter` へ導入します。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
 
 The Mac ZIP is an alternative to the DMG; both contain the same universal app. Windows ARM64 and Linux binaries are not provided in this release.
 
@@ -38,22 +38,22 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 ## Connect to Pico W / Pico Wへ接続
 
 1. Update/start the Pico firmware as below, then choose **Find Pico W**.
-2. Select a controller by its label. Edit **Label → Save** while no one is using it; the name is stored on the Pico.
+2. Select a controller by its label. Names are shown on both connection and control screens.
 3. Select the available channels and **Connect**. In-use channels are disabled; acquisition is atomic if another PC connects at the same time.
-4. Use Open / Close. **Open all / Close all** affect only your selected channels. Layout, order and local API are in **···**.
+4. Use Open / Close. Open **··· → Settings** to edit the Pico name, channel names, layout, order and local API. Changes save automatically; there are no All buttons.
 5. **Disconnect**, or close the window, to release your channels. After a crash/network loss, the Pico releases them after 15 seconds; position is held.
 
 1. 下記手順でPicoを更新・起動し、**Find Pico W**で検索します。
-2. ラベルで機器を選びます。誰も使用していなければ **Label → Save**で名前を変更できます。
+2. ラベルで機器を選びます。名前は接続後のSettingsで変更できます。
 3. 空いているCHを選んで **Connect**。使用中CHは選べず、複数人が同時に取得しても重複使用しません。
-4. 個別・一括のOpen／Closeは自分のCHだけに作用します。配置・順序・外部APIは **···**内です。
+4. 個別のOpen／Closeで操作します。Pico名・CH名・配置・順序・外部APIは **··· → Settings**にまとめ、自動保存します。Allボタンはありません。
 5. **Disconnect**または画面を閉じて解放します。通信断・異常終了時は15秒で解放し、位置は維持します。
 
 ## Pico firmware update / Pico側の更新
 
-v0.5.0 requires the channel-session firmware. An older Pico cannot enforce cross-PC ownership and the new GUI refuses to connect to it. With the Pico attached by USB, update these files from the v0.5.0 source archive:
+v0.6.0 requires the updated channel-session firmware for shared channel-name persistence. An older Pico cannot enforce cross-PC ownership and the new GUI refuses to connect to it. With the Pico attached by USB, update these files from the v0.6.0 source archive:
 
-v0.5.0ではPico側にもCHロック機能が必要です。USBで接続し、v0.5.0ソース内の次の2ファイルを転送します。旧ファームウェアへ接続して、ロックがあるように見せることはありません。
+v0.6.0のCH名自動保存にはPico側の更新も必要です。USBで接続し、v0.6.0ソース内の次の2ファイルを転送します。旧ファームウェアへ接続して、ロックがあるように見せることはありません。
 
 ```sh
 uv run mpremote connect auto fs cp server/sessions.py :sessions.py fs cp server/main.py :main.py reset
@@ -92,3 +92,21 @@ The GUI's **Local control API** supports Python/Jupyter through the [Python clie
 `SHA256SUMS.txt` lists checksums for the Setup/ZIP/DMG files. `BUILD-*.json` records the exact source commit and artifact hashes. Each app includes the project license and dependency/font notices. Do not copy the example Wi-Fi file into a release with real credentials.
 
 `SHA256SUMS.txt`にSetup・ZIP・DMGのハッシュ、`BUILD-*.json`にビルド元コミットを記録しています。ライセンスと依存ライブラリ・フォントの表記も同梱します。Wi-Fiパスワード等の個人設定は含めません。
+
+## Application directories
+
+Windows Setup uses `C:\Program Files\Kohdalab\KohdaLab Shutter`;
+macOS uses `/Applications/KohdaLab Shutter.app`. Local desktop preferences use
+`~/.kohdalab/shutter/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config.json`).
+Pico calibration, network settings, and shared device/channel names remain on the
+controller. The shared `.kohdalab/control` directory is API discovery, not the
+application settings file. Updating or uninstalling the desktop app preserves
+these user settings and never resets the Pico.
+
+## Automatic settings / 設定の自動保存
+
+Edit Pico and channel names in **··· → Settings** after connecting. Valid names save on the Pico after a short pause; other connected PCs receive the new names on refresh. Only your acquired CHs can be renamed. Changes patch only edited fields, preserving other users' channel names, calibration, network and unknown config fields. Saving failures keep the control window open and display an error/Retry.
+
+PC settings auto-save to the application-owned config file listed above. It includes layout/order, CH selection, broadcast/manual endpoint and API opt-in, plus a cache of confirmed names. It excludes session tokens and never automatically re-acquires channels. Unknown JSON fields survive; corrupt, unsupported and foreign application files remain untouched. Old settings/installations are not automatically migrated or deleted. If an older per-user shortcut launches v0.5.0, start the new Program Files application; remove the old installation manually only when you no longer need it.
+
+Settings内で入力後、短く待つと自動保存します。名前はPicoへ、表示・接続・APIの設定はPCへ保存します。保存失敗時はエラーを表示し、開閉操作の接続は維持します。古いファイルやインストールは自動削除しません。旧ショートカットから旧版が起動する場合はProgram Files内の新版を使用してください。

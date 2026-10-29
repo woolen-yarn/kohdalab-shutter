@@ -37,8 +37,21 @@ def valid_token(value):
     )
 
 
+def _canonical_channel_id(value):
+    """Return a non-negative, canonical decimal channel id or None."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0 or str(number) != value:
+        return None
+    return number
+
+
 class DeviceLabel:
-    """Persist only the human label; calibration remains in settings.py."""
+    """Persist human-readable device and channel labels outside settings.py."""
 
     def __init__(self, default, path="device_config.json", os_module=None):
         self.default = default
@@ -49,43 +62,108 @@ class DeviceLabel:
             except ImportError:
                 import os as os_module
         self.os = os_module
-        self.value = self._load()
+        self._config = self._load()
+        value = self._config.get("label")
+        self.value = value if valid_label(value) else self.default
 
     def _load(self):
         try:
             with open(self.path, "r") as stream:
-                value = json.loads(stream.read()).get("label")
-            return value if valid_label(value) else self.default
+                config = json.loads(stream.read())
+            return config if isinstance(config, dict) else {}
         except Exception:
-            return self.default
+            return {}
 
-    def save(self, value):
-        if not valid_label(value):
-            raise ValueError("invalid_request")
+    @property
+    def channel_labels(self):
+        """Return valid saved labels; leave unrelated stored config untouched."""
+        labels = self._config.get("channel_labels")
+        if not isinstance(labels, dict):
+            return {}
+        result = {}
+        for channel, label in labels.items():
+            if _canonical_channel_id(channel) is not None and valid_label(label):
+                result[channel] = label
+        return result
+
+    def _write(self, config):
         temporary = self.path + ".tmp"
         try:
             with open(temporary, "w") as stream:
                 # MicroPython's ujson consistently exposes dumps/loads, while
                 # dump is not available in every firmware build.
-                stream.write(json.dumps({"label": value}))
-            self.os.rename(temporary, self.path)
+                stream.write(json.dumps(config))
+            # Pico/MicroPython exposes rename; Windows CPython needs replace
+            # for an atomic overwrite of an existing file.
+            getattr(self.os, "replace", self.os.rename)(temporary, self.path)
         except Exception as error:
             try:
                 self.os.remove(temporary)
             except Exception:  # noqa: S110 - cleanup must not hide storage failure
                 pass
             raise OSError("storage") from error
-        self.value = value
+
+    def save_config(self, patch):
+        """Atomically merge a label patch while preserving unrelated settings."""
+        if not isinstance(patch, dict) or not patch:
+            raise ValueError("invalid_request")
+        if any(key not in ("label", "channel_labels") for key in patch):
+            raise ValueError("invalid_request")
+        if "label" in patch and not valid_label(patch["label"]):
+            raise ValueError("invalid_request")
+        channel_patch = patch.get("channel_labels")
+        if channel_patch is not None:
+            if not isinstance(channel_patch, dict):
+                raise ValueError("invalid_request")
+            for channel, label in channel_patch.items():
+                if _canonical_channel_id(channel) is None or not valid_label(label):
+                    raise ValueError("invalid_request")
+
+        config = {}
+        for key, value in self._config.items():
+            config[key] = value
+        if "label" in patch:
+            config["label"] = patch["label"]
+        if channel_patch is not None:
+            previous = config.get("channel_labels")
+            labels = {}
+            if isinstance(previous, dict):
+                for channel, label in previous.items():
+                    labels[channel] = label
+            for channel, label in channel_patch.items():
+                labels[channel] = label
+            config["channel_labels"] = labels
+
+        self._write(config)
+        self._config = config
+        if "label" in patch:
+            self.value = patch["label"]
+
+    def save(self, value):
+        self.save_config({"label": value})
 
 
 class Sessions:
-    def __init__(self, channels, device_id, label, ticks_ms, ticks_diff, save_label):
+    def __init__(
+        self,
+        channels,
+        device_id,
+        label,
+        ticks_ms,
+        ticks_diff,
+        save_label,
+        config_store=None,
+    ):
         self.channels = channels
         self.device_id = device_id
         self.label = label
         self.ticks_ms = ticks_ms
         self.ticks_diff = ticks_diff
         self.save_label = save_label
+        self.config_store = config_store
+        self.channel_labels = (
+            config_store.channel_labels if config_store is not None else {}
+        )
         self.claims = {}
         self.owners = {}
 
@@ -135,7 +213,7 @@ class Sessions:
             channels=[
                 {
                     "id": index,
-                    "label": channel["label"],
+                    "label": self.channel_labels.get(str(index), channel["label"]),
                     "locked": index in self.claims,
                 }
                 for index, channel in enumerate(self.channels)
@@ -213,6 +291,59 @@ class Sessions:
         owner["seen"] = self.ticks_ms()
         return self._reply()
 
+    def set_config(self, token, label, channel_labels):
+        if not valid_token(token):
+            return self._reply("invalid_request")
+        owner = self._owner(token)
+        if owner is None:
+            return self._reply("lease_lost")
+        if label is None and channel_labels is None:
+            return self._reply("invalid_request")
+
+        patch = {}
+        if label is not None:
+            if not valid_label(label):
+                return self._reply("invalid_request")
+            patch["label"] = label
+        if channel_labels is not None:
+            if not isinstance(channel_labels, dict):
+                return self._reply("invalid_request")
+            for channel, value in channel_labels.items():
+                channel_id = _canonical_channel_id(channel)
+                if (
+                    channel_id is None
+                    or channel_id >= len(self.channels)
+                    or channel_id not in owner["channels"]
+                    or not valid_label(value)
+                ):
+                    return self._reply("invalid_request")
+            if channel_labels:
+                patch["channel_labels"] = channel_labels
+            elif not patch:
+                return self._reply("invalid_request")
+
+        try:
+            if self.config_store is not None:
+                self.config_store.save_config(patch)
+            elif "channel_labels" in patch:
+                return self._reply("storage")
+            else:
+                self.save_label(label)
+        except Exception:
+            return self._reply("storage")
+
+        if "label" in patch:
+            self.label = label
+        if "channel_labels" in patch:
+            labels = {}
+            for channel, value in self.channel_labels.items():
+                labels[channel] = value
+            for channel, value in channel_labels.items():
+                labels[channel] = value
+            self.channel_labels = labels
+        owner["seen"] = self.ticks_ms()
+        return self._reply()
+
     def request(self, body, callback=None):
         if not isinstance(body, dict):
             return self._reply("invalid_request")
@@ -237,9 +368,16 @@ class Sessions:
             if self.claims or not valid_label(label):
                 return self._reply("busy" if self.claims else "invalid_request")
             try:
-                self.save_label(label)
+                if self.config_store is None:
+                    self.save_label(label)
+                else:
+                    self.config_store.save_config({"label": label})
             except Exception:
                 return self._reply("storage")
             self.label = label
             return self._reply(label=label)
+        if operation == "set_config":
+            return self.set_config(
+                body.get("token"), body.get("label"), body.get("channel_labels")
+            )
         return self._reply("invalid_request")

@@ -35,7 +35,7 @@ CH ↑ は昇順（CH00から）、CH ↓ は降順（最大のCH番号から）
 表示だけを入れ替え、CH番号・配線の対応・サーボ状態は変更しません。
 起動時は `--order ascending` / `--order descending` でも指定できます。
 kohdalab-trkrと共通の黒・グレーの配色、枠線、青い選択ボタンを使用します。上部にはアプリ名とバージョンを表示します。
-接続画面でラベル付き機器と使用CHを選択し、Connectします。接続後は選んだCHだけを小さなウィンドウに表示します。上部にStatusとVersion、右上にDisconnectと「···」（配置・昇降順・API設定）を置きます。一括開閉も選択CHだけに作用します。光の窓はOpen／Closeの指令状態を表し、位置センサーによる確認ではありません。
+接続画面でラベル付き機器と使用CHを選択し、Connectします。接続後は選んだCHだけを小さなウィンドウに表示します。上部にStatusとVersion、右上にDisconnectと「···」（Pico名・CH名・配置・昇降順・API設定と自動保存）を置きます。Allボタンは表示せず、個別開閉だけを表示します。光の窓はOpen／Closeの指令状態を表し、位置センサーによる確認ではありません。
 
 Pico側の`main.py`と新しい`sessions.py`の更新が必要です。ラベルはPicoに保存され、使用CHは15秒リースで排他管理されます。接続中LEDは二連点滅し、Disconnectで即時解放、通信断では15秒で解放します。詳しくは[導入手順](install.md)を参照してください。
 
@@ -82,7 +82,7 @@ cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --layout verti
 ## First Pico W upload / 初回Pico W転送
 
 自動検索には `server/discovery.py` を含む新しいサーバーファイルが必要です。
-v0.5.0のGUI・操作用CLIには新しい`sessions.py`と`main.py`が必要です。旧サーバーに対する状態参照は引き続き利用できます。
+v0.6.0のGUI・操作用CLIには新しい`sessions.py`と`main.py`が必要です。旧サーバーに対する状態参照は引き続き利用できます。
 
 1. Pico WのMicroPythonと `server/wifi_config.py` のSSID・パスワードを確認します。
 2. 固定IPが今のネットワークに合っていなければ、`server/settings.py` の

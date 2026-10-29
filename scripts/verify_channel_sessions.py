@@ -21,7 +21,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from server.sessions import LEASE_MS, Sessions  # noqa: E402
+from server.sessions import DeviceLabel, LEASE_MS, Sessions  # noqa: E402
 from bindings.python.kohdalab_shutter import GuiShutter, GuiShutterError  # noqa: E402
 
 
@@ -51,6 +51,10 @@ class FakeServoBoard:
 class PicoMock:
     def __init__(self) -> None:
         self.servos = FakeServoBoard()
+        self.directory = tempfile.TemporaryDirectory(prefix="shutter-pico-labels-")
+        self.store = DeviceLabel(
+            "Unlabelled shutter", str(Path(self.directory.name) / "device_config.json")
+        )
         self._origin = time.monotonic()
         self.sessions = Sessions(
             [
@@ -64,6 +68,7 @@ class PicoMock:
             self._ticks_ms,
             lambda now, then: now - then,
             self._save_label,
+            config_store=self.store,
         )
         self.saved_labels: list[str] = []
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -79,6 +84,7 @@ class PicoMock:
         return int((time.monotonic() - self._origin) * 1000)
 
     def _save_label(self, label: str) -> None:
+        self.store.save(label)
         self.saved_labels.append(label)
 
     def __enter__(self) -> "PicoMock":
@@ -89,6 +95,7 @@ class PicoMock:
         self.stopped.set()
         self.thread.join(timeout=2)
         self.listener.close()
+        self.directory.cleanup()
 
     def _serve(self) -> None:
         while not self.stopped.is_set():
@@ -176,7 +183,10 @@ def verify(binary: Path) -> None:
         )
         label = run_cli(binary, address, "label", "Optics Bay A")
         require(label.returncode == 0, f"CLI label failed: {label.stderr}")
-        require(pico.saved_labels == ["Optics Bay A"], "CLI did not persist label")
+        require(
+            DeviceLabel("Default", pico.store.path).value == "Optics Bay A",
+            "CLI did not persist label to disk",
+        )
 
         require(
             request(address, {"op": "claim", "token": first, "channels": [0, 1]})["ok"],
@@ -193,6 +203,47 @@ def verify(binary: Path) -> None:
             collision.get("error") == "busy", "overlapping atomic claim was accepted"
         )
         require(raw(address, "OPEN 0") == "ERR", "legacy command bypassed CH lock")
+        require(
+            request(
+                address,
+                {
+                    "op": "set_config",
+                    "token": first,
+                    "channel_labels": {"0": "Probe beam"},
+                },
+            )["ok"],
+            "first owner name save failed",
+        )
+        require(
+            request(
+                address,
+                {
+                    "op": "set_config",
+                    "token": second,
+                    "channel_labels": {"2": "Reference"},
+                },
+            )["ok"],
+            "second owner name save failed",
+        )
+        require(
+            not request(
+                address,
+                {
+                    "op": "set_config",
+                    "token": first,
+                    "channel_labels": {"2": "Not owned"},
+                },
+            )["ok"],
+            "unowned name was changed",
+        )
+        saved = DeviceLabel(
+            "Default", str(Path(pico.directory.name) / "device_config.json")
+        )
+        require(
+            saved.channel_labels == {"0": "Probe beam", "2": "Reference"},
+            "disjoint names were not retained on disk",
+        )
+
         require(request(address, {"op": "renew", "token": first})["ok"], "renew failed")
         require(
             request(
@@ -281,7 +332,14 @@ def verify_gui(gui: Path) -> None:
                 directory = root / name
                 directory.mkdir()
                 process = subprocess.Popen(  # noqa: S603 - explicit built GUI, loopback-only API
-                    [str(gui), "--gui-api", "--api-directory", str(directory)],
+                    [
+                        str(gui),
+                        "--gui-api",
+                        "--api-directory",
+                        str(directory),
+                        "--preferences",
+                        str(directory / "preferences.json"),
+                    ],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     text=True,
