@@ -2,9 +2,9 @@
 //!
 //! This module never controls hardware.  It authenticates and bounds socket
 //! work, then hands requests to the GUI thread through [`Request`].
-use serde_json::{Value, json};
 use kohdalab_control_protocol::descriptor as canonical_descriptor;
 use kohdalab_control_protocol::{is_common, response as common_response};
+use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
     net::{Ipv4Addr, TcpListener, TcpStream},
@@ -59,7 +59,8 @@ impl Server {
             directory.join(format!("shutter-{}-{instance_id}.json", std::process::id()));
         let mut temporary =
             tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
-        let descriptor_json = canonical_descriptor(json!({
+        let descriptor_json = canonical_descriptor(
+            json!({
                 "protocol": 2,
                 "app": "kohdalab-shutter",
                 "host": "127.0.0.1",
@@ -68,9 +69,11 @@ impl Server {
                 "token": token,
                 "instance_id": instance_id,
                 "pid": std::process::id(),
-            }), "kohdalab-shutter", 2);
-        serde_json::to_writer(&mut temporary, &descriptor_json)
-        .map_err(|e| e.to_string())?;
+            }),
+            "kohdalab-shutter",
+            2,
+        );
+        serde_json::to_writer(&mut temporary, &descriptor_json).map_err(|e| e.to_string())?;
         temporary.flush().map_err(|e| e.to_string())?;
         // NamedTempFile uses mode 0600 on Unix and persist publishes only a
         // fully-written descriptor.
@@ -175,7 +178,11 @@ fn serve(
             }
             Ok(body) if body.get("token").and_then(Value::as_str) != Some(token) => {
                 let native = envelope_error("authentication", "GUI API authentication failed");
-                if is_common(&body) { common_response(&body, native) } else { native }
+                if is_common(&body) {
+                    common_response(&body, native)
+                } else {
+                    native
+                }
             }
             Ok(body) => {
                 let common = is_common(&body);
@@ -187,23 +194,37 @@ fn serve(
                 }) {
                     Err(mpsc::TrySendError::Full(_)) => {
                         let native = envelope_error("busy", "GUI request queue is full");
-                        if common { common_response(&body, native) } else { native }
+                        if common {
+                            common_response(&body, native)
+                        } else {
+                            native
+                        }
                     }
                     Err(mpsc::TrySendError::Disconnected(_)) => {
                         let native = envelope_error("unavailable", "GUI API is stopping");
-                        if common { common_response(&body, native) } else { native }
+                        if common {
+                            common_response(&body, native)
+                        } else {
+                            native
+                        }
                     }
                     Ok(()) => match deadline.checked_duration_since(Instant::now()) {
-                        Some(remaining) => receive
-                            .recv_timeout(remaining)
-                            .unwrap_or_else(|_| {
-                                let native = envelope_error("timeout", "GUI request timed out");
-                                if common { common_response(&body, native) } else { native }
-                            }),
+                        Some(remaining) => receive.recv_timeout(remaining).unwrap_or_else(|_| {
+                            let native = envelope_error("timeout", "GUI request timed out");
+                            if common {
+                                common_response(&body, native)
+                            } else {
+                                native
+                            }
+                        }),
                         None => {
                             let native = envelope_error("timeout", "GUI request timed out");
-                            if common { common_response(&body, native) } else { native }
-                        },
+                            if common {
+                                common_response(&body, native)
+                            } else {
+                                native
+                            }
+                        }
                     },
                 }
             }

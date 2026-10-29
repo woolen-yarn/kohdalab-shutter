@@ -2,6 +2,9 @@
 
 use clap::Parser;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
+use kohdalab_control_protocol::{
+    is_common, prepare as prepare_common, response as common_response,
+};
 use kohdalab_shutter::{
     DEFAULT_PORT,
     control::{ApiError, Control, response, string},
@@ -11,7 +14,6 @@ use kohdalab_shutter::{
     session::{ChannelInfo, ControllerInfo},
     transport::Client,
 };
-use kohdalab_control_protocol::{is_common, prepare as prepare_common, response as common_response};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -910,7 +912,11 @@ impl App {
                     "timeout",
                     "Request expired before execution; no new action started",
                 )));
-                if is_common(&original) { common_response(&original, native) } else { native }
+                if is_common(&original) {
+                    common_response(&original, native)
+                } else {
+                    native
+                }
             } else {
                 match prepare_common(&request.body) {
                     Err(error) => error,
@@ -918,7 +924,8 @@ impl App {
                         // The shared normalizer uses private control_* names for
                         // adapters; map the read-only aliases to Shutter's
                         // existing native handlers without changing mutations.
-                        if let Some(method) = native.get("_control_method").and_then(Value::as_str) {
+                        if let Some(method) = native.get("_control_method").and_then(Value::as_str)
+                        {
                             let mapped = match method {
                                 "describe" => Some("capabilities"),
                                 "status" => Some("status"),
@@ -932,7 +939,11 @@ impl App {
                             }
                         }
                         let native_response = response(self.api_request(&native));
-                        if is_common(&original) { common_response(&original, native_response) } else { native_response }
+                        if is_common(&original) {
+                            common_response(&original, native_response)
+                        } else {
+                            native_response
+                        }
                     }
                 }
             };
@@ -968,8 +979,15 @@ impl App {
             "result" => {
                 let mut receipt = self.control.result(string(body, "id")?)?;
                 receipt["job_id"] = receipt["id"].clone();
-                receipt["terminal"] = json!(matches!(receipt["status"].as_str(), Some("completed" | "stopped" | "error")));
-                receipt["cleanup"] = json!(if receipt["status"] == "completed" {"not_required"} else {"unknown"});
+                receipt["terminal"] = json!(matches!(
+                    receipt["status"].as_str(),
+                    Some("completed" | "stopped" | "error")
+                ));
+                receipt["cleanup"] = json!(if receipt["status"] == "completed" {
+                    "not_required"
+                } else {
+                    "unknown"
+                });
                 receipt["linked_job_id"] = Value::Null;
                 return Ok(receipt);
             }
@@ -997,8 +1015,15 @@ impl App {
         if let Some(receipt) = self.control.cached(body, method)? {
             let mut receipt = receipt;
             receipt["job_id"] = receipt["id"].clone();
-            receipt["terminal"] = json!(matches!(receipt["status"].as_str(), Some("completed" | "stopped" | "error")));
-            receipt["cleanup"] = json!(if receipt["status"] == "completed" {"not_required"} else {"unknown"});
+            receipt["terminal"] = json!(matches!(
+                receipt["status"].as_str(),
+                Some("completed" | "stopped" | "error")
+            ));
+            receipt["cleanup"] = json!(if receipt["status"] == "completed" {
+                "not_required"
+            } else {
+                "unknown"
+            });
             receipt["linked_job_id"] = Value::Null;
             return Ok(receipt);
         }
@@ -1207,8 +1232,15 @@ impl App {
         }
         let mut receipt = self.control.result(&id)?;
         receipt["job_id"] = receipt["id"].clone();
-        receipt["terminal"] = json!(matches!(receipt["status"].as_str(), Some("completed" | "stopped" | "error")));
-        receipt["cleanup"] = json!(if receipt["status"] == "completed" {"not_required"} else {"unknown"});
+        receipt["terminal"] = json!(matches!(
+            receipt["status"].as_str(),
+            Some("completed" | "stopped" | "error")
+        ));
+        receipt["cleanup"] = json!(if receipt["status"] == "completed" {
+            "not_required"
+        } else {
+            "unknown"
+        });
         receipt["linked_job_id"] = Value::Null;
         Ok(receipt)
     }
