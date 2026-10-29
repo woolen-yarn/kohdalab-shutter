@@ -17,10 +17,24 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 APP = "KohdaLab Shutter"
 BINARIES = ("kohdalab-shutter-gui", "kohdalab-shutter")
+VENDORED_LICENSES = ROOT / "assets" / "dependency-licenses" / "manifest.json"
+FONT_LICENSES = {
+    "OFL.txt",
+    "UFL.txt",
+    "Hack-Regular.txt",
+    "emoji-icon-font-mit-license.txt",
+}
 
 
 def run(*args):
-    return subprocess.run(args, check=True, capture_output=True, text=True)  # noqa: S603 - fixed local build tools/paths
+    try:
+        return subprocess.run(args, check=True, capture_output=True, text=True)  # noqa: S603 - fixed local build tools/paths
+    except subprocess.CalledProcessError as error:
+        command = " ".join(map(str, args))
+        raise RuntimeError(
+            f"Command failed ({error.returncode}): {command}\n"
+            f"stdout:\n{error.stdout}\nstderr:\n{error.stderr}"
+        ) from error
 
 
 def version():
@@ -68,6 +82,50 @@ def icon_png(size):
     )
 
 
+def vendored_license_texts(package, source):
+    """Return pinned upstream notices and SPDX texts for crates missing them locally.
+
+    Every fallback is pinned to its Cargo package version and `.cargo_vcs_info.json`
+    revision. A dependency update therefore fails closed until its licensing record is
+    reviewed and refreshed.
+    """
+    manifest = json.loads(VENDORED_LICENSES.read_text(encoding="utf-8"))
+    key = f"{package['name']}@{package['version']}"
+    record = manifest["packages"].get(key)
+    if record is None:
+        raise RuntimeError(f"No vendored license record for {key}")
+    vcs_path = source / ".cargo_vcs_info.json"
+    if not vcs_path.is_file():
+        raise RuntimeError(f"No Cargo VCS provenance for {key}: {vcs_path}")
+    vcs = json.loads(vcs_path.read_text(encoding="utf-8"))
+    revision = vcs.get("git", {}).get("sha1")
+    if revision != record["revision"]:
+        raise RuntimeError(
+            f"Vendored license revision mismatch for {key}: {revision!r} != {record['revision']!r}"
+        )
+    texts = []
+    for notice in record.get("notices", []):
+        detail = manifest.get("upstream", {}).get(notice)
+        if detail is None:
+            raise RuntimeError(f"No upstream license record for {notice}")
+        path = VENDORED_LICENSES.parent / detail["path"]
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != detail["sha256"]:
+            raise RuntimeError(f"Upstream license checksum mismatch in {path}")
+        texts.append((f"UPSTREAM-{Path(notice).name}", data))
+    for identifier in record["licenses"]:
+        detail = manifest["spdx"][identifier]
+        path = VENDORED_LICENSES.parent / detail["path"]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("licenseId") != identifier:
+            raise RuntimeError(f"SPDX identifier mismatch in {path}")
+        text = data.get("licenseText", "")
+        if hashlib.sha256(text.encode("utf-8")).hexdigest() != detail["text_sha256"]:
+            raise RuntimeError(f"SPDX text checksum mismatch in {path}")
+        texts.append((f"SPDX-{identifier}.txt", text.encode("utf-8")))
+    return texts
+
+
 def add_notices(destination, metadata):
     packages = json.loads(metadata.read_text(encoding="utf-8"))["packages"]
     notice_root = destination / "licenses"
@@ -75,36 +133,60 @@ def add_notices(destination, metadata):
     entries = []
     for package in sorted(packages, key=lambda item: (item["name"], item["version"])):
         name = f"{package['name']}-{package['version']}"
-        entries.append(
-            f"{name}\nLicense: {package.get('license') or 'See included license files'}\n{package.get('repository') or ''}\n"
-        )
+        authors = package.get("authors") or []
+        entry = f"{name}\nLicense: {package.get('license') or 'See included license files'}\n{package.get('repository') or ''}\n"
+        if authors:
+            entry += f"Declared Cargo authors: {', '.join(authors)}\n"
+        entries.append(entry)
         if package.get("source") is None:
             continue  # The project's own MIT license is already included.
         source = Path(package["manifest_path"]).parent
-        # Font licenses are nested in epaint_default_fonts/fonts.
-        candidates = [
+        license_candidates = [
             p
             for p in source.rglob("*")
             if p.is_file()
-            and (
-                p.name.upper().startswith(("LICENSE", "COPYING", "NOTICE"))
-                or p.name
-                in (
-                    "OFL.txt",
-                    "UFL.txt",
-                    "Hack-Regular.txt",
-                    "emoji-icon-font-mit-license.txt",
-                )
-            )
+            and p.name.upper().startswith(("LICENSE", "COPYING", "UNLICENSE"))
+        ]
+        notice_candidates = [
+            p
+            for p in source.rglob("*")
+            if p.is_file() and p.name.upper().startswith("NOTICE")
+        ]
+        font_candidates = [
+            p for p in source.rglob("*") if p.is_file() and p.name in FONT_LICENSES
         ]
         license_file = package.get("license_file")
         if license_file:
-            candidates.append(source / license_file)
-        for path in sorted(set(candidates)):
+            license_candidates.append(source / license_file)
+        license_candidates = sorted(set(license_candidates))
+        target_root = notice_root / name
+        for path in license_candidates + sorted(
+            set(notice_candidates + font_candidates)
+        ):
+            if not path.is_file():
+                raise RuntimeError(
+                    f"Declared license file is missing for {name}: {path}"
+                )
             relative = path.relative_to(source)
-            target = notice_root / name / relative
+            target = target_root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
+        # epaint_default_fonts has font notices but its crate-level MIT/Apache
+        # choice still needs to accompany the distributed compiled code.
+        if not license_candidates:
+            target_root.mkdir(parents=True, exist_ok=True)
+            texts = vendored_license_texts(package, source)
+            for filename, data in texts:
+                (target_root / filename).write_bytes(data)
+            if all(filename.startswith("SPDX-") for filename, _ in texts):
+                entries[-1] += (
+                    "License text: canonical SPDX fallback; provenance is recorded in DEPENDENCY-LICENSE-PROVENANCE.json.\n"
+                )
+            else:
+                entries[-1] += (
+                    "License text: pinned upstream notice(s) plus SPDX text; provenance is recorded in DEPENDENCY-LICENSE-PROVENANCE.json.\n"
+                )
+    shutil.copy2(VENDORED_LICENSES, destination / "DEPENDENCY-LICENSE-PROVENANCE.json")
     (destination / "THIRD-PARTY-NOTICES.txt").write_text(
         "\n".join(entries), encoding="utf-8"
     )
@@ -167,7 +249,7 @@ def package(platform, binaries, output, metadata):
             target = executable / binary
             shutil.copy2(binaries / binary, target)
             target.chmod(0o755)
-            run("lipo", "-verify_arch", "arm64", "x86_64", str(target))
+            run("lipo", str(target), "-verify_arch", "arm64", "x86_64")
         info = {
             "CFBundleName": APP,
             "CFBundleDisplayName": APP,
@@ -243,7 +325,14 @@ def package(platform, binaries, output, metadata):
             str(archive),
         )
     else:
-        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as handle:
+        # Cargo registry extracts can retain timestamps before 1980; ZIP cannot
+        # represent those, so clamp them instead of rejecting a valid package.
+        with zipfile.ZipFile(
+            archive,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            strict_timestamps=False,
+        ) as handle:
             for file in sorted(stage.rglob("*")):
                 if file.is_file():
                     handle.write(file, file.relative_to(output))
