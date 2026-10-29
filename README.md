@@ -22,9 +22,9 @@ Rust製デスクトップコントローラーと、サーボ式光シャッタ�
 
 ![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
-The left panel finds and connects a Pico W, the centre shows optical-path diagrams and Open / Close controls in a horizontal row. Choose Horizontal or Vertical to change the layout, and CH ↑ / CH ↓ to change the channel display order; connection details and activity stay in the left panel. The image is simulated; no shutter hardware is connected.
+The left panel finds and connects a Pico W, the centre shows light-window graphics and Open / Close controls in a horizontal row. Choose Horizontal or Vertical to change the layout, and CH ↑ / CH ↓ to change the channel display order; all-channel actions, connection details and activity stay in the left panel. The dark palette and blue controls follow kohdalab-trkr, with the version beside the app title. The image is simulated; no shutter hardware is connected.
 
-左でPico Wを検索・接続し、中央の模式図で光が通る／遮られる状態を確認し、その下のOpen／Closeで操作します。黒ベースのテーマを維持しています。Horizontal／Verticalで配置、CH ↑／CH ↓で昇順・降順を切り替え、接続情報と履歴は左パネルに集約しています。画像はシミュレーションであり、実機は接続していません。
+左でPico Wを検索・接続し、中央の丸い窓で開閉状態を確認し、その下のOpen／Closeで操作します。kohdalab-trkrと共通の黒テーマ・青いボタンを使用し、上部にバージョンを表示します。Horizontal／Verticalで配置、CH ↑／CH ↓で昇順・降順を切り替え、一括開閉・接続情報・履歴は左パネルに集約しています。画像はシミュレーションであり、実機は接続していません。
 
 <details>
 <summary>Vertical layout / 縦並び</summary>

@@ -3,8 +3,9 @@
 ## Unreleased
 
 - Added numeric ascending/descending display order, CLI `--order`, and GUI API `set_order`; hardware channel identities stay fixed.
-- Preserved the dark theme and replaced physical-button replicas with optical-path diagrams: a raised blade for Open, an interrupted beam for Close, and explicit unknown/moving states.
-- Kept per-channel Open / Close actions directly beneath each diagram, with segmented layout/order controls and installed platform fonts.
+- Added front-facing light-window graphics: sliding leaves reveal light for Open and cover it for Close, with distinct Moving / Unknown states.
+- Matched TRKR's dark surfaces, borders, compact button corners, and blue selection color; grouped all-channel actions in the sidebar, reduced persistent help text, and kept the version beside the app title.
+- Kept numeric ordering, both layouts, and external API behavior unchanged.
 
 - Added the authenticated GUI API v2 with exclusive ownership, idempotent action receipts, and a stdlib Python/Jupyter client.
 - Simplified the desktop to a left sidebar and horizontal/vertical shutter switches inspired by the physical controller.

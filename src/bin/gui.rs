@@ -30,7 +30,8 @@ const SURFACE: Color32 = Color32::from_rgb(34, 36, 43);
 const BORDER: Color32 = Color32::from_rgb(56, 58, 67);
 const TEXT: Color32 = Color32::from_rgb(235, 236, 241);
 const MUTED: Color32 = Color32::from_rgb(160, 163, 176);
-const BLUE: Color32 = Color32::from_rgb(61, 127, 235);
+const BLUE: Color32 = Color32::from_rgb(48, 91, 158);
+const BUTTON: Color32 = Color32::from_rgb(45, 46, 53);
 const TEAL: Color32 = Color32::from_rgb(63, 215, 194);
 const ORANGE: Color32 = Color32::from_rgb(245, 183, 82);
 const RED: Color32 = Color32::from_rgb(255, 123, 130);
@@ -636,9 +637,8 @@ impl App {
         section(ui, "Connection", |ui| {
             if connected {
                 egui::Frame::new()
-                    .fill(PANEL)
-                    .corner_radius(14)
-                    .inner_margin(14)
+                    .fill(Color32::TRANSPARENT)
+                    .inner_margin(0)
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
                         ui.horizontal(|ui| {
@@ -651,8 +651,6 @@ impl App {
                                 .small()
                                 .color(MUTED),
                         );
-                        ui.add_space(10.0);
-                        badge(ui, if self.demo { "Simulation" } else { "Connected" }, TEAL);
                     });
                 ui.add_space(9.0);
                 if ui
@@ -722,17 +720,40 @@ impl App {
                     }
                 });
             }
-            ui.add_enabled_ui(manual && !connected, |ui| {
-                ui.collapsing("Network settings", |ui| {
-                    ui.label(RichText::new("Subnet broadcast").small().color(MUTED));
-                    ui.add_sized(
-                        [ui.available_width(), 28.0],
-                        egui::TextEdit::singleline(&mut self.broadcast),
-                    );
+            if !connected {
+                ui.add_enabled_ui(manual, |ui| {
+                    ui.collapsing("Network settings", |ui| {
+                        ui.label(RichText::new("Subnet broadcast").small().color(MUTED));
+                        ui.add_sized(
+                            [ui.available_width(), 28.0],
+                            egui::TextEdit::singleline(&mut self.broadcast),
+                        );
+                    });
                 });
+            }
+        });
+        ui.add_space(12.0);
+        section(ui, "All channels", |ui| {
+            ui.columns(2, |columns| {
+                for (i, label, operation) in [
+                    (0, "Open all", Operation::Open),
+                    (1, "Close all", Operation::Close),
+                ] {
+                    if columns[i]
+                        .add_enabled(
+                            connected && manual && !self.status.is_empty(),
+                            egui::Button::new(label)
+                                .fill(if i == 0 { BLUE } else { BUTTON })
+                                .min_size(Vec2::new(columns[i].available_width(), 30.0)),
+                        )
+                        .clicked()
+                    {
+                        self.operate(operation, self.status.keys().copied().collect());
+                    }
+                }
             });
         });
-        ui.add_space(24.0);
+        ui.add_space(12.0);
         section(ui, "Automation", |ui| {
             let mut enabled = self.api.is_some();
             if ui
@@ -758,7 +779,6 @@ impl App {
                     self.control.revoke();
                 }
             }
-            ui.label(RichText::new("Python & Jupyter").small().color(MUTED));
             if let Some(label) = self.control.label() {
                 ui.add_space(8.0);
                 badge(ui, &format!("Controlled by {label}"), ORANGE);
@@ -769,10 +789,6 @@ impl App {
                     self.control.revoke();
                     self.record("External control revoked by operator");
                 }
-            }
-            if let Some(api) = &self.api {
-                ui.label(RichText::new("Localhost only").small().color(MUTED))
-                    .on_hover_text(api.descriptor.display().to_string());
             }
         });
         ui.add_space(24.0);
@@ -792,52 +808,18 @@ impl App {
                     }
                 });
         });
-        ui.add_space(18.0);
-        ui.label(
-            RichText::new("States reflect commanded positions, not sensor feedback.")
-                .size(11.0)
-                .color(MUTED),
-        );
     }
 
     fn channels_panel(&mut self, ui: &mut egui::Ui) {
         let manual = self.connected() && self.pending.is_none() && !self.control.owned();
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(RichText::new("Shutters").size(30.0).strong());
-                ui.label(
-                    RichText::new(if self.connected() {
-                        format!("{} channels · Pico W", self.status.len())
-                    } else {
-                        "Choose a controller to get started".into()
-                    })
-                    .size(13.0)
-                    .color(MUTED),
-                );
-            });
+            ui.label(RichText::new("Shutters").size(20.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add_enabled(
-                        manual && !self.status.is_empty(),
-                        egui::Button::new("Close all")
-                            .fill(PANEL)
-                            .min_size(Vec2::new(98.0, 36.0)),
-                    )
-                    .clicked()
-                {
-                    self.operate(Operation::Close, self.status.keys().copied().collect());
-                }
-                if ui
-                    .add_enabled(
-                        manual && !self.status.is_empty(),
-                        egui::Button::new(RichText::new("Open all").color(Color32::WHITE))
-                            .fill(BLUE)
-                            .min_size(Vec2::new(98.0, 36.0)),
-                    )
-                    .clicked()
-                {
-                    self.operate(Operation::Open, self.status.keys().copied().collect());
-                }
+                ui.label(
+                    RichText::new(format!("{} channels", self.status.len()))
+                        .small()
+                        .color(MUTED),
+                );
             });
         });
         ui.add_space(24.0);
@@ -867,20 +849,11 @@ impl App {
                 MUTED
             }));
         }
-        ui.add_space(if self.layout == Layout::Vertical {
-            26.0
-        } else {
-            34.0
-        });
+        ui.add_space(24.0);
         if self.status.is_empty() {
             ui.add_space(80.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Your shutters, at a glance.").size(24.0));
-                ui.add_space(10.0);
-                ui.label(
-                    RichText::new("Find Pico W in the sidebar, then select and connect.")
-                        .color(MUTED),
-                );
+                ui.label(RichText::new("No controller connected").color(MUTED));
             });
             return;
         }
@@ -927,16 +900,9 @@ impl App {
                                     });
                                     ui.add_space(22.0);
                                     ui.vertical_centered(|ui| {
-                                        optical_path(ui, name, 1.0).on_hover_text(detail);
+                                        shutter_window(ui, name, 1.0).on_hover_text(detail);
                                         ui.add_space(10.0);
-                                        ui.label(
-                                            RichText::new(name).size(28.0).color(state_color(name)),
-                                        );
-                                        ui.label(
-                                            RichText::new(path_description(name))
-                                                .size(12.0)
-                                                .color(MUTED),
-                                        );
+                                        ui.label(RichText::new(name).size(22.0).color(TEXT));
                                     });
                                     ui.add_space(24.0);
                                     if let Some(operation) = channel_actions(ui, name, manual) {
@@ -962,7 +928,8 @@ impl App {
                                     RichText::new(format!("CH{channel:02}")).strong().size(15.0),
                                 );
                                 ui.add_space(8.0);
-                                optical_path(ui, name, 0.48).on_hover_text(path_description(name));
+                                shutter_window(ui, name, 0.48)
+                                    .on_hover_text("Commanded state; no position sensor");
                                 ui.add_space(8.0);
                                 status_dot(ui, state_color(name));
                                 ui.label(RichText::new(name).size(21.0));
@@ -1055,6 +1022,11 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("KohdaLab Shutter").size(16.0).strong());
+                    ui.label(
+                        RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                            .size(13.0)
+                            .color(MUTED),
+                    );
                     ui.add_space(10.0);
                     if self.demo {
                         badge(ui, "Demo", ORANGE);
@@ -1062,13 +1034,6 @@ impl eframe::App for App {
                     if self.control.owned() {
                         badge(ui, "External control", ORANGE);
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-                                .small()
-                                .color(MUTED),
-                        );
-                    });
                 });
             });
         egui::SidePanel::left("connection")
@@ -1103,23 +1068,20 @@ fn demo_devices() -> Vec<Device> {
 }
 
 fn section(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
-    ui.label(RichText::new(title).size(12.0).strong().color(MUTED));
-    ui.add_space(12.0);
-    content(ui);
+    card_frame().inner_margin(12).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.label(RichText::new(title).size(12.0).color(MUTED));
+        ui.add_space(8.0);
+        content(ui);
+    });
 }
 
 fn card_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(PANEL)
-        .corner_radius(20)
+        .corner_radius(10)
         .inner_margin(20)
-        .stroke(Stroke::new(0.7_f32, BORDER))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 4],
-            blur: 18,
-            spread: 0,
-            color: Color32::from_black_alpha(9),
-        })
+        .stroke(Stroke::new(1.0_f32, BORDER))
 }
 
 fn state_color(name: &str) -> Color32 {
@@ -1151,7 +1113,7 @@ fn badge(ui: &mut egui::Ui, text: &str, color: Color32) {
 fn segmented_frame(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
         .fill(SURFACE)
-        .corner_radius(10)
+        .corner_radius(6)
         .inner_margin(3)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -1169,13 +1131,9 @@ fn segment<T: PartialEq + Copy>(
     let selected = *current == value;
     let response = ui.add(
         egui::Button::new(RichText::new(label).color(if selected { TEXT } else { MUTED }))
-            .fill(if selected {
-                PANEL
-            } else {
-                Color32::TRANSPARENT
-            })
+            .fill(if selected { BLUE } else { BUTTON })
             .stroke(Stroke::NONE)
-            .corner_radius(8)
+            .corner_radius(6)
             .min_size(Vec2::new(64.0, 30.0)),
     );
     if response.clicked() {
@@ -1186,133 +1144,92 @@ fn segment<T: PartialEq + Copy>(
 fn channel_actions(ui: &mut egui::Ui, state: &str, enabled: bool) -> Option<Operation> {
     let mut action = None;
     ui.add_enabled_ui(enabled, |ui| {
-        egui::Frame::new()
-            .fill(BG)
-            .corner_radius(11)
-            .inner_margin(3)
-            .show(ui, |ui| {
-                ui.columns(2, |columns| {
-                    for (i, label, operation) in
-                        [(0, "Open", Operation::Open), (1, "Close", Operation::Close)]
-                    {
-                        let selected = state == label;
-                        if columns[i]
-                            .add_sized(
-                                [columns[i].available_width(), 33.0],
-                                egui::Button::new(RichText::new(label).color(
-                                    if selected && label == "Open" {
-                                        TEAL
-                                    } else {
-                                        TEXT
-                                    },
-                                ))
-                                .fill(if selected {
-                                    PANEL
-                                } else {
-                                    Color32::TRANSPARENT
-                                })
-                                .stroke(Stroke::NONE)
-                                .corner_radius(8),
-                            )
-                            .clicked()
-                        {
-                            action = Some(operation);
-                        }
-                    }
-                });
-            });
+        ui.columns(2, |columns| {
+            for (i, label, operation) in
+                [(0, "Open", Operation::Open), (1, "Close", Operation::Close)]
+            {
+                if columns[i]
+                    .add_sized(
+                        [columns[i].available_width(), 30.0],
+                        egui::Button::new(label)
+                            .fill(if state == label { BLUE } else { BUTTON })
+                            .corner_radius(6),
+                    )
+                    .clicked()
+                {
+                    action = Some(operation);
+                }
+            }
+        });
     });
     action
 }
 
-fn path_description(state: &str) -> &'static str {
-    match state {
-        "Open" => "Light passes through",
-        "Close" => "Light is blocked",
-        "Moving" => "Shutter is moving",
-        _ => "Light path unknown",
-    }
-}
-
-// A schematic of the commanded optical path, not a hardware position sensor.
-fn optical_path(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response {
+// Front-facing schematic of commanded state, not a measurement of transmitted light.
+fn shutter_window(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(174.0, 132.0) * scale, egui::Sense::hover());
     let painter = ui.painter();
-    let point = |x, y| rect.min + Vec2::new(x, y) * scale;
-    let open = state == "Open";
-    let closed = state == "Close";
-    let known = open || closed;
-    let beam = if known { TEAL } else { MUTED };
-    let y = 82.0;
-    // Incoming beam; a broad, faint line gives the light a gentle glow.
-    painter.line_segment(
-        [point(16.0, y), point(84.0, y)],
-        Stroke::new(9.0 * scale, beam.gamma_multiply(0.12)),
-    );
-    painter.line_segment(
-        [point(16.0, y), point(84.0, y)],
-        Stroke::new(2.5 * scale, beam),
-    );
-    painter.circle_filled(point(16.0, y), 5.0 * scale, beam);
-    if open {
-        painter.line_segment(
-            [point(84.0, y), point(158.0, y)],
-            Stroke::new(9.0 * scale, beam.gamma_multiply(0.12)),
+    let centre = rect.center();
+    let radius = 48.0 * scale;
+    painter.circle_filled(centre, radius + 5.0 * scale, BORDER);
+    painter.circle_filled(centre, radius, BG);
+    if state == "Open" {
+        for (r, alpha) in [(32.0, 9), (27.0, 15), (22.0, 25)] {
+            painter.circle_filled(
+                centre,
+                r * scale,
+                Color32::from_rgba_unmultiplied(63, 215, 194, alpha),
+            );
+        }
+        painter.circle_filled(centre, 17.0 * scale, TEAL);
+        painter.circle_filled(
+            centre - Vec2::splat(4.0 * scale),
+            4.0 * scale,
+            Color32::from_white_alpha(90),
         );
-        painter.arrow(
-            point(84.0, y),
-            Vec2::new(74.0, 0.0) * scale,
-            Stroke::new(2.5 * scale, beam),
-        );
-    } else {
-        // No outgoing light: a faint dashed guide shows the interrupted path.
-        for x in [105.0, 120.0, 135.0, 150.0] {
+    }
+    if state != "Unknown" {
+        let opening = match state {
+            "Open" => 0.90,
+            "Moving" => 0.35,
+            _ => 0.0,
+        };
+        // Circular caps keep both sliding leaves inside the round aperture.
+        for side in [-1.0_f32, 1.0] {
+            let cut = opening * radius;
+            let angle = (cut / radius).acos();
+            let points = (0..=32)
+                .map(|i| {
+                    let theta = -angle + 2.0 * angle * i as f32 / 32.0;
+                    centre + Vec2::new(side * radius * theta.cos(), radius * theta.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::convex_polygon(
+                points,
+                Color32::from_rgb(74, 77, 88),
+                Stroke::NONE,
+            ));
+            let half_height = (radius * radius - cut * cut).sqrt();
             painter.line_segment(
-                [point(x, y), point(x + 7.0, y)],
-                Stroke::new(1.2 * scale, BORDER),
+                [
+                    centre + Vec2::new(side * cut, -half_height),
+                    centre + Vec2::new(side * cut, half_height),
+                ],
+                Stroke::new(1.0 * scale, Color32::from_rgb(130, 134, 148)),
             );
         }
     }
-    // Raised blade = open; lowered blade intersects the beam = closed.
-    let top = if open { 22.0 } else { 57.0 };
-    let blade_color = state_color(state);
-    let blade = egui::Rect::from_min_max(point(79.0, top), point(95.0, top + 49.0));
-    painter.rect_filled(blade, 4, blade_color.gamma_multiply(0.2));
-    painter.rect_stroke(
-        blade,
-        4,
-        Stroke::new(1.8 * scale, blade_color),
-        egui::StrokeKind::Inside,
-    );
-    painter.line_segment(
-        [point(71.0, 116.0), point(103.0, 116.0)],
-        Stroke::new(2.0 * scale, BORDER),
-    );
-    if open {
-        painter.arrow(
-            point(108.0, 55.0),
-            Vec2::new(0.0, -27.0) * scale,
-            Stroke::new(1.5 * scale, TEAL),
-        );
-    } else if closed {
-        // Cross at the beam stop remains recognizable without relying on color.
-        for dy in [-1.0, 1.0] {
-            painter.line_segment(
-                [point(81.0, y - 6.0 * dy), point(93.0, y + 6.0 * dy)],
-                Stroke::new(2.0 * scale, RED),
-            );
-        }
-    } else {
+    if state == "Moving" || state == "Unknown" {
         painter.text(
-            point(87.0, top + 24.5),
+            centre,
             egui::Align2::CENTER_CENTER,
-            if state == "Moving" { "↕" } else { "?" },
-            egui::FontId::proportional(18.0 * scale),
-            blade_color,
+            if state == "Moving" { "↔" } else { "?" },
+            egui::FontId::proportional(23.0 * scale),
+            state_color(state),
         );
     }
-    response
+    response.on_hover_text("Commanded state; no position sensor")
 }
 
 fn style(ctx: &egui::Context) {
@@ -1323,8 +1240,8 @@ fn style(ctx: &egui::Context) {
     visuals.extreme_bg_color = SURFACE;
     visuals.text_edit_bg_color = Some(PANEL);
     visuals.override_text_color = Some(TEXT);
-    visuals.selection.bg_fill = Color32::from_rgb(38, 64, 99);
-    visuals.selection.stroke = Stroke::new(1.0_f32, BLUE);
+    visuals.selection.bg_fill = BLUE;
+    visuals.selection.stroke = Stroke::new(1.0_f32, TEXT);
     visuals.window_stroke = Stroke::new(0.7_f32, BORDER);
     for widget in [
         &mut visuals.widgets.inactive,
@@ -1332,13 +1249,13 @@ fn style(ctx: &egui::Context) {
         &mut visuals.widgets.active,
     ] {
         widget.bg_stroke = Stroke::new(0.7_f32, BORDER);
-        widget.corner_radius = egui::CornerRadius::same(9);
+        widget.corner_radius = egui::CornerRadius::same(6);
         widget.fg_stroke = Stroke::new(1.0_f32, TEXT);
     }
-    visuals.widgets.inactive.bg_fill = PANEL;
-    visuals.widgets.inactive.weak_bg_fill = PANEL;
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(45, 48, 58);
-    visuals.widgets.active.bg_fill = Color32::from_rgb(50, 66, 90);
+    visuals.widgets.inactive.bg_fill = BUTTON;
+    visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(20, 21, 25);
+    visuals.widgets.hovered.bg_fill = Color32::from_rgb(58, 60, 69);
+    visuals.widgets.active.bg_fill = BLUE;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(0.6_f32, BORDER);
     ctx.set_visuals(visuals);
     ctx.style_mut(|style| {
