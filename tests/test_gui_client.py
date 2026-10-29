@@ -8,7 +8,6 @@ import socket
 import sys
 import tempfile
 import threading
-import time
 import unittest
 import uuid
 import weakref
@@ -21,6 +20,7 @@ from kohdalab_shutter import GuiShutter, GuiShutterError  # noqa: E402
 class FakeGui:
     def __init__(self, directory: Path, *, token: str = "secret") -> None:  # noqa: S107
         self.token, self.calls, self.stop = token, [], threading.Event()
+        self.heartbeat_seen = threading.Event()
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen()
@@ -70,6 +70,7 @@ class FakeGui:
                         "data": {"lease": "lease-1"},
                     }
                 elif request["method"] == "heartbeat":
+                    self.heartbeat_seen.set()
                     response = {
                         "ok": True,
                         "result": {"owned": True},
@@ -144,7 +145,9 @@ class GuiClientTests(unittest.TestCase):
             client.status()
         self.assertEqual(caught.exception.code, "offline")
         client.acquire()
-        time.sleep(2.05)
+        self.assertTrue(
+            self.server.heartbeat_seen.wait(timeout=5.0), "Heartbeat not received"
+        )
         self.assertIn("heartbeat", [call["method"] for call in self.server.calls])
         result = client.wait("job-1", timeout=1)
         self.assertEqual(result["status"], "completed")

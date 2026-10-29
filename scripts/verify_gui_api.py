@@ -38,7 +38,13 @@ def verify(binary, output):
                 endpoint = None
                 while time.monotonic() < deadline:
                     if process.poll() is not None:
-                        raise RuntimeError("Demo GUI exited before API startup")
+                        log.flush()
+                        diagnostic = (Path(directory) / "gui.log").read_text(
+                            encoding="utf-8", errors="replace"
+                        )
+                        raise RuntimeError(
+                            f"Demo GUI exited before API startup:\n{diagnostic}"
+                        )
                     candidates = list(Path(directory).glob("shutter-*.json"))
                     if candidates:
                         try:
