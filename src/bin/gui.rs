@@ -642,7 +642,14 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            status_dot(ui, TEAL);
+                            status_dot(
+                                ui,
+                                if self.last_update.is_some() {
+                                    TEAL
+                                } else {
+                                    ORANGE
+                                },
+                            );
                             ui.label(RichText::new("Pico W").strong().size(16.0));
                         });
                         ui.add_space(5.0);
@@ -727,7 +734,8 @@ impl App {
             });
             // Connection/progress errors belong to the sidebar, never above
             // the shutter cards where background polling would move controls.
-            if self.error || (!connected && self.pending.is_some()) {
+            if self.error || (self.pending.is_some() && (!connected || self.last_update.is_none()))
+            {
                 ui.add_space(8.0);
                 ui.label(RichText::new(&self.message).small().color(if self.error {
                     RED
@@ -1571,6 +1579,27 @@ mod tests {
             }
             assert!(!polling.iter().any(|(text, _)| text == &app.message));
         }
+    }
+
+    #[test]
+    fn initial_connection_progress_is_visible_but_periodic_progress_is_not() {
+        let mut app = App::demo();
+        let (_sender, receiver) = mpsc::channel();
+        app.pending = Some(receiver);
+        app.last_update = None;
+        app.message = "Connecting and reading channel positions...".into();
+        let connecting = render_text(&mut app);
+        let (_, position) = connecting
+            .iter()
+            .find(|(text, _)| text == &app.message)
+            .expect("connection progress");
+        assert!(
+            position.x < 240.0,
+            "Connection progress must stay in the sidebar"
+        );
+        app.last_update = Some(Instant::now());
+        let polling = render_text(&mut app);
+        assert!(!polling.iter().any(|(text, _)| text == &app.message));
     }
 
     #[test]
