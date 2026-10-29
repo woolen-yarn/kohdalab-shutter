@@ -33,7 +33,7 @@ def main() -> int:
     log_path = args.output.with_suffix(".log")
     with tempfile.TemporaryDirectory(prefix="kohdalab-shutter-common-") as directory:
         with log_path.open("w", encoding="utf-8") as log:
-            process = subprocess.Popen(
+            process = subprocess.Popen(  # noqa: S603 - explicit test binary, no shell
                 [
                     str(args.binary.resolve()),
                     "--demo",
