@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import os
 import stat
 from unittest.mock import patch
 import zipfile
@@ -66,7 +67,12 @@ def test_app_extraction_preserves_executable_permissions_and_ignores_outer_link(
             package.writestr(info, b"test")
         package.writestr("kohdalab-shutter-0.4.1-macos-universal/README.txt", "ignored")
     result = notary.unpack_app(archive, tmp_path / "unpacked", "0.4.1")
-    assert (result / "Contents/MacOS/kohdalab-shutter").stat().st_mode & 0o111
+    executable = result / "Contents/MacOS/kohdalab-shutter"
+    assert executable.read_bytes() == b"test"
+    # Windows stat/chmod has no Unix executable-bit semantics. Preserve and
+    # assert them on the Mac/Linux filesystems on which this workflow runs.
+    if os.name != "nt":
+        assert executable.stat().st_mode & 0o111
     assert not (tmp_path / "unpacked/README.txt").exists()
 
 
