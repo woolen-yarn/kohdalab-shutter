@@ -7,6 +7,12 @@ PC側の標準アプリはRust版です。検索とUSBでのIP確認は[Pico W�
 This checklist prepares a Windows PC for using KohdaLab Shutter and uploading
 server files to the Pico W.
 
+## Download the app / アプリの取得
+
+通常の利用では[Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)からWindows ZIPを取得し、全体を展開して`kohdalab-shutter-gui.exe`を起動します。Rust・Gitは不要です。[導入手順](install.md)も参照してください。
+
+以下はソースからビルドする場合と、Pico Wへ初回転送する場合の開発環境の手順です。
+
 ## 1. Install system tools / ツールの導入
 
 Install Rust, Git, and uv:

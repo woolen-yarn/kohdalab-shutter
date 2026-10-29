@@ -46,9 +46,18 @@ Ordering changes the display only; hardware channel identifiers stay fixed.
 
 ## Downloads / ダウンロード
 
-Rust desktop version `0.4.1` is under development. There is no packaged Windows or macOS release yet; build it from this repository. Python/uv remains necessary only to upload or inspect the Pico W firmware and for the compatibility client.
+Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). No Rust or Python installation is needed to run the GUI.
 
-Rustデスクトップ版`0.4.1`は開発中です。Windows/macOS向けの配布パッケージはまだありません。このリポジトリからビルドしてください。Python/uvはPico Wファームウェアの転送・確認と互換クライアントにだけ必要です。
+[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)から配布アプリをダウンロードできます。PCでGUIを使うためにRust・Pythonは不要です。
+
+| Platform / OS | Download / ファイル |
+| --- | --- |
+| Windows 10/11 (x64) | `kohdalab-shutter-0.4.1-windows-x64.zip` — extract and open `kohdalab-shutter-gui.exe` / 展開してexeを起動 |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.4.1-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+
+The first release is not publisher-signed or Apple-notarized; see the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware upload still requires separate MicroPython tools.
+
+今回の配布物は発行元の署名・Appleの公証がないため、初回起動で確認が出ることがあります。[導入手順](docs/install.md)をご覧ください。Pico Wへの初回転送には別途MicroPython用ツールが必要です。
 
 ## Supported hardware / 対応ハードウェア
 
@@ -66,10 +75,10 @@ Explore the interface without connecting hardware / 実機に接続せず画面�
 cargo run --locked --bin kohdalab-shutter-gui -- --demo
 ```
 
-1. Install stable Rust and build `cargo build --release --locked`. / stable Rustを導入してビルドします。
+1. Download and open the app from [Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest), or build from source. / Releasesからアプリを取得するか、ソースからビルドします。
 2. Prepare `server/wifi_config.py`, connect the Pico W by USB, and upload the server once. / Wi-Fi設定を用意し、Pico WをUSB接続してサーバーを一度転送します。
 3. Start the Pico W server by holding a channel switch for three seconds, unless `AUTO_START_SERVER` is enabled. / `AUTO_START_SERVER`が無効なら、チャンネルスイッチを3秒長押ししてサーバーを開始します。
-4. Start `cargo run --locked --bin kohdalab-shutter-gui`, choose **Find Pico W**, select the intended device, then connect. / GUIを起動し、**Find Pico W**から対象機器を選んで接続します。
+4. Open KohdaLab Shutter, choose **Find Pico W**, select the intended device, then connect. / GUIを起動し、**Find Pico W**から対象機器を選んで接続します。
 
 The first firmware upload and DHCP/fixed-IP choice are described in [Pico W setup and discovery / Pico Wの設定と検索](docs/rust-client.md). Discovery requires that the PC and Pico W can exchange local UDP traffic; use the USB fallback if the laboratory network blocks it.
 
