@@ -2,9 +2,9 @@
 
 [Policy](../CODE_SIGNING_POLICY.md) · [Privacy](../PRIVACY.md) · [Current downloads](install.md)
 
-**Current release v0.4.1 remains unsigned on Windows and ad-hoc signed/unnotarized on Mac.** No provider application, certificate enrollment, account purchase or signing request has been performed by this repository change.
+**Current desktop releases remain unsigned on Windows and ad-hoc signed/unnotarized on Mac.** No provider application, certificate enrollment, account purchase or signing request has been performed by this repository change.
 
-現在のv0.4.1は変更しません。Windowsは未署名、Macはアドホック署名・未公証です。この変更で外部サービスへの申請・契約・証明書発行・署名要求を行ったわけではありません。
+Windowsは未署名、Macはアドホック署名・未公証です。この変更で外部サービスへの申請・契約・証明書発行・署名要求を行ったわけではありません。
 
 ## Windows: the same SignPath preparation policy as TRKR/IV
 

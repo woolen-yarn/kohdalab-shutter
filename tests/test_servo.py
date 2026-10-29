@@ -1,5 +1,6 @@
 import pytest
 
+from server import settings
 from server.servo import ChannelConfigurationError, ServoBoard, validate_channels
 
 
@@ -86,6 +87,33 @@ def test_multiple_active_channels_can_hold_pwm(channels, pwm, clock):
     clock.advance(100)
     board.tick()
     assert not board.busy()
+    assert pwm.disabled == []
+
+
+def test_firmware_default_advances_all_configured_channels_in_parallel(pwm, clock):
+    board = make_board(
+        settings.CHANNELS,
+        pwm,
+        clock,
+        max_active=settings.SERVO_MAX_ACTIVE,
+    )
+    assert settings.SERVO_MAX_ACTIVE == len(settings.CHANNELS)
+
+    board.tick()
+    for index in range(board.count()):
+        assert board.open(index)
+
+    clock.advance(board.step_interval_ms)
+    board.tick()
+
+    assert board.positions == [
+        channel["close"]
+        + (
+            min(abs(channel["open"] - channel["close"]), board.step_degrees)
+            * (1 if channel["open"] > channel["close"] else -1)
+        )
+        for channel in settings.CHANNELS
+    ]
     assert pwm.disabled == []
 
 

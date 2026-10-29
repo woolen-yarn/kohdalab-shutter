@@ -13,9 +13,9 @@ The Mac ZIP is an alternative to the DMG; both contain the same universal app. W
 
 MacのZIP版はDMG版と同じUniversalアプリです。このリリースではWindows ARM64・Linux向けバイナリは配布していません。
 
-For future trusted builds, see [signing setup](code-signing.md). The current v0.4.1 downloads have not been replaced with signed/notarized files.
+For future trusted builds, see [signing setup](code-signing.md). The current downloads remain unsigned/ad-hoc until provider enrollment and activation.
 
-今後の正規署名・公証の準備は[設定手順](code-signing.md)を参照してください。公開中のv0.4.1を署名済みファイルへ差し替えたわけではありません。
+今後の正規署名・公証の準備は[設定手順](code-signing.md)を参照してください。現在の配布版は、署名サービスの承認・設定が済むまでは未署名・アドホック署名です。
 
 ## First launch / 初回起動
 

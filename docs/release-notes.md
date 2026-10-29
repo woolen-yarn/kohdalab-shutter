@@ -1,25 +1,23 @@
-Rust desktop controller with the light-window interface, Pico W discovery and external GUI API.
+## Changes / 変更内容
+
+- **Parallel All actions:** updated Pico settings allow all configured channels to move concurrently instead of waiting for the previous channel's movement and settling delay.
+- **Connect / Disconnect:** both controls are visible in the Connection panel.
+- **Stable layout:** background status polling no longer inserts a Connected message above the shutter cards, and the progress indicator uses fixed geometry. Horizontal and Vertical layouts stay in place during refreshes.
+- Includes the shared KohdaLab signing-policy preparation and Windows product metadata. These binaries are still not publisher-signed/Apple-notarized; no production signing is claimed.
+
+**Pico update required for parallel movement:** edit `SERVO_MAX_ACTIVE` in the device's existing `settings.py` to the channel count (e.g. `4` for four channels), then restart. Preserve calibrated angles, wiring and Wi-Fi/IP settings. The source default is `SERVO_MAX_ACTIVE = len(CHANNELS)` after the channel definitions. Updating only the desktop cannot change the device's current limit.
+
+**並列動作にはPico側の設定変更も必要です。** 実機の既存`settings.py`で`SERVO_MAX_ACTIVE`をCH数（4台なら`4`）へ変更し、再起動してください。校正角度・ピン・Wi-Fi/IP設定は変更しません。GUIだけの更新では実機の同時駆動数は変わりません。
 
 ## Downloads / ダウンロード
 
-- **Windows 10/11 (x64):** download `kohdalab-shutter-0.4.1-windows-x64.zip`, extract it, then open `kohdalab-shutter-gui.exe`. `Demo.cmd` opens a hardware-free preview.
-- **Mac (macOS 13+, Apple Silicon + Intel):** download `kohdalab-shutter-0.4.1-macos-universal.dmg`, then drag `KohdaLab Shutter.app` to Applications. The ZIP is an alternative containing the same app.
+- **Windows 10/11 (x64):** download `kohdalab-shutter-0.4.2-windows-x64.zip`, extract it, then open `kohdalab-shutter-gui.exe`. `Demo.cmd` opens a hardware-free preview.
+- **Mac (macOS 13+, Apple Silicon + Intel):** download `kohdalab-shutter-0.4.2-macos-universal.dmg`, then drag `KohdaLab Shutter.app` to Applications. The ZIP is an alternative containing the same app.
 
-**No Rust or Python installation is needed to run the desktop app.** The Pico W keeps its MicroPython firmware; initial firmware upload is a separate step.
+**No Rust or Python installation is needed to run the desktop app.** Initial Pico firmware setup and Python/Jupyter integration remain separate steps.
 
-PCでGUIを使うだけならRust・Pythonは不要です。Pico W側はMicroPythonを継続し、初回転送は別途必要です。
+Builds are **not publisher-signed or Apple-notarized**; Windows or macOS may prompt on first launch. Read the [installation guide](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md). The Mac app is ad-hoc signed for integrity; SignPath acceptance and Apple enrollment/credentials remain pending.
 
-## Included / 内容
-
-- Front-facing light window: Open reveals light, Close covers it; Moving / Unknown remain explicit.
-- KohdaLab dark theme, concise English controls, version at the top.
-- Horizontal / vertical layouts and ascending / descending channel order.
-- Find Pico W, explicit selection among multiple controllers, calibrated shutter states.
-- GUI-owned local API v2 and Python/Jupyter client support.
-- Native GUI + CLI, license notices, build origin and SHA-256 checksums.
-
-Builds are **not publisher-signed or Apple-notarized**; Windows or macOS may prompt on first launch. Read the [installation guide](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md) for platform instructions. The Mac app is ad-hoc signed for integrity, not trusted-publisher identification.
-
-Validation includes native builds/tests on Windows, Mac and Linux; packaged CLI entry points on Windows, Apple Silicon and Intel; universal Mach-O and app-signature verification; DMG integrity; and simulated GUI/API checks. This does not establish physical Pico/Wi-Fi/servo validation.
+Validation includes Windows/Mac/Linux tests and builds, native packaging/metadata checks, Intel Mac package checks, simulated GUI/API checks, fixed-position egui rendering during pending refreshes and simulated parallel Pico movement. Physical Pico/Wi-Fi/servo validation remains an owner hardware check.
 
 [Installation / 導入](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/install.md) · [Pico W setup / 実機設定](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/rust-client.md) · [External API / 外部制御](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/gui-api.md)

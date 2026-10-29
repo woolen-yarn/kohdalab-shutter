@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-10-29
+
+- Defaulted Pico motion concurrency to every configured channel, allowing All actions to overlap instead of waiting for each channel's settling delay. Existing device settings require updating; movement stepping and PWM release stay configurable.
+- Added paired Connect / Disconnect controls and removed the transient polling message above the shutters. Reserved fixed spinner geometry so neither layout moves during periodic refreshes.
+- Added a real egui geometry regression for polling and a same-tick parallel firmware regression.
 
 - Prepared the same SignPath approval/first-party policy as TRKR/IV, exact unsigned GUI/CLI review artifacts, Windows product/version resources, and strict signature/publisher/timestamp verification.
 - Added an owner-activated protected Mac Developer ID/notarization workflow with hardened runtime, Accepted receipts, stapling, Gatekeeper checks and final checksums. Real provider execution remains pending owner enrollment/approval/credentials; v0.4.1 downloads remain unchanged.
