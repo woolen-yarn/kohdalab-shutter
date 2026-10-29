@@ -7,6 +7,10 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'src/**'
+      - 'build.rs'
+      - 'assets/shutter.ico'
+      - 'scripts/check_windows_*.ps1'
+      - '.signpath/**'
       - '.github/workflows/release.yml'
       - 'scripts/package_release.py'
       - 'tests/test_release_package.py'
@@ -73,6 +77,43 @@ jobs:
               throw "External Visual C++ runtime dependency: $file"
             }
           }
+      - name: Validate first-party Windows metadata and record signature status
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])"
+          ./scripts/check_windows_metadata.ps1 -Directory build/release -Version $v -ReportPath build/signing-review/windows-metadata.json
+          ./scripts/check_windows_signatures.ps1 -Directory build/release -ReportPath build/signing-review/windows-signatures.json
+      - name: Stage exact first-party SignPath input (unsigned)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/signpath-input | Out-Null
+          Copy-Item build/release/kohdalab-shutter-gui.exe,build/release/kohdalab-shutter.exe build/signpath-input/
+          $hashes = [ordered]@{}
+          foreach ($file in Get-ChildItem build/signpath-input/*.exe) {
+            $hashes[$file.Name] = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $hashes | ConvertTo-Json | Set-Content build/signing-review/SHA256.json -Encoding utf8
+      - name: Upload provider-review input without submitting a signing request
+        id: signpath-input
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        with:
+          name: signpath-input-windows-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            build/signpath-input/kohdalab-shutter-gui.exe
+            build/signpath-input/kohdalab-shutter.exe
+      - name: Upload metadata, signature and hash reports
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        with:
+          name: signing-review-windows-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: build/signing-review/*.json
       - name: Build both Mac architectures
         if: runner.os == 'macOS'
         run: |

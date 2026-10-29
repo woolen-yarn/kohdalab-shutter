@@ -1,0 +1,209 @@
+name: Developer ID signing and Apple notarization
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing stable release tag to rebuild and notarize (e.g. v0.4.1)
+        required: true
+        type: string
+      publish:
+        description: Add verified signed Mac files to the existing Release (keeps original files)
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: macos-notarization-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      commit: ${{ steps.validate.outputs.commit }}
+    steps:
+      - name: Check out reviewed workflow source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require main branch, owner activation and a validated release
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          READY: ${{ vars.MACOS_NOTARIZATION_READY }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          if [ "$READY" != true ]; then
+            echo 'Register Apple Developer ID/notary credentials and protected environment, then set MACOS_NOTARIZATION_READY=true.' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os, pathlib, re, subprocess, tomllib
+          tag = os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Stable release tag required'
+          commit = subprocess.check_output(['git','rev-parse',tag+'^{commit}'],text=True).strip()
+          subprocess.run(['git','merge-base','--is-ancestor',commit,'HEAD'],check=True)
+          manifest = subprocess.check_output(['git','show',commit+':Cargo.toml'],text=True)
+          assert tomllib.loads(manifest)['package']['version'] == tag[1:]
+          with pathlib.Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write('version='+tag[1:]+'\ncommit='+commit+'\n')
+          PY
+          run_id=$(gh run list --workflow test.yml --commit "$(git rev-parse "$RELEASE_TAG^{commit}")" --branch "$RELEASE_TAG" --event push --json databaseId,conclusion --jq '[.[] | select(.conclusion == "success")][0].databaseId // empty')
+          test -n "$run_id"
+          gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' | grep -Fx false
+
+  build:
+    name: Rebuild the reviewed Mac source without signing credentials
+    needs: preflight
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - name: Build both architectures from source
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin --toolchain stable
+          cargo +stable test --locked --all-targets
+          cargo +stable build --release --locked --target aarch64-apple-darwin
+          cargo +stable build --release --locked --target x86_64-apple-darwin
+          mkdir -p build/release
+          for binary in kohdalab-shutter-gui kohdalab-shutter; do
+            lipo -create "target/aarch64-apple-darwin/release/$binary" "target/x86_64-apple-darwin/release/$binary" -output "build/release/$binary"
+          done
+          cargo +stable metadata --locked --format-version 1 > build-metadata.json
+          python3 scripts/package_release.py --platform macos-universal --binaries build/release --metadata build-metadata.json --output dist
+      - name: Upload exact unsigned input for approval
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        with:
+          name: macos-notarization-input
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/*-macos-universal.zip
+            dist/BUILD-macos-universal.json
+
+  sign:
+    name: Sign, notarize and verify Mac candidates
+    needs: [preflight, build]
+    environment: code-signing
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_IDENTITY_SHA1: ${{ vars.APPLE_SIGNING_IDENTITY_SHA1 }}
+      APPLE_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+      APPLE_ISSUER_ID: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - name: Check out approved signing tools (not release application code)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download same-workflow build output
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
+        with:
+          name: macos-notarization-input
+          path: input
+      - name: Verify source and archive hash before accessing credentials
+        env:
+          EXPECTED_COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path('input'); report=json.loads((root/'BUILD-macos-universal.json').read_text())
+          assert report['commit']==os.environ['EXPECTED_COMMIT'] and report['version']==os.environ['VERSION']
+          name='kohdalab-shutter-'+os.environ['VERSION']+'-macos-universal.zip'
+          assert hashlib.sha256((root/name).read_bytes()).hexdigest()==report['assets'][name]
+          PY
+      - name: Import credentials into an ephemeral keychain
+        env:
+          APPLE_P12: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_P8: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_P12" && test -n "$APPLE_P12_PASSWORD" && test -n "$APPLE_P8"
+          test -n "$APPLE_TEAM_ID" && test -n "$APPLE_IDENTITY_SHA1" && test -n "$APPLE_KEY_ID" && test -n "$APPLE_ISSUER_ID"
+          umask 077
+          credential_dir=$(mktemp -d "$RUNNER_TEMP/shutter-signing.XXXXXX")
+          echo "CREDENTIAL_DIR=$credential_dir" >> "$GITHUB_ENV"
+          export CREDENTIAL_DIR="$credential_dir"
+          python3 - <<'PY'
+          import base64,os,pathlib
+          root=pathlib.Path(os.environ['CREDENTIAL_DIR'])
+          (root/'identity.p12').write_bytes(base64.b64decode(os.environ['APPLE_P12'],validate=True))
+          (root/'notary.p8').write_bytes(base64.b64decode(os.environ['APPLE_P8'],validate=True))
+          PY
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          keychain="$credential_dir/signing.keychain-db"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$credential_dir/identity.p12" -k "$keychain" -P "$APPLE_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          xcrun notarytool store-credentials shutter-notary --key "$credential_dir/notary.p8" --key-id "$APPLE_KEY_ID" --issuer "$APPLE_ISSUER_ID" --keychain "$keychain"
+      - name: Require Developer ID, Apple acceptance, stapling and Gatekeeper assessment
+        run: |
+          python3 scripts/notarize_macos.py --archive "input/kohdalab-shutter-$VERSION-macos-universal.zip" --version "$VERSION" --identity "$APPLE_IDENTITY_SHA1" --team-id "$APPLE_TEAM_ID" --profile shutter-notary --keychain "$CREDENTIAL_DIR/signing.keychain-db" --output signed
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path('signed/SIGNING-macos.json');r=json.loads(p.read_text())
+          r['source_commit']='${{ needs.preflight.outputs.commit }}'
+          p.write_text(json.dumps(r,indent=2)+'\n')
+          PY
+      - name: Remove signing credentials even after a failure
+        if: always()
+        run: |
+          if [ -n "${CREDENTIAL_DIR:-}" ]; then
+            security delete-keychain "$CREDENTIAL_DIR/signing.keychain-db" || true
+            rm -rf -- "$CREDENTIAL_DIR"
+          fi
+      - name: Upload verified signed candidates only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        with:
+          name: macos-signed-and-notarized
+          if-no-files-found: error
+          retention-days: 14
+          path: signed/*
+
+  publish:
+    if: inputs.publish
+    needs: [preflight, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Download notarized files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
+        with:
+          name: macos-signed-and-notarized
+          path: signed
+      - name: Verify final checksums and upload without replacing original files
+        run: |
+          (cd signed && sha256sum --check SHA256SUMS-macos-signed.txt)
+          gh release upload "$RELEASE_TAG" signed/*
+          gh release download "$RELEASE_TAG" --pattern '*-macos-universal-signed.*' --pattern SHA256SUMS-macos-signed.txt --dir downloaded
+          (cd downloaded && sha256sum --check SHA256SUMS-macos-signed.txt)

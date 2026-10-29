@@ -59,6 +59,12 @@ The first release is not publisher-signed or Apple-notarized; see the [installat
 
 今回の配布物は発行元の署名・Appleの公証がないため、初回起動で確認が出ることがあります。[導入手順](docs/install.md)をご覧ください。Pico Wへの初回転送には別途MicroPython用ツールが必要です。
 
+## Code signing / 署名・公証
+
+The published v0.4.1 files retain their current unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
+
+公開中のv0.4.1の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
+
 ## Supported hardware / 対応ハードウェア
 
 | Role / 役割 | Current implementation / 現在の実装 |

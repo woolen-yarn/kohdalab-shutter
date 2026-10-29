@@ -7,6 +7,7 @@
 | [Usage guide](usage.md) | Wiring, Wi-Fi, channel expansion, and operating notes / 配線、Wi-Fi、チャンネル拡張、操作メモ |
 | [Specification](specification.md) | TCP protocol, discovery datagrams, and channel behaviour / TCPプロトコル、検索データグラム、チャンネル動作 |
 | [Initial setup](initial_setup.md) | New control-PC or development-machine setup / 新しい制御PC・開発PCの設定 |
+| [Code signing](code-signing.md) | Signing policy, enrollment and protected release setup / 署名方針・登録・配布設定 |
 | [Install desktop apps](install.md) | Download and start Windows/Mac apps / Windows・Macアプリの導入 |
 | [Windows setup](windows_setup.md) | Windows-specific build and Pico W upload steps / Windows固有のビルド・Pico W転送手順 |
 | [Purchase list](purchase-list.md) | Hardware purchasing notes / 購入品メモ |

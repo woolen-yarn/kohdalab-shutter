@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Prepared the same SignPath approval/first-party policy as TRKR/IV, exact unsigned GUI/CLI review artifacts, Windows product/version resources, and strict signature/publisher/timestamp verification.
+- Added an owner-activated protected Mac Developer ID/notarization workflow with hardened runtime, Accepted receipts, stapling, Gatekeeper checks and final checksums. Real provider execution remains pending owner enrollment/approval/credentials; v0.4.1 downloads remain unchanged.
+
 ## 0.4.1 — 2026-10-29
 
 - Added downloadable Windows x64 ZIP and macOS Universal app/DMG packages, including dependency/font licenses, build origins and SHA-256 checksums.
