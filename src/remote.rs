@@ -2,7 +2,7 @@
 //!
 //! This module never controls hardware.  It authenticates and bounds socket
 //! work, then hands requests to the GUI thread through [`Request`].
-use kohdalab_control_protocol::descriptor as canonical_descriptor;
+use kohdalab_control_protocol::{descriptor as canonical_descriptor, paths::AppPaths};
 use kohdalab_control_protocol::{is_common, response as common_response};
 use serde_json::{Value, json};
 use std::{
@@ -40,13 +40,9 @@ impl Server {
     pub fn start(directory: Option<PathBuf>) -> Result<Self, String> {
         let directory = match directory {
             Some(path) => path,
-            None => {
-                let profile = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-                    .ok_or_else(|| {
-                        "Cannot locate the user profile for GUI API discovery".to_owned()
-                    })?;
-                PathBuf::from(profile).join(".kohdalab").join("control")
-            }
+            None => AppPaths::for_app("shutter")
+                .map_err(|_| "Cannot locate the user profile for GUI API discovery".to_owned())?
+                .run_dir(),
         };
         std::fs::create_dir_all(&directory).map_err(|e| format!("GUI API directory: {e}"))?;
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))

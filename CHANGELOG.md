@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4
+
+- Use the common app-owned directory layout: config/config.json, run, results and logs beneath ~/.kohdalab/shutter.
+- Align normal startup, file selection, external API/Notebook discovery and documentation. Preserve operator-selected paths and all old files without automatic migration.
+- Common control SDK 1.0.1 discovers app-owned run directories; wire protocol and instrument safety are unchanged.
+
+
 ## 0.6.3
 
 - Automatically create the missing application-specific default configuration on first normal GUI launch.

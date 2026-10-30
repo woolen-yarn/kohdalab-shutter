@@ -32,7 +32,7 @@ with GuiShutter() as shutter:
 
 ## Protocol / 通信仕様
 
-Protocol **2** uses one UTF-8 JSON request and response per TCP connection, each terminated by a newline. The listener binds only to `127.0.0.1` on an ephemeral port. An atomic private descriptor lives at `~/.kohdalab/control/shutter-<pid>-<instance>.json` (Windows: the user profile directory). It contains `app`, `protocol`, `pid`, `instance_id`, `host`, `port`, `address`, and an unpredictable instance `token`. Files are mode 0600 on Unix, and removed on normal API shutdown.
+Protocol **2** uses one UTF-8 JSON request and response per TCP connection, each terminated by a newline. The listener binds only to `127.0.0.1` on an ephemeral port. An atomic private descriptor lives at `~/.kohdalab/shutter/run/shutter-<pid>-<instance>.json` (Windows: `%USERPROFILE%\\.kohdalab\\shutter\\run`). It contains `app`, `protocol`, `pid`, `instance_id`, `host`, `port`, `address`, and an unpredictable instance `token`. Files are mode 0600 on Unix, and removed on normal API shutdown.
 
 通信は改行区切りJSONです。待受はlocalhostのみで、接続情報はユーザー領域の非公開ファイルに保存します。複数GUIがある場合はPython側で `endpoint=` を明示し、別のGUIを勝手に選択しません。
 
@@ -97,4 +97,4 @@ Hardware `connect` requires an explicit nonempty `channels` array, e.g. `connect
 
 実機の`connect`には使用CHを明示します。PicoがCH単位で操作権を管理し、別GUIは空きCHを利用できます。状態表示・一括開閉も取得CHに限定します。Python側の`release()`はGUI内の操作権を返し、`disconnect()`がPicoのCHを解放します。
 
-Shared names appear as `status().device_label` and each `status().channels[CH].label`. These are confirmed Pico values. All API actions remain available for automation and are scoped to acquired CHs; the GUI omits All buttons. Local API opt-in auto-restores on restart with newly generated credentials. Descriptor files remain under `.kohdalab/control`, separate from `.kohdalab/shutter/config.json`.
+Shared names appear as `status().device_label` and each `status().channels[CH].label`. These are confirmed Pico values. All API actions remain available for automation and are scoped to acquired CHs; the GUI omits All buttons. Local API opt-in auto-restores on restart with newly generated credentials. Descriptor files remain under `.kohdalab/shutter/run`, separate from `.kohdalab/shutter/config/config.json`.
