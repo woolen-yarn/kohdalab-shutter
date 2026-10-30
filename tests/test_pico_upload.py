@@ -47,7 +47,7 @@ def test_initial_wifi_quoting_and_existing_device_rejection():
     files = plan("initial", {}, ROOT / "server", 'Lab "A"', "a'\\b\nsecret")
     wifi = values(files["wifi_config.py"])
     assert wifi["SSID"] == 'Lab "A"'
-    assert wifi["PASSWORD"] == "a'\\b\nsecret"
+    assert wifi["PASSWORD"] == "a'\\b\nsecret"  # noqa: S105 - synthetic quoting regression
     assert values(files["settings.py"])["USE_STATIC_IP"] is False
     with pytest.raises(RuntimeError, match="already has files"):
         plan("initial", {"settings.py": b"old"}, ROOT / "server", "ssid", "password")
