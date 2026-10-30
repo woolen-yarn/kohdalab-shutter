@@ -119,6 +119,27 @@ impl Preferences {
             .map_err(|error| error.error)
     }
 
+    pub fn ensure_default(path: &Path) -> io::Result<bool> {
+        if path.exists() {
+            return Ok(false);
+        }
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
+        let data = serde_json::to_vec_pretty(&Self::default())
+            .map_err(|error| invalid_data(format!("could not encode preferences: {error}")))?;
+        let mut temporary = NamedTempFile::new_in(parent)?;
+        temporary.write_all(&data)?;
+        temporary.as_file_mut().sync_all()?;
+        match temporary.persist_noclobber(path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+            Err(error) => Err(error.error),
+        }
+    }
+
     /// Check values before they reach disk or are used by the GUI.
     pub fn validate(&self) -> io::Result<()> {
         if self.application != "kohdalab-shutter" {
@@ -382,6 +403,42 @@ mod tests {
         }
         let default = default_path().unwrap();
         assert!(default.ends_with(".kohdalab/shutter/config.json"));
+    }
+
+    #[test]
+    fn ensure_default_creates_once_and_preserves_existing_or_invalid() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        assert!(Preferences::ensure_default(&path).unwrap());
+        let first = fs::read(&path).unwrap();
+        assert!(!Preferences::ensure_default(&path).unwrap());
+        assert_eq!(fs::read(&path).unwrap(), first);
+        let foreign = br#"{"application":"foreign"}"#;
+        fs::write(&path, foreign).unwrap();
+        assert!(!Preferences::ensure_default(&path).unwrap());
+        assert_eq!(fs::read(&path).unwrap(), foreign);
+    }
+    #[test]
+    fn ensure_default_concurrent_initialization_publishes_complete_json() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        let a = {
+            let p = path.clone();
+            std::thread::spawn(move || Preferences::ensure_default(&p).unwrap())
+        };
+        let b = {
+            let p = path.clone();
+            std::thread::spawn(move || Preferences::ensure_default(&p).unwrap())
+        };
+        assert_eq!(a.join().unwrap() as u8 + b.join().unwrap() as u8, 1);
+        assert!(Preferences::load(&path).is_ok());
+    }
+    #[test]
+    fn ensure_default_reports_unusable_parent() {
+        let directory = tempdir().unwrap();
+        let parent = directory.path().join("file");
+        fs::write(&parent, b"file").unwrap();
+        assert!(Preferences::ensure_default(&parent.join("child/config.json")).is_err());
     }
 
     #[test]

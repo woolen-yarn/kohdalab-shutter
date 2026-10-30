@@ -1,25 +1,17 @@
-# KohdaLab Shutter 0.6.2
+# KohdaLab Shutter 0.6.3
 
-## Changes / 変更内容
+## Changes
 
-Add Control Protocol 1 with opaque ownership, canonical operation receipts and the same standalone Python SDK as the desktop suite. Keep the compact light-window GUI and native API. Package common SDK sources and align GitHub maintenance conventions.
+On first normal GUI launch, a missing `~/.kohdalab/shutter/config.json` (`%USERPROFILE%\.kohdalab\shutter\config.json` on Windows) is automatically created from safe built-in defaults. No manual JSON preparation is needed.
 
-## Compatibility and migration / 互換性と移行
+## Compatibility and safety
 
-Hold-last-state release is unchanged and reports cleanup `not_required`; commanded position is not measured optical transmission. No Pico update is needed when compatible v0.6.0 firmware is already installed. Firmware and desktop versions remain separate. No hardware is flashed automatically.
+Initialization publishes a complete file atomically without replacing an existing profile. Existing invalid, foreign or unsupported profiles remain intact and errors are reported. Explicit profiles and Demo/smoke launches do not initialize production defaults. Creating/loading settings does not connect hardware, enable outputs, acquire images or move shutters. Existing acquisition, data formats, native/common APIs and cleanup policies are unchanged.
 
-## Downloads / ダウンロード
+## Downloads and validation
 
-Windows x64 Setup/portable ZIP; macOS universal ZIP/DMG; corresponding source, dependency notices and checksums. Windows is unsigned; Mac is ad hoc signed, not Developer ID signed or notarized.
-
-[Release packages](https://github.com/woolen-yarn/kohdalab-shutter/releases). Existing older releases remain available.
-
-## Validation and provenance / 検証と出所
-
-Local Rust application/common suites: 63 passed. Actual Demo GUI covered native regression plus common open/result/wait, duplicate receipts and truthful release cleanup. Package/installer tests passed. Platform CI validates Windows/macOS packages.
-
-The common Python SDK has nine device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
+Use the installer, portable package and corresponding source/build kit attached to this release. Platform tests and artifact provenance qualify the exact packaged source; first-launch regression checks include concurrent creation, preservation and unusable directories. No new physical-device qualification is claimed. Windows executables remain unsigned; supported Mac packages use ad hoc signing and are not notarized.
 
 ## 日本語
 
-共通GUI APIを追加しました。解放時の状態保持と既存操作を維持し、光学センサーによる確認とは区別します。互換ファームウェアv0.6.0導入済みならPicoの更新は不要です。実機を新たに動かした検証は行っていません。
+初回の通常GUI起動時に、アプリ専用の標準設定を自動作成します。既存・不正・未対応の設定は保持し、エラーを表示します。設定作成・読込による装置接続・出力ON・撮影・シャッター移動は行いません。従来の測定・保存形式・API・終了処理は変更しません。

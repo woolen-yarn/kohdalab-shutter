@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "kohdalab-shutter"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "clap",
  "eframe",
