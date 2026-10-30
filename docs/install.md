@@ -99,9 +99,9 @@ The GUI's **Local control API** supports Python/Jupyter through the [Python clie
 
 Windows Setup uses `C:\Program Files\Kohdalab\KohdaLab Shutter`;
 macOS uses `/Applications/KohdaLab Shutter.app`. Local desktop preferences use
-`~/.kohdalab/shutter/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config.json`).
+`~/.kohdalab/shutter/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config\config.json`).
 Pico calibration, network settings, and shared device/channel names remain on the
-controller. The shared `.kohdalab/control` directory is API discovery, not the
+controller. The application-owned `.kohdalab/shutter/run` directory is API discovery, not the
 application settings file. Updating or uninstalling the desktop app preserves
 these user settings and never resets the Pico.
 

@@ -6,12 +6,13 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env, fs,
+    fs,
     io::{self, Write},
     net::Ipv4Addr,
     path::{Path, PathBuf},
 };
 
+use kohdalab_control_protocol::paths::AppPaths;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tempfile::NamedTempFile;
@@ -209,17 +210,9 @@ impl DevicePreferences {
 
 /// Return the standard per-user preference path for the current platform.
 pub fn default_path() -> Option<PathBuf> {
-    let home = if cfg!(windows) {
-        env::var_os("USERPROFILE").or_else(|| env::var_os("HOME"))
-    } else {
-        env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"))
-    }?;
-    Some(
-        PathBuf::from(home)
-            .join(".kohdalab")
-            .join("shutter")
-            .join("config.json"),
-    )
+    AppPaths::for_app("shutter")
+        .ok()
+        .map(|paths| paths.config_file())
 }
 
 fn default_schema_version() -> u8 {
@@ -402,7 +395,7 @@ mod tests {
             assert_eq!(fs::read_to_string(&path).unwrap(), contents);
         }
         let default = default_path().unwrap();
-        assert!(default.ends_with(".kohdalab/shutter/config.json"));
+        assert!(default.ends_with(".kohdalab/shutter/config/config.json"));
     }
 
     #[test]
