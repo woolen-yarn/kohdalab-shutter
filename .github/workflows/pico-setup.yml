@@ -1,0 +1,117 @@
+name: Build Pico Setup apps
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/upload_pico.py'
+      - 'scripts/pico_setup_*.py'
+      - 'scripts/build_pico_setup.py'
+      - 'packaging/pico-setup/**'
+      - 'server/**'
+      - '.github/workflows/pico-setup.yml'
+  push:
+    tags: ['pico-tools-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pico-setup-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Pico Setup / ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2025, platform: windows-x64}
+          - {os: macos-15, platform: macos-arm64}
+          - {os: macos-15-intel, platform: macos-x64}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          python-version: '3.13'
+          enable-cache: true
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          uv venv .pico-build
+          if [ "$RUNNER_OS" = Windows ]; then py=.pico-build/Scripts/python.exe; else py=.pico-build/bin/python; fi
+          uv pip install --python "$py" -r packaging/pico-setup/requirements.txt
+      - name: Build and smoke-test packaged app without USB
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then py=.pico-build/Scripts/python.exe; else py=.pico-build/bin/python; fi
+          "$py" scripts/build_pico_setup.py --platform '${{ matrix.platform }}'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pico-setup-${{ matrix.platform }}
+          path: |
+            dist/pico-setup/*.zip
+            dist/pico-setup/BUILD-*.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/pico-tools-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Require tag validation
+        run: |
+          for attempt in $(seq 1 10); do
+            run_id=$(gh run list --workflow test.yml --commit "$GITHUB_SHA" --event push --branch "$RELEASE_TAG" --json databaseId --jq '.[0].databaseId // empty')
+            if [ -n "$run_id" ]; then break; fi
+            sleep 6
+          done
+          test -n "$run_id"
+          gh run watch "$run_id" --exit-status --interval 30
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: pico-setup-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify sources and asset hashes
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          root = pathlib.Path('release-assets')
+          expected = {f'kohdalab-pico-setup-1.0.0-{p}.zip' for p in ('windows-x64','macos-arm64','macos-x64')}
+          assert os.environ['RELEASE_TAG'] == 'pico-tools-v1.0.0'
+          assert {p.name for p in root.glob('*.zip')} == expected
+          verified = set()
+          for p in root.glob('BUILD-*.json'):
+              data = json.loads(p.read_text())
+              assert data['commit'] == os.environ['GITHUB_SHA'] and data['version'] == '1.0.0'
+              name = data['asset']
+              assert name in expected
+              assert hashlib.sha256((root/name).read_bytes()).hexdigest() == data['sha256']
+              verified.add(name)
+          assert verified == expected
+          (root/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in sorted(root.glob('*.zip'))))
+          PY
+      - name: Publish verified dedicated tool release
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --draft --title 'KohdaLab Pico Setup 1.0.0' --notes-file docs/pico-setup-release.md release-assets/*
+          gh release download "$RELEASE_TAG" --dir downloaded
+          (cd downloaded && sha256sum --check SHA256SUMS.txt)
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false

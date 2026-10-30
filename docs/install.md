@@ -51,9 +51,9 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 
 ## Pico firmware update / Pico側の更新
 
-The published v0.6.4 desktop works with v0.6.0 channel-session firmware. To install/update the Pico or switch it to automatic IP addressing, use the [USB setup/update tool](pico-upload.md) from the current source ZIP. Windows: `upload_server_to_pico.bat`; Mac: `upload_server_to_pico.command`. Choose Initial setup or Update. Update backs up the existing files, preserves Wi-Fi/labels/calibration/pins and explicitly switches IP addressing to DHCP. The new tool is in the current source, separate from the v0.6.4 desktop installer.
+Use the standalone [Pico Setup app](pico-upload.md) for initial USB transfer or updates. Download the native Windows/Mac ZIP and open the app; Python and uv are bundled. Initial setup and Update both use DHCP. Updates back up and preserve existing calibration, pins, Wi-Fi and labels. A fresh Pico still needs the one-time MicroPython UF2 installation.
 
-公開中のv0.6.4デスクトップはv0.6.0のチャンネル排他制御用ファームウェアに対応しています。Picoの初回転送・更新・DHCPへの変更には、最新ソースの[USB書き込みツール](pico-upload.md)を使ってください。Windowsは`upload_server_to_pico.bat`、Macは`upload_server_to_pico.command`です。初回／更新を選べ、更新ではバックアップを保存してWi-Fi・ラベル・校正・配線を保持し、IPをDHCPへ切り替えます。この新ツールは最新ソースに含まれ、v0.6.4デスクトップインストーラーとは別です。
+初回転送・更新には専用の[Pico Setupアプリ](pico-upload.md)を使えます。Windows／Mac用ZIPを展開してアプリを開くだけで、Python・uvの導入は不要です。初回／更新ともDHCPで、更新は既存の校正・配線・Wi-Fi・ラベルをバックアップして保持します。新品PicoだけMicroPython本体の導入が一度必要です。
 
 A connected CH repeats two short LED flashes with a pause, using green for Open and red for Close. An unclaimed CH keeps the waiting blink. Physical short presses cannot change a leased CH; long-press server stop remains available. Raw commands from old clients are also rejected for leased CHs.
 
