@@ -67,29 +67,45 @@ def patch_settings(existing: bytes, defaults: str) -> bytes:
     return (text.rstrip() + DHCP_MARKER).encode("utf-8")
 
 
+def run_mpremote(arguments: list[str]) -> str:
+    """Keep USB calls isolated; a bundled windowed app uses a private result file."""
+    with tempfile.TemporaryDirectory(prefix="shutter-remote-") as directory:
+        output = Path(directory) / "output.txt"
+        frozen = getattr(sys, "frozen", False)
+        command = (
+            [sys.executable, "--mpremote", str(output)]
+            if frozen
+            else [sys.executable, "-m", "mpremote"]
+        )
+        try:
+            result = subprocess.run(  # noqa: S603 - argument list; no shell
+                [*command, *arguments],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW
+                if sys.platform == "win32"
+                else 0,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(
+                "USB operation failed/timed out. Close Thonny and check the cable; backups are retained."
+            ) from error
+        if result.returncode:
+            raise RuntimeError(
+                "Pico USB operation failed. Check MicroPython, free space and the USB connection. Backups are retained."
+            )
+        return (output.read_text(encoding="utf-8") if frozen else result.stdout).strip()
+
+
 class Pico:
     def __init__(self, port: str) -> None:
         self.port = port
 
     def command(self, *arguments: str) -> str:
-        try:
-            result = subprocess.run(  # noqa: S603 - argument list, no shell; selected USB port
-                [sys.executable, "-m", "mpremote", "connect", self.port, *arguments],
-                capture_output=True,
-                text=True,
-                timeout=90,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as error:
-            raise RuntimeError(
-                "USB operation failed/timed out. Close Thonny and check the cable; do not reset during upload."
-            ) from error
-        if result.returncode:
-            # Remote exceptions may include Wi-Fi source; never echo raw device output.
-            raise RuntimeError(
-                "Pico USB operation failed. Check MicroPython, free space and the USB connection. Backups are retained."
-            )
-        return result.stdout.strip()
+        return run_mpremote(["connect", self.port, *arguments])
 
     def run(self, source: str) -> str:
         with tempfile.TemporaryDirectory(prefix="shutter-usb-") as directory:

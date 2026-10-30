@@ -28,9 +28,9 @@ Choose a named controller on the left and channels in the vertical list on the r
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico USB setup/update:** use the [current source tools](docs/pico-upload.md): `upload_server_to_pico.bat` (Windows) or `upload_server_to_pico.command` (Mac). Choose Initial setup or Update; both use automatic IP (DHCP). Update backs up existing files and preserves Wi-Fi, labels, calibration and pins. These source tools are separate from the published v0.6.4 desktop installer. The desktop remains compatible with v0.6.0 channel-session firmware.
+**Pico USB setup/update:** download the standalone [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.0). Extract the ZIP and double-click the Windows exe or Mac app; no Python or uv installation is needed. Choose Initial setup or Update. Both use DHCP; Update backs up and preserves calibration, pins, Wi-Fi and labels. [Instructions](docs/pico-upload.md)
 
-**Picoへの初回転送・更新：** 最新ソースの[書き込みツール](docs/pico-upload.md)を使えます。Windowsは`upload_server_to_pico.bat`、Macは`upload_server_to_pico.command`で初回／更新を選択し、IPをDHCPで自動取得します。更新ではバックアップを保存し、Wi-Fi・ラベル・校正・配線を保持します。このツールは公開中のv0.6.4アプリとは別です。デスクトップはv0.6.0の排他制御用ファームウェアにも対応しています。
+**Picoへの初回転送・更新：** 専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.0)を配布しています。ZIPを展開し、Windowsのexe／Macのappを開くだけで、Python・uvの別途インストールは不要です。初回／更新を選択でき、どちらもDHCPです。更新はバックアップを取り、校正・配線・Wi-Fi・ラベルを保持します。[手順](docs/pico-upload.md)
 
 <details>
 <summary>Vertical layout / 縦並び</summary>

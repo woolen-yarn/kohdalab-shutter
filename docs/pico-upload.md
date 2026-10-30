@@ -1,28 +1,30 @@
 # Pico W USB setup / Pico Wへの初回転送・更新
 
-Download the [current source ZIP](https://github.com/woolen-yarn/kohdalab-shutter/archive/refs/heads/main.zip) and extract it completely. The USB tool is separate from the published desktop installer; it does not need a Rust build. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) once; the launcher obtains Python and mpremote automatically. Network access is needed for that first dependency download.
+Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.0). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
 
-[最新ソースZIP](https://github.com/woolen-yarn/kohdalab-shutter/archive/refs/heads/main.zip)をダウンロードし、すべて展開してください。書き込みツールはデスクトップアプリとは別で、Rustのビルドは不要です。[uv](https://docs.astral.sh/uv/getting-started/installation/)だけ最初にインストールします。Pythonとmpremoteは起動ファイルが用意します。初回の取得にはインターネット接続が必要です。
+専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.0)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
 
 ## Start / 起動
 
-1. Close all Shutter GUIs and Thonny. Connect the intended Pico W with a USB data cable.
-2. Windows: double-click `upload_server_to_pico.bat`. Mac: open `upload_server_to_pico.command` in Terminal. If execution permission is missing after extraction, run `sh upload_server_to_pico.command` from that folder. Linux can use the same shell command.
-3. Choose **1. Initial setup** for a new Pico, or **2. Update** for an existing controller. When several Picos are connected, select the USB device by port and USB ID.
-4. Initial setup asks for the Wi-Fi SSID and a hidden password. Update retains the Wi-Fi credentials already on the Pico.
-5. Review the USB device and mode, then enter `y` to upload. Do not unplug during this operation.
-6. After completion, hold a CH switch for 3 seconds to start Wi-Fi, then use **Find Pico W** in the desktop GUI. If `AUTO_START_SERVER` is already enabled, Wi-Fi starts at boot.
+1. Download and extract the entire ZIP. Windows x64: open `KohdaLab Pico Setup.exe` with its `_internal` folder kept alongside it. Mac: choose Apple Silicon (arm64) or Intel (x64), then open `KohdaLab Pico Setup.app`.
+2. Close Shutter GUIs and Thonny. Connect the Pico W with a USB data cable, then Refresh and select its USB port/ID.
+3. Choose **Update · keep settings** for an existing controller, or **Initial setup · new Pico**. Enter Wi-Fi name/password for initial setup only.
+4. Press Update Pico / Install on Pico, check the target, then confirm. Keep the app open and USB connected until completion.
+5. Hold a CH switch for 3 seconds to start Wi-Fi and use **Find Pico W** in the control GUI. If `AUTO_START_SERVER` is enabled, Wi-Fi starts at boot.
 
-1. ShutterのGUIとThonnyを終了し、対象Pico Wをデータ通信対応USBケーブルで接続します。
-2. Windowsは `upload_server_to_pico.bat`、Macは `upload_server_to_pico.command` を起動します。Macで実行権限がない場合は、そのフォルダーのターミナルで `sh upload_server_to_pico.command` を実行します。Linuxも同じコマンドを使えます。
-3. 新品は **1. Initial setup**、使用中の装置は **2. Update** を選択します。複数台ある場合はUSBポート・USB IDから対象を選びます。
-4. 初回だけWi-Fi名とパスワードを入力します。パスワードは画面に表示しません。更新ではPico内のWi-Fi情報を保持します。
-5. 対象とモードを確認し、`y`で書き込みます。処理中はUSBを抜かないでください。
-6. 完了後、CHスイッチを3秒長押ししてWi-Fiを開始し、PCのGUIで **Find Pico W** を押します。`AUTO_START_SERVER`が有効なら電源投入時に接続します。
+1. ZIPをすべて展開します。Windowsは`KohdaLab Pico Setup.exe`を開き、隣の`_internal`フォルダーを残します。MacはApple Silicon用／Intel用を選び、`KohdaLab Pico Setup.app`を開きます。
+2. ShutterのGUIとThonnyを終了し、対象Pico WをUSB接続します。RefreshでUSBポート・USB IDを確認して選びます。
+3. 使用中装置は **Update · keep settings**、新品は **Initial setup · new Pico** を選び、初回だけWi-Fi名・パスワードを入力します。
+4. 書き込みボタンを押し、対象を確認して実行します。完了までアプリを開いたままUSBを接続してください。
+5. CHスイッチを3秒長押ししてWi-Fiを開始し、操作GUIの **Find Pico W** で探します。自動起動設定が有効なら長押しは不要です。
 
-**IP addressing is automatic (DHCP) in both modes.** The updater appends an explicit `USE_STATIC_IP = False` override to the existing `settings.py`; custom calibration, pin assignments, motion/current limits and startup behavior remain intact. Missing compatibility constants are added from the current defaults. Do not copy the repository's default calibration over a working device. For a new controller, check the default `server/settings.py` against its wiring and calibrated open/close angles before initial upload.
+**Both modes use automatic IP (DHCP).** Update preserves custom calibration, pins, Wi-Fi, labels, motion limits and startup behavior, adding missing compatibility constants and a DHCP override. For initial setup, the bundled calibration/pin defaults must match the new device; adapt `server/settings.py` and build from source for different hardware.
 
-**初回・更新ともIPはDHCPで自動取得します。** 更新では既存の`settings.py`末尾に `USE_STATIC_IP = False` を追記し、校正角度・ピン・動作速度・同時駆動数・自動起動設定を保持します。不足する定数だけ現行の既定値で補います。使用中装置の設定をサンプルで置き換えないでください。新品装置では、初回転送前に`server/settings.py`の配線・開閉角度が実機に合っていることを確認してください。
+**初回・更新ともDHCPでIPを自動取得します。** 更新では校正・ピン・Wi-Fi・ラベル・駆動・自動起動設定を保持し、不足する定数とDHCP設定だけを補います。初回の配線・開閉角度は同梱の既定値を使います。異なる配線・校正の新品装置では、ソースの`server/settings.py`を合わせてビルドしてください。
+
+Windows is unsigned and Mac is ad-hoc signed, not notarized; first-launch OS approval may still be needed. No claim of warning-free signed distribution is made. Signing enrollment remains pending as for the main app.
+
+Windowsは未署名、Macはアドホック署名・未公証です。PCへの追加ツール導入は不要ですが、初回のOS確認が出る場合があります。署名の登録状況はメインアプリと同じです。
 
 ## New Pico: install MicroPython once / 新品Pico：MicroPythonの初回導入
 
@@ -39,6 +41,12 @@ Before any write, the tool saves the known server modules, `settings.py`, `wifi_
 New files are staged, compared byte-for-byte and compiled by MicroPython before replacement, with `main.py` replaced last. A normal replacement error attempts rollback. A power loss during replacement cannot be made fully atomic across multiple files: rerun Update; if configuration files are missing, restore `settings.py`/`wifi_config.py` from the printed backup directory with Thonny before retrying. Cancelling before upload leaves the filesystem unchanged, but USB inspection stops the running program; restart the Pico to resume it.
 
 転送内容の照合・MicroPythonでの構文確認後に置き換え、`main.py`は最後に切り替えます。通常の置き換えエラーでは元へ戻す処理を試みます。書き換え中の電源断は完全には保護できません。Updateを再実行し、設定ファイルがない場合は表示されたバックアップからThonnyで設定を戻してから再試行してください。書き込み前のキャンセルはファイルを変更しませんが、USB確認でプログラムは停止するため、再起動して運転を再開してください。
+
+## Source alternative / ソース版
+
+Developers may still use the [current source ZIP](https://github.com/woolen-yarn/kohdalab-shutter/archive/refs/heads/main.zip) and `upload_server_to_pico.bat` / `.command`. These source launchers require uv; the downloadable **Pico Setup app above does not**. To change calibration before a first upload, edit `server/settings.py` in this source checkout.
+
+ソース版のバッチ・commandも残しています。こちらだけはuvが必要です。上の配布アプリでは不要です。初回転送前に校正・ピンを変えたい場合はソースの`server/settings.py`を編集できます。
 
 For a known USB port / USBポートを指定する場合:
 
