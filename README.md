@@ -28,9 +28,9 @@ Choose a named controller on the left and channels in the vertical list on the r
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico firmware update required:** upload the updated `main.py` and new `sessions.py` when upgrading from firmware older than v0.6.0. v0.6.4 only changes the desktop GUI; a Pico already running v0.6.0 needs no update. Keep your calibrated `settings.py`, `wifi_config.py` and `device_config.json`. Connected CH LEDs double-flash; after a lost connection, leases expire in 15 seconds without moving the shutter. [Update instructions](docs/install.md#pico-firmware-update--pico側の更新)
+**Pico USB setup/update:** use the [current source tools](docs/pico-upload.md): `upload_server_to_pico.bat` (Windows) or `upload_server_to_pico.command` (Mac). Choose Initial setup or Update; both use automatic IP (DHCP). Update backs up existing files and preserves Wi-Fi, labels, calibration and pins. These source tools are separate from the published v0.6.4 desktop installer. The desktop remains compatible with v0.6.0 channel-session firmware.
 
-**v0.6.0より前のPicoには更新が必要です。** v0.6.0導入済みなら、v0.6.4でPicoを再更新する必要はありません。 `main.py`と新しい`sessions.py`を転送してください。校正済みの`settings.py`・Wi-Fi設定・保存済みラベルは保持します。接続CHのLEDは二連点滅し、通信断の15秒後にロックだけを解放します。
+**Picoへの初回転送・更新：** 最新ソースの[書き込みツール](docs/pico-upload.md)を使えます。Windowsは`upload_server_to_pico.bat`、Macは`upload_server_to_pico.command`で初回／更新を選択し、IPをDHCPで自動取得します。更新ではバックアップを保存し、Wi-Fi・ラベル・校正・配線を保持します。このツールは公開中のv0.6.4アプリとは別です。デスクトップはv0.6.0の排他制御用ファームウェアにも対応しています。
 
 <details>
 <summary>Vertical layout / 縦並び</summary>

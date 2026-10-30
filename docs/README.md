@@ -2,6 +2,7 @@
 
 | Guide / ガイド | Purpose / 内容 |
 | --- | --- |
+| [Pico USB installer/updater](pico-upload.md) | Initial/update launchers, backups and automatic DHCP / 初回転送・更新・バックアップ・IP自動取得 |
 | [Pico W setup and discovery](rust-client.md) | Rust desktop build, Pico W upload, automatic discovery, DHCP, and USB IP inspection / Rustビルド、Pico W転送、自動検索、DHCP、USBでのIP確認 |
 | [GUI API reference](gui-api.md) | Python/Jupyter, ownership, job receipts, and state semantics / Python連携、操作権、受付結果、状態の意味 |
 | [Usage guide](usage.md) | Wiring, Wi-Fi, channel expansion, and operating notes / 配線、Wi-Fi、チャンネル拡張、操作メモ |

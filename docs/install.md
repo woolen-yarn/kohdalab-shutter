@@ -51,19 +51,9 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 
 ## Pico firmware update / Pico側の更新
 
-v0.6.1 is a desktop-only update: no Pico update is needed if v0.6.0 firmware is already installed.
+The published v0.6.4 desktop works with v0.6.0 channel-session firmware. To install/update the Pico or switch it to automatic IP addressing, use the [USB setup/update tool](pico-upload.md) from the current source ZIP. Windows: `upload_server_to_pico.bat`; Mac: `upload_server_to_pico.command`. Choose Initial setup or Update. Update backs up the existing files, preserves Wi-Fi/labels/calibration/pins and explicitly switches IP addressing to DHCP. The new tool is in the current source, separate from the v0.6.4 desktop installer.
 
-v0.6.0 requires the updated channel-session firmware for shared channel-name persistence. An older Pico cannot enforce cross-PC ownership and the new GUI refuses to connect to it. With the Pico attached by USB, update these files from the v0.6.0 source archive:
-
-v0.6.0のCH名自動保存にはPico側の更新も必要です。USBで接続し、v0.6.0ソース内の次の2ファイルを転送します。旧ファームウェアへ接続して、ロックがあるように見せることはありません。
-
-```sh
-uv run mpremote connect auto fs cp server/sessions.py :sessions.py fs cp server/main.py :main.py reset
-```
-
-Keep the existing `settings.py` (calibration, pins and IP), `wifi_config.py` and saved `device_config.json`. A fresh Pico still needs the complete [initial firmware setup](rust-client.md). The GUI does not flash hardware automatically.
-
-既存の`settings.py`（校正値・ピン・IP）と`wifi_config.py`、保存済みの`device_config.json`は上書きしません。新品Picoでは[初回セットアップ](rust-client.md)一式が必要です。アプリが自動で実機を書き換えることはありません。
+公開中のv0.6.4デスクトップはv0.6.0のチャンネル排他制御用ファームウェアに対応しています。Picoの初回転送・更新・DHCPへの変更には、最新ソースの[USB書き込みツール](pico-upload.md)を使ってください。Windowsは`upload_server_to_pico.bat`、Macは`upload_server_to_pico.command`です。初回／更新を選べ、更新ではバックアップを保存してWi-Fi・ラベル・校正・配線を保持し、IPをDHCPへ切り替えます。この新ツールは最新ソースに含まれ、v0.6.4デスクトップインストーラーとは別です。
 
 A connected CH repeats two short LED flashes with a pause, using green for Open and red for Close. An unclaimed CH keeps the waiting blink. Physical short presses cannot change a leased CH; long-press server stop remains available. Raw commands from old clients are also rejected for leased CHs.
 
