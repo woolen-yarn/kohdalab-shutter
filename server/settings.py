@@ -9,7 +9,7 @@ AUTO_START_SERVER = False
 # from the connection screen and will then be saved on the Pico W.
 DEVICE_LABEL = "Pico W Shutter"
 
-USE_STATIC_IP = True
+USE_STATIC_IP = False
 STATIC_IFCONFIG = (
     "10.32.145.232",  # ip
     "255.255.255.0",  # netmask

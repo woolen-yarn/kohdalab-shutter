@@ -81,23 +81,9 @@ cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --layout verti
 
 ## First Pico W upload / 初回Pico W転送
 
-自動検索には `server/discovery.py` を含む新しいサーバーファイルが必要です。
-v0.6.0のGUI・操作用CLIには新しい`sessions.py`と`main.py`が必要です。旧サーバーに対する状態参照は引き続き利用できます。
+[USB書き込みツールの手順](pico-upload.md)を参照してください。Windowsは`upload_server_to_pico.bat`、Macは`upload_server_to_pico.command`を起動し、初回／更新を選択します。初回はWi-Fi情報を入力、更新は既存のWi-Fi・ラベル・校正・配線を保持します。どちらもDHCPでIPを自動取得します。更新前のファイルはPCへバックアップし、転送内容を照合してから切り替えます。
 
-1. Pico WのMicroPythonと `server/wifi_config.py` のSSID・パスワードを確認します。
-2. 固定IPが今のネットワークに合っていなければ、`server/settings.py` の
-   `USE_STATIC_IP = False` にしてDHCPでアドレスを取得させます。
-   既存装置の設定を守るため、リポジトリの固定IP設定は維持しています。
-3. USBで接続し `upload_server_to_pico.bat` を実行します。転送にはuv/mpremoteを使います。
-   macOS/Linuxでは次のコマンドを使います。
-
-```sh
-uv run mpremote connect auto fs cp server/main.py :main.py fs cp server/pca9685.py :pca9685.py fs cp server/servo.py :servo.py fs cp server/discovery.py :discovery.py fs cp server/sessions.py :sessions.py fs cp server/settings.py :settings.py fs cp server/wifi_config.py :wifi_config.py reset
-```
-
-4. 既存の操作どおり、スイッチを3秒長押ししてWi-Fiサーバーを開始します。
-   電源投入時に開始したければ `AUTO_START_SERVER = True` にして再転送します。
-5. PCも同じLANに接続します。
+新品PicoではMicroPython本体の導入が一度必要です。ツールはMicroPython上のPythonファイルを転送するもので、UF2を書き込むものではありません。GUI・操作用CLIにはチャンネル排他制御に対応した`main.py`・`sessions.py`が必要です。
 
 ## Operate without entering an IP / IPを調べずに操作する
 

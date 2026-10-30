@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Pico USB tools
+
+- Added Windows/Mac launchers for first-time Pico setup and settings-preserving updates, with explicit USB selection, private backups, staged transfer verification and rollback on ordinary replacement failure.
+- Defaulted fresh Pico configuration and updater migrations to automatic IP addressing (DHCP), preserving calibration, wiring, Wi-Fi credentials and shared labels. Desktop v0.6.4 and its existing downloads are unchanged.
+
 ## 0.6.4
 
 - Use the common app-owned directory layout: config/config.json, run, results and logs beneath ~/.kohdalab/shutter.
