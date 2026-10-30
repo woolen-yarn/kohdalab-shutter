@@ -30,7 +30,7 @@ jobs:
       commit: ${{ steps.validate.outputs.commit }}
     steps:
       - name: Check out reviewed workflow source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -71,7 +71,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
       - name: Check out exact release commit
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.commit }}
           persist-credentials: false
@@ -112,7 +112,7 @@ jobs:
       VERSION: ${{ needs.preflight.outputs.version }}
     steps:
       - name: Check out approved signing tools (not release application code)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
