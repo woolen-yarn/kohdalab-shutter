@@ -2395,6 +2395,13 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     kohdalab_shutter::preferences::default_path()
                 }
             });
+            if args.preferences.is_none()
+                && !args.demo
+                && let Some(path) = &preferences_path
+                && let Err(error) = kohdalab_shutter::preferences::Preferences::ensure_default(path)
+            {
+                app.preferences_error = format!("Default settings could not be created: {error}");
+            }
             app.api = api;
             app.api_enabled = app.api.is_some();
             app.api_directory = args.api_directory.clone();
