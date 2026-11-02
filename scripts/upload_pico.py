@@ -67,6 +67,63 @@ def patch_settings(existing: bytes, defaults: str) -> bytes:
     return (text.rstrip() + DHCP_MARKER).encode("utf-8")
 
 
+class UsbFailure(RuntimeError):
+    """Safe diagnostic code; never expose raw device output or source text."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(f"{code}: {message}")
+
+
+def usb_failure(output: str) -> UsbFailure:
+    text = output.lower()
+    if any(
+        item in text
+        for item in (
+            "failed to access",
+            "could not open port",
+            "permissionerror",
+            "access is denied",
+            "permission denied",
+        )
+    ):
+        return UsbFailure(
+            "USB_ACCESS",
+            "Cannot open the USB port. Close Thonny and other updater windows; reconnect normally without BOOTSEL.",
+        )
+    if any(
+        item in text
+        for item in ("raw repl", "timed out", "timeout", "could not interrupt")
+    ):
+        return UsbFailure(
+            "PICO_RESPONSE",
+            "Pico did not enter the MicroPython prompt. Reconnect USB without BOOTSEL and close other serial tools.",
+        )
+    if "memoryerror" in text:
+        return UsbFailure(
+            "PICO_MEMORY",
+            "Pico ran out of memory. No automatic restart or command retry was performed.",
+        )
+    if any(item in text for item in ("importerror", "modulenotfounderror")):
+        return UsbFailure(
+            "PICO_MODULE",
+            "The Pico firmware could not load a required module. Keep the backup; do not erase the existing controller.",
+        )
+    if "syntaxerror" in text:
+        return UsbFailure(
+            "PICO_SYNTAX",
+            "MicroPython rejected the staged program. Check the firmware version; originals were not replaced if compilation failed.",
+        )
+    if any(item in text for item in ("enospc", "no space left", "oserror: 28")):
+        return UsbFailure(
+            "PICO_SPACE", "Pico storage is full. Keep the backup before freeing space."
+        )
+    return UsbFailure(
+        "USB_COMMAND",
+        "USB command failed. Note this code and the displayed step; no automatic retry was performed.",
+    )
+
+
 def run_mpremote(arguments: list[str]) -> str:
     """Keep USB calls isolated; a bundled windowed app uses a private result file."""
     with tempfile.TemporaryDirectory(prefix="shutter-remote-") as directory:
@@ -90,12 +147,30 @@ def run_mpremote(arguments: list[str]) -> str:
                 else 0,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise RuntimeError(
-                "USB operation failed/timed out. Close Thonny and check the cable; backups are retained."
+            raise UsbFailure(
+                "USB_TIMEOUT",
+                "USB command failed or timed out. Close other serial tools and check the data cable; backups are retained.",
             ) from error
         if result.returncode:
-            raise RuntimeError(
-                "Pico USB operation failed. Check MicroPython, free space and the USB connection. Backups are retained."
+            errors = Path(str(output) + ".err")
+            diagnostic = (
+                errors.read_text(encoding="utf-8", errors="replace")
+                if frozen and errors.exists()
+                else (result.stderr or "")
+            )
+            # Inspect privately; only fixed, safe diagnostic messages reach the UI.
+            raise usb_failure(
+                diagnostic
+                + "\n"
+                + (
+                    (
+                        output.read_text(encoding="utf-8", errors="replace")
+                        if output.exists()
+                        else ""
+                    )
+                    if frozen
+                    else (result.stdout or "")
+                )
             )
         return (output.read_text(encoding="utf-8") if frozen else result.stdout).strip()
 
@@ -103,6 +178,7 @@ def run_mpremote(arguments: list[str]) -> str:
 class Pico:
     def __init__(self, port: str) -> None:
         self.port = port
+        self.phase = "Read Pico / backup"
 
     def command(self, *arguments: str) -> str:
         return run_mpremote(["connect", self.port, *arguments])
@@ -152,11 +228,13 @@ for name in """
     def install(self, files: dict[str, bytes]) -> None:
         # Stage all files, verify exact bytes, then compile on MicroPython without
         # executing imports or touching GPIO. main.py is committed last.
+        self.phase = "Stage files on Pico"
         with tempfile.TemporaryDirectory(prefix="shutter-usb-") as directory:
             for name, contents in files.items():
                 local = Path(directory) / name
                 local.write_bytes(contents)
                 self.command("fs", "cp", str(local), ":" + name + ".shutter-upload")
+        self.phase = "Verify staged files"
         staged = tuple(name + ".shutter-upload" for name in files)
         actual = self.read(staged)
         if any(
@@ -166,6 +244,7 @@ for name in """
             raise RuntimeError(
                 "Upload verification failed. Original files are unchanged; run the updater again."
             )
+        self.phase = "Compile / commit staged files"
         order = [name for name in files if name != "main.py"] + ["main.py"]
         self.run(
             """import os
@@ -201,6 +280,7 @@ except Exception:
 print('Installed')
 """
         )
+        self.phase = "Restart Pico (files already committed)"
         self.command("reset")
 
 
@@ -217,6 +297,101 @@ def backup(files: dict[str, bytes], root: Path) -> Path:
     return directory
 
 
+def check_preserved_driver(current: dict[str, bytes], server: Path) -> None:
+    """Keep the actual driver untouched; refuse ambiguous initialization changes."""
+    try:
+        tree = ast.parse(current["pca9685.py"].decode("utf-8"))
+        classes = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "PCA9685"
+        ]
+        if len(classes) != 1:
+            raise ValueError("unknown driver class")
+        methods = {
+            node.name for node in classes[0].body if isinstance(node, ast.FunctionDef)
+        }
+        if not {"__init__", "set_servo_angle", "disable"} <= methods:
+            raise ValueError("driver lacks PWM release API")
+        old_main = ast.parse(current["main.py"].decode("utf-8"))
+        template = ast.parse((server / "main.py").read_text(encoding="utf-8"))
+
+        def constructor_calls(source):
+            return [
+                node
+                for node in ast.walk(source)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "PCA9685"
+            ]
+
+        old_calls, new_calls = constructor_calls(old_main), constructor_calls(template)
+        if (
+            len(old_calls) != 1
+            or len(new_calls) != 1
+            or ast.dump(old_calls[0]) != ast.dump(new_calls[0])
+        ):
+            raise ValueError("custom main constructor needs review")
+        expected_bindings = {
+            "PCA9685": "pca9685",
+            "PCA9685_ADDRESS": "settings",
+            "PCA9685_ANGLE_OFFSET": "settings",
+        }
+        bindings = {}
+        for statement in old_main.body:
+            if statement.lineno >= old_calls[0].lineno:
+                break
+            if isinstance(statement, ast.ImportFrom):
+                if any(alias.name == "*" for alias in statement.names):
+                    bindings.clear()
+                for alias in statement.names:
+                    name = alias.asname or alias.name
+                    if name in expected_bindings:
+                        bindings[name] = (
+                            statement.module if alias.name == name else None
+                        )
+            else:
+                for node in ast.walk(statement):
+                    if (
+                        isinstance(node, ast.Name)
+                        and isinstance(node.ctx, (ast.Store, ast.Del))
+                        and node.id in expected_bindings
+                    ):
+                        bindings.pop(node.id, None)
+                    if (
+                        isinstance(node, (ast.FunctionDef, ast.ClassDef))
+                        and node.name in expected_bindings
+                    ):
+                        bindings.pop(node.name, None)
+                    if (
+                        isinstance(node, ast.alias)
+                        and (node.asname or node.name.split(".")[0])
+                        in expected_bindings
+                    ):
+                        bindings.pop(node.asname or node.name.split(".")[0], None)
+        if bindings != expected_bindings:
+            raise ValueError("custom constructor/settings binding needs review")
+        # Direct modifications in the old main would be lost when it is updated.
+        protected = {
+            "servo_min_us",
+            "servo_max_us",
+            "frequency_hz",
+            "angle_offset",
+            "address",
+        }
+        if any(
+            isinstance(node, ast.Attribute)
+            and node.attr in protected
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            for node in ast.walk(old_main)
+        ):
+            raise ValueError("runtime calibration assignment needs review")
+    except (KeyError, ValueError, SyntaxError, UnicodeError) as error:
+        raise RuntimeError(
+            "CALIBRATION_REVIEW: Existing PCA9685 driver/initialization needs review. Update stopped before upload; keep the backup. Existing pulse calibration was not overwritten."
+        ) from error
+
+
 def plan(
     mode: str,
     current: dict[str, bytes],
@@ -224,7 +399,7 @@ def plan(
     ssid: str | None = None,
     password: str | None = None,
 ) -> dict[str, bytes]:
-    if mode == "initial" and any(name in current for name in PRESERVED + ("main.py",)):
+    if mode == "initial" and any(name in current for name in PRESERVED + PROGRAMS):
         raise RuntimeError(
             "This Pico already has files. Choose Update to preserve its settings."
         )
@@ -239,6 +414,9 @@ def plan(
     files = {
         name: (server / name).read_bytes() for name in PROGRAMS if name != "main.py"
     }
+    if mode == "update":
+        check_preserved_driver(current, server)
+        del files["pca9685.py"]  # Never transfer over per-device pulse calibration.
     files["settings.py"] = settings
     if mode == "initial":
         if not ssid or not password:
@@ -311,7 +489,7 @@ def main() -> int:
         )
         ssid = password = None
         if mode == "initial":
-            if any(name in current for name in PRESERVED + ("main.py",)):
+            if any(name in current for name in PRESERVED + PROGRAMS):
                 raise RuntimeError(
                     "This Pico already has files. Choose Update instead."
                 )

@@ -32,6 +32,8 @@ def test_dhcp_patch_preserves_calibration_custom_fields_and_is_idempotent():
 def test_update_keeps_wifi_labels_and_uploads_complete_current_program():
     current = {
         "settings.py": b"CHANNELS = ()\n",
+        "main.py": (ROOT / "server/main.py").read_bytes(),
+        "pca9685.py": (ROOT / "server/pca9685.py").read_bytes(),
         "wifi_config.py": b"private",
         "device_config.json": b"labels",
     }
@@ -204,3 +206,101 @@ def test_multiple_usb_devices_require_explicit_selection(monkeypatch):
     monkeypatch.setattr("serial.tools.list_ports.comports", list)
     with pytest.raises(RuntimeError, match="No USB Pico"):
         choose_port(None)
+
+
+@pytest.mark.parametrize(
+    "raw,code",
+    [
+        ("failed to access COM4 (it may be in use by another program)", "USB_ACCESS"),
+        ("could not enter raw repl", "PICO_RESPONSE"),
+        ("MemoryError: private-secret", "PICO_MEMORY"),
+        ("ImportError: private-secret", "PICO_MODULE"),
+        ("SyntaxError: private-secret", "PICO_SYNTAX"),
+        ("OSError: 28 private-secret", "PICO_SPACE"),
+        ("unknown private-secret", "USB_COMMAND"),
+    ],
+)
+def test_usb_diagnostics_use_safe_codes_never_echo_source(raw, code):
+    from scripts.upload_pico import usb_failure
+
+    failure = usb_failure(raw)
+    assert failure.code == code
+    assert "private-secret" not in str(failure)
+
+
+def test_commit_failure_does_not_restart_or_report_success():
+    from scripts.upload_pico import UsbFailure
+
+    pico = FakePico()
+    with (
+        patch.object(
+            pico, "run", side_effect=UsbFailure("PICO_MEMORY", "Out of memory")
+        ),
+        pytest.raises(UsbFailure),
+    ):
+        pico.install({"main.py": b"print(1)"})
+    assert not any(call[0] == "reset" for call in pico.calls)
+
+
+def calibration_current(minimum=610, maximum=2310):
+    return {
+        "settings.py": (ROOT / "server/settings.py").read_bytes(),
+        "main.py": (ROOT / "server/main.py").read_bytes(),
+        "pca9685.py": (ROOT / "server/pca9685.py")
+        .read_bytes()
+        .replace(b"servo_min_us=500", f"servo_min_us={minimum}".encode())
+        .replace(b"servo_max_us=2500", f"servo_max_us={maximum}".encode()),
+        "wifi_config.py": b'SSID="private"\nPASSWORD="private"\n',
+        "device_config.json": b'{"label":"keep"}',
+    }
+
+
+def test_update_leaves_custom_pwm_driver_out_of_upload_entirely():
+    old = calibration_current()
+    before = dict(old)
+    files = plan("update", old, ROOT / "server")
+    assert "pca9685.py" not in files
+    assert b"servo_min_us=610" in old["pca9685.py"]
+    assert b"servo_max_us=2310" in old["pca9685.py"]
+    assert old == before
+    assert "wifi_config.py" not in files and "device_config.json" not in files
+
+
+def test_unknown_legacy_driver_or_custom_main_stops_before_upload():
+    old = calibration_current()
+    old["pca9685.py"] = old["pca9685.py"].replace(b"def disable(", b"def old_disable(")
+    with pytest.raises(RuntimeError, match="CALIBRATION_REVIEW"):
+        plan("update", old, ROOT / "server")
+    old = calibration_current()
+    old["main.py"] += b"\npwm.servo_min_us = 700\n"
+    with pytest.raises(RuntimeError, match="CALIBRATION_REVIEW"):
+        plan("update", old, ROOT / "server")
+    old = calibration_current()
+    old["main.py"] = b"pwm=PCA9685(i2c,servo_min_us=700)\n"
+    with pytest.raises(RuntimeError, match="CALIBRATION_REVIEW"):
+        plan("update", old, ROOT / "server")
+    old = calibration_current()
+    del old["pca9685.py"]
+    with pytest.raises(RuntimeError, match="CALIBRATION_REVIEW"):
+        plan("update", old, ROOT / "server")
+
+
+def test_custom_driver_binding_or_address_is_not_guessed():
+    for extra in (
+        b"PCA9685 = wrapper\n",
+        b"PCA9685_ADDRESS = 65\n",
+        b"from unrelated import PCA9685\n",
+    ):
+        old = calibration_current()
+        old["main.py"] = old["main.py"].replace(
+            b"pwm = PCA9685(", extra + b"pwm = PCA9685("
+        )
+        with pytest.raises(RuntimeError, match="CALIBRATION_REVIEW"):
+            plan("update", old, ROOT / "server")
+
+
+def test_initial_setup_refuses_a_preexisting_calibrated_driver():
+    old = {"pca9685.py": b"custom pulse calibration"}
+    with pytest.raises(RuntimeError, match="already has files"):
+        plan("initial", old, ROOT / "server", "ssid", "fixture")
+    assert old["pca9685.py"] == b"custom pulse calibration"
