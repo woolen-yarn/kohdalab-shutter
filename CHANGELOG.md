@@ -1,5 +1,12 @@
 # Changelog
 
+## Pico Setup 1.0.1
+
+- Leave the existing pca9685.py driver out of Update transfers, preserving device-specific servo_min_us/servo_max_us pulse calibration byte-for-byte. Reject incompatible/ambiguous legacy initialization before upload. No servo drive/retry policy changes.
+
+- Explain existing-controller Update without BOOTSEL, detect UF2 boot drives read-only, and refresh USB selection automatically after reconnection. No firmware reflashing or configuration reset is introduced.
+- Propagate the bundled backend return code; stop on failed commands instead of continuing through ignored errors. Show safe failed-step/code diagnostics without raw credentials, retain/copy status, and test both backend success/failure in native app smoke checks. The reported Windows device failure remains unconfirmed pending its new diagnostic code.
+
 ## Pico Setup 1.0.0 — standalone USB tool
 
 - Added native Windows exe and Mac arm64/Intel app bundles containing Python, Qt and mpremote, with a compact dark Initial setup / Update GUI. No Python or uv installation is required on the user PC.

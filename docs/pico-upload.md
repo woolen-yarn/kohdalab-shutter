@@ -1,19 +1,29 @@
 # Pico W USB setup / Pico Wへの初回転送・更新
 
-Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.0). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
+Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.1). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
 
-専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.0)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
+専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.1)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
+
+## Existing device: normal USB / 既存装置の更新は通常USB接続
+
+**Do not hold BOOTSEL when updating an existing shutter.** Connect USB normally, select the serial Pico, then choose Update. If RPI-RP2/BOOTSEL is detected, unplug USB and reconnect without pressing BOOTSEL; the list refreshes automatically. Do not reinstall MicroPython or erase stored settings to troubleshoot an ordinary update.
+
+**既存装置の更新ではBOOTSELを押さないでください。** 普通にUSB接続し、一覧のPicoとUpdateを選択します。RPI-RP2／BOOTSELと表示された場合は一度抜き、BOOTSELを押さずにつなぎ直します。一覧は自動更新されます。通常の更新のためにMicroPythonを入れ直したり、設定を消したりしないでください。
+
+If the device is selectable but upload fails, note/copy the displayed **failed step and error code**. USB_ACCESS indicates a port-open failure (close Thonny/other updaters); PICO_RESPONSE indicates a MicroPython prompt/response problem. Other codes identify memory, module, syntax, storage or generic USB-command failure. These codes help narrow the problem and are not proof of a specific hardware cause. Status is retained across refreshes and never includes raw Wi-Fi source.
+
+選べるのに失敗する場合は、画面の**失敗した段階とエラーコード**を選択してコピーしてください。USB_ACCESSはポートを開けない場合、PICO_RESPONSEはMicroPythonの応答を得られない場合です。その他はメモリ・モジュール・構文・空き容量・USB命令の失敗を区別します。コードだけで特定の実機故障を断定するものではありません。再検出しても失敗表示を残し、Wi-Fi情報の生出力は表示しません。
 
 ## Start / 起動
 
 1. Download and extract the entire ZIP. Windows x64: open `KohdaLab Pico Setup.exe` with its `_internal` folder kept alongside it. Mac: choose Apple Silicon (arm64) or Intel (x64), then open `KohdaLab Pico Setup.app`.
-2. Close Shutter GUIs and Thonny. Connect the Pico W with a USB data cable, then Refresh and select its USB port/ID.
+2. Close Shutter GUIs and Thonny. For Update, connect the Pico W with a USB data cable **without BOOTSEL**. Select its USB port/ID; the list refreshes automatically.
 3. Choose **Update · keep settings** for an existing controller, or **Initial setup · new Pico**. Enter Wi-Fi name/password for initial setup only.
 4. Press Update Pico / Install on Pico, check the target, then confirm. Keep the app open and USB connected until completion.
 5. Hold a CH switch for 3 seconds to start Wi-Fi and use **Find Pico W** in the control GUI. If `AUTO_START_SERVER` is enabled, Wi-Fi starts at boot.
 
 1. ZIPをすべて展開します。Windowsは`KohdaLab Pico Setup.exe`を開き、隣の`_internal`フォルダーを残します。MacはApple Silicon用／Intel用を選び、`KohdaLab Pico Setup.app`を開きます。
-2. ShutterのGUIとThonnyを終了し、対象Pico WをUSB接続します。RefreshでUSBポート・USB IDを確認して選びます。
+2. ShutterのGUIとThonnyを終了し、更新では**BOOTSELを押さずに**対象Pico WをUSB接続します。一覧は自動更新され、USBポート・USB IDを確認して選べます。
 3. 使用中装置は **Update · keep settings**、新品は **Initial setup · new Pico** を選び、初回だけWi-Fi名・パスワードを入力します。
 4. 書き込みボタンを押し、対象を確認して実行します。完了までアプリを開いたままUSBを接続してください。
 5. CHスイッチを3秒長押ししてWi-Fiを開始し、操作GUIの **Find Pico W** で探します。自動起動設定が有効なら長押しは不要です。
@@ -34,9 +44,9 @@ The USB tool transfers Python files; it does not install the MicroPython runtime
 
 ## Backup and recovery / バックアップ・復旧
 
-Before any write, the tool saves the known server modules, `settings.py`, `wifi_config.py` and `device_config.json` if present under `~/.kohdalab/shutter/pico-backups/<timestamp>/` (Windows: `%USERPROFILE%\.kohdalab\shutter\pico-backups\<timestamp>\`). These backups contain private Wi-Fi credentials; do not share them. Update never writes `wifi_config.py` or `device_config.json`. Initial mode refuses to overwrite an already configured controller.
+Before any write, the tool saves the known server modules, `settings.py`, `wifi_config.py` and `device_config.json` if present under `~/.kohdalab/shutter/pico-backups/<timestamp>/` (Windows: `%USERPROFILE%\.kohdalab\shutter\pico-backups\<timestamp>\`). These backups contain private Wi-Fi credentials; do not share them. Update never writes `wifi_config.py`, `device_config.json` or the existing `pca9685.py`. This retains driver-level `servo_min_us` / `servo_max_us` pulse calibration as well as settings-based angles. If the existing driver lacks the required API or its main-side initialization is customized, CALIBRATION_REVIEW stops the update before transfer. Review the backup instead of replacing the calibration with defaults. Initial mode refuses to overwrite an already configured controller.
 
-書き込み前に、既存のサーバーファイル・`settings.py`・`wifi_config.py`・`device_config.json`をPCの日時付きフォルダーへ保存します。Wi-Fiパスワードを含むため、このバックアップを共有しないでください。更新では`wifi_config.py`と`device_config.json`を上書きしません。初回モードは設定済みPicoへの上書きを拒否します。
+書き込み前に、既存のサーバーファイル・`settings.py`・`wifi_config.py`・`device_config.json`をPCの日時付きフォルダーへ保存します。Wi-Fiパスワードを含むため、このバックアップを共有しないでください。更新では`wifi_config.py`・`device_config.json`・既存の`pca9685.py`を上書きしません。`servo_min_us`・`servo_max_us`などライブラリ内の個体別校正も残します。必要なAPIがない古いドライバーや、main側の独自初期化を確認できない場合はCALIBRATION_REVIEWで転送前に止めます。既定値で置き換えず、バックアップを確認してください。初回モードは設定済みPicoへの上書きを拒否します。
 
 New files are staged, compared byte-for-byte and compiled by MicroPython before replacement, with `main.py` replaced last. A normal replacement error attempts rollback. A power loss during replacement cannot be made fully atomic across multiple files: rerun Update; if configuration files are missing, restore `settings.py`/`wifi_config.py` from the printed backup directory with Thonny before retrying. Cancelling before upload leaves the filesystem unchanged, but USB inspection stops the running program; restart the Pico to resume it.
 

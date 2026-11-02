@@ -7,18 +7,34 @@ import sys
 
 
 def remote_child(arguments: list[str]) -> int:
-    from mpremote.main import main
-
     output, *command = arguments
+    old_argv, old_stdin = sys.argv, sys.stdin
     sys.argv = ["mpremote", *command]
-    with Path(output).open("w", encoding="utf-8") as stream, open(os.devnull) as null:
-        sys.stdin = null
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            try:
-                main()
-            except SystemExit as error:
-                return int(error.code or 0)
-    return 0
+    try:
+        with (
+            Path(output).open("w", encoding="utf-8") as stream,
+            Path(output + ".err").open("w", encoding="utf-8") as errors,
+            open(os.devnull) as null,
+        ):
+            sys.stdin = null
+            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(errors):
+                try:
+                    from mpremote.main import main
+
+                    return int(main() or 0)
+                except SystemExit as error:
+                    return (
+                        error.code
+                        if isinstance(error.code, int)
+                        else (1 if error.code else 0)
+                    )
+                except Exception:
+                    import traceback
+
+                    traceback.print_exc(file=errors)
+                    return 1
+    finally:
+        sys.argv, sys.stdin = old_argv, old_stdin
 
 
 def main() -> int:

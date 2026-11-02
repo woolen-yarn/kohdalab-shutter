@@ -5,7 +5,7 @@ import queue
 import sys
 import threading
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QStorageInfo, QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -31,7 +31,7 @@ from scripts.upload_pico import (
     run_mpremote,
 )
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 STYLE = """
 QWidget { background: #121317; color: #EBECF1; font-size: 13px; }
 QLineEdit, QComboBox { background: #1A1B20; border: 1px solid #383A43; border-radius: 6px; padding: 7px; }
@@ -44,12 +44,32 @@ QProgressBar::chunk { background: #305B9E; }
 """
 
 
+def bootsel_drives():
+    """Inspect only labelled BOOTSEL volumes; never write or reflash them."""
+    found = []
+    for volume in QStorageInfo.mountedVolumes():
+        if not volume.isReady() or volume.name() not in ("RPI-RP2", "RP2350"):
+            continue
+        try:
+            with (Path(volume.rootPath()) / "INFO_UF2.TXT").open(
+                encoding="utf-8", errors="replace"
+            ) as stream:
+                info = stream.read(2048)
+            if "UF2 Bootloader" in info and "Board-ID:" in info:
+                found.append(f"{volume.name()} · {volume.rootPath()}")
+        except OSError:
+            continue
+    return sorted(found)
+
+
 class Setup(QWidget):
     def __init__(self, demo=False):
         super().__init__()
         self.demo = demo
         self.busy = False
         self.events = queue.Queue()
+        self.device_signature = None
+        self.connection_hint = ""
         self.setWindowTitle("KohdaLab Shutter · Pico Setup")
         self.setMinimumWidth(470)
         self.resize(520, 430)
@@ -72,7 +92,8 @@ class Setup(QWidget):
         form.setSpacing(12)
         self.device = QComboBox()
         self.refresh = QPushButton("Refresh")
-        self.refresh.clicked.connect(self.scan)
+        self.refresh.clicked.connect(lambda: self.scan(force=True))
+        self.device.currentIndexChanged.connect(self.mode_changed)
         row = QHBoxLayout()
         row.addWidget(self.device, 1)
         row.addWidget(self.refresh)
@@ -93,6 +114,10 @@ class Setup(QWidget):
         layout.addWidget(self.network)
         self.status = QLabel("Ready")
         self.status.setWordWrap(True)
+        self.status.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         layout.addWidget(self.status)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
@@ -113,41 +138,70 @@ class Setup(QWidget):
         self.timer.start(100)
         self.scan()
         self.mode_changed()
+        self.scan_timer = QTimer(self)
+        self.scan_timer.timeout.connect(lambda: self.scan(force=False))
+        self.scan_timer.start(1500)
 
-    def scan(self):
-        # Enumerating USB metadata is read-only; never auto-select one of many.
+    def scan(self, force=True):
+        if self.busy:
+            return
+        # Metadata only. Neither BOOTSEL drives nor serial ports are written/opened.
         previous = self.device.currentData()
+        try:
+            ports = (
+                [("Demo Pico W · USB001", "demo")]
+                if self.demo
+                else [
+                    (f"{port.device} · {port.serial_number or 'Pico W'}", port.device)
+                    for port in list_ports.comports()
+                    if port.vid == 0x2E8A
+                ]
+            )
+            boot = [] if self.demo else bootsel_drives()
+        except OSError:
+            self.hint.setText("USB scan failed. Reconnect USB and press Refresh.")
+            return
+        signature = (tuple(ports), tuple(boot))
+        if not force and signature == self.device_signature:
+            return
+        self.device_signature = signature
+        self.device.blockSignals(True)
         self.device.clear()
         self.device.addItem("Select Pico W…", None)
-        ports = (
-            [("Demo Pico W · USB001", "demo")]
-            if self.demo
-            else [
-                (f"{port.device} · {port.serial_number or 'Pico W'}", port.device)
-                for port in list_ports.comports()
-                if port.vid == 0x2E8A
-            ]
-        )
         for label, port in ports:
             self.device.addItem(label, port)
-        index = (
-            self.device.findData(previous)
-            if previous
-            else (1 if len(ports) == 1 else 0)
-        )
-        self.device.setCurrentIndex(max(0, index))
+        for drive in boot:
+            self.device.addItem(drive + " · BOOTSEL", None)
+            self.device.model().item(self.device.count() - 1).setEnabled(False)
+        selected = self.device.findData(previous) if previous else -1
+        if selected < 0:
+            selected = (
+                1 if len(ports) == 1 else (len(ports) + 1 if boot and not ports else 0)
+            )
+        self.device.setCurrentIndex(selected)
+        self.device.blockSignals(False)
+        if boot:
+            self.connection_hint = "BOOTSEL detected. For Update, unplug USB and reconnect WITHOUT holding BOOTSEL. The list refreshes automatically."
+        elif not ports:
+            self.connection_hint = "No USB Pico found. For Update, connect normally without BOOTSEL. Use a data cable and close Thonny."
+        else:
+            self.connection_hint = "USB device found. Choose Update for an existing shutter; keep BOOTSEL released."
+        self.mode_changed()
 
     def mode_changed(self):
         initial = self.mode.currentData() == "initial"
         self.ssid.setEnabled(initial and not self.busy)
         self.password.setEnabled(initial and not self.busy)
         self.start.setText("Install on Pico" if initial else "Update Pico")
+        self.start.setEnabled(not self.busy and bool(self.device.currentData()))
+        self.hint.setText(self.connection_hint)
 
     def new_pico(self):
         QMessageBox.information(
             self,
             "New Pico W",
-            "MicroPython must be installed once on a new Pico W.\n"
+            "Existing shutter update: reconnect USB normally, WITHOUT BOOTSEL, then select Update. Do not reinstall MicroPython.\n\n"
+            "Only a NEW Pico W needs MicroPython installed once.\n"
             "Hold BOOTSEL while connecting USB and copy the Pico W UF2 to RPI-RP2.\n"
             "https://micropython.org/download/RPI_PICO_W/\n\n"
             "Then Refresh and choose Initial setup. Do not erase an existing controller.",
@@ -191,16 +245,22 @@ class Setup(QWidget):
 
     def work(self, port, mode, ssid, password):
         destination = None
+        pico = None
+        stage = "Read Pico / backup"
         try:
             if self.demo:
                 self.events.put(("done", "Demo complete · no hardware accessed."))
                 return
             pico = Pico(port)
             current = pico.read(PROGRAMS + PRESERVED)
+            stage = "Save backup on PC"
             destination = backup(
                 current, Path.home() / ".kohdalab" / "shutter" / "pico-backups"
             )
+            stage = "Prepare update / check existing settings"
+            self.events.put(("progress", stage))
             files = plan(mode, current, ROOT / "server", ssid, password)
+            stage = "Upload / verify / commit"
             self.events.put(
                 ("progress", "Uploading and verifying… Keep USB connected.")
             )
@@ -208,21 +268,31 @@ class Setup(QWidget):
             self.events.put(
                 (
                     "done",
-                    f"Complete · DHCP enabled.\nHold a CH switch for 3 seconds, then Find Pico W.\nBackup: {destination}",
+                    f"Complete · DHCP enabled.{(' PWM calibration preserved.' if mode == 'update' else '')}\nHold a CH switch for 3 seconds, then Find Pico W.\nBackup: {destination}",
                 )
             )
-        except (
-            Exception
-        ):  # USB errors can include private source; show no raw traceback.
+        except RuntimeError as error:
+            # Uploader RuntimeErrors contain fixed safe diagnostics, never device source.
             self.events.put(
                 (
                     "error",
-                    "Upload failed. Check USB, MicroPython, mode and configuration.\n"
-                    "Original files are kept unless replacement was interrupted.\n"
+                    f"Failed step: {getattr(pico, 'phase', stage) if stage == 'Upload / verify / commit' else stage}\n{error}\n"
                     + (
                         f"Backup: {destination}"
                         if destination
-                        else "No backup was completed; no upload started."
+                        else "No backup completed; no upload started."
+                    ),
+                )
+            )
+        except Exception:
+            self.events.put(
+                (
+                    "error",
+                    f"Failed step: {getattr(pico, 'phase', stage) if stage == 'Upload / verify / commit' else stage}\nLOCAL_ERROR: Could not read or save the required files. No raw device output is shown.\n"
+                    + (
+                        f"Backup: {destination}"
+                        if destination
+                        else "No backup completed; no upload started."
                     ),
                 )
             )
@@ -258,6 +328,12 @@ def run():
             raise RuntimeError("Bundled firmware missing")
         if "mpremote" not in run_mpremote(["version"]).lower():
             raise RuntimeError("Bundled USB backend failed")
+        try:
+            run_mpremote(["__pico_setup_invalid_command__"])
+        except RuntimeError:
+            pass
+        else:
+            raise RuntimeError("Backend failure was incorrectly reported as success")
         if window.device.currentData() != "demo":
             raise RuntimeError("Smoke test must be isolated")
         QTimer.singleShot(100, app.quit)

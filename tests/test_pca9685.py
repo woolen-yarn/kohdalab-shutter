@@ -44,3 +44,19 @@ def test_rejects_invalid_output(monkeypatch, method, args, message):
     driver = PCA9685(FakeI2c())
     with pytest.raises(ValueError, match=message):
         getattr(driver, method)(*args)
+
+
+def test_disabled_channel_can_be_reenabled_without_reset_and_other_channel_is_untouched(
+    monkeypatch,
+):
+    monkeypatch.setattr("server.pca9685.sleep", lambda _: None)
+    i2c = FakeI2c()
+    driver = PCA9685(i2c, servo_min_us=610, servo_max_us=2310)
+    initial_writes = len(i2c.writes)
+    for _ in range(20):
+        driver.disable(2)
+        assert i2c.writes[-1][2][3] == 0x10
+        driver.set_servo_angle(2, 90)
+        assert i2c.writes[-1][2][3] & 0x10 == 0
+    assert all(register == 0x0E for _, register, _ in i2c.writes[initial_writes:])
+    assert driver.servo_min_us == 610 and driver.servo_max_us == 2310
