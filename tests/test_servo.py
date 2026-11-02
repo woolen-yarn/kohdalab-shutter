@@ -5,15 +5,18 @@ from server.servo import ChannelConfigurationError, ServoBoard, validate_channel
 
 
 def make_board(channels, pwm, clock, **kwargs):
+    motion = {
+        "step_degrees": 30,
+        "step_interval_ms": 20,
+        "release_delay_ms": 100,
+    }
+    motion.update(kwargs)
     return ServoBoard(
         channels,
         pwm,
         clock.ticks_ms,
         clock.ticks_diff,
-        step_degrees=30,
-        step_interval_ms=20,
-        release_delay_ms=100,
-        **kwargs,
+        **motion,
     )
 
 
@@ -78,6 +81,98 @@ def test_retargets_active_motion_and_reasserts_released_channel(channels, pwm, c
     assert board.close(0)
     board.tick()
     assert pwm.writes[-1] == (0, 0)
+
+
+def test_soft_open_slows_only_for_the_last_twelve_degrees(channels, pwm, clock):
+    configured = [dict(channels[0], open=15, soft_open=True)]
+    board = make_board(configured, pwm, clock, step_degrees=5, step_interval_ms=10)
+    board.tick()
+    assert board.open(0)
+
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [5]
+
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [5]
+
+    clock.advance(30)
+    board.tick()
+    assert board.positions == [6]
+
+    for expected in range(7, 16):
+        clock.advance(40)
+        board.tick()
+        assert board.positions == [expected]
+    assert max(angle for _, angle in pwm.writes) == 15
+
+
+def test_soft_close_handles_reverse_custom_endpoints(channels, pwm, clock):
+    configured = [
+        dict(channels[0], close=120, open=30, soft_close=True),
+    ]
+    board = make_board(configured, pwm, clock, step_degrees=5, step_interval_ms=10)
+    board.tick()
+    assert board.open(0)
+    for _ in range(18):
+        clock.advance(10)
+        board.tick()
+    assert board.positions == [30]
+
+    assert board.close(0)
+    for _ in range(16):
+        clock.advance(10)
+        board.tick()
+    assert board.positions == [110]
+
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [110]
+    clock.advance(30)
+    board.tick()
+    assert board.positions == [111]
+
+
+def test_soft_endpoint_does_not_slow_other_active_channels(channels, pwm, clock):
+    configured = [
+        dict(channels[0], open=15, soft_open=True),
+        dict(channels[1], close=0, open=90),
+    ]
+    board = make_board(
+        configured,
+        pwm,
+        clock,
+        step_degrees=5,
+        step_interval_ms=10,
+        max_active=2,
+    )
+    board.tick()
+    assert board.open(0)
+    assert board.open(1)
+
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [5, 5]
+
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [5, 10]
+
+
+def test_retarget_uses_the_new_target_soft_setting(channels, pwm, clock):
+    configured = [dict(channels[0], open=15, soft_open=True)]
+    board = make_board(configured, pwm, clock, step_degrees=5, step_interval_ms=10)
+    board.tick()
+    assert board.open(0)
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [5]
+
+    assert board.close(0)
+    clock.advance(10)
+    board.tick()
+    assert board.positions == [0]
 
 
 def test_multiple_active_channels_can_hold_pwm(channels, pwm, clock):
@@ -175,6 +270,11 @@ def invalid_channel(channels, mutation):
         (lambda value: value[0].update(close=0.0), "angle"),
         (lambda value: value[0].update(open=181), "angle"),
         (lambda value: value[0].update(open=0), "must differ"),
+        (lambda value: value[0].update(soft_open=1), "soft_open must be boolean"),
+        (
+            lambda value: value[0].update(soft_close="true"),
+            "soft_close must be boolean",
+        ),
     ],
 )
 def test_validates_channel_configuration(channels, mutation, message):

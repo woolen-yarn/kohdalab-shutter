@@ -1,6 +1,7 @@
 """Self-contained Pico USB wizard; opening the app never opens a serial port."""
 
 from pathlib import Path
+import hashlib
 import queue
 import sys
 import threading
@@ -29,9 +30,10 @@ from scripts.upload_pico import (
     backup,
     plan,
     run_mpremote,
+    tuning_channels,
 )
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 STYLE = """
 QWidget { background: #121317; color: #EBECF1; font-size: 13px; }
 QLineEdit, QComboBox { background: #1A1B20; border: 1px solid #383A43; border-radius: 6px; padding: 7px; }
@@ -70,6 +72,9 @@ class Setup(QWidget):
         self.events = queue.Queue()
         self.device_signature = None
         self.connection_hint = ""
+        self.tuning_profile = None
+        self.tuning_changes = {}
+        self.editing_tuning = False
         self.setWindowTitle("KohdaLab Shutter · Pico Setup")
         self.setMinimumWidth(470)
         self.resize(520, 430)
@@ -127,6 +132,9 @@ class Setup(QWidget):
         self.help = QPushButton("New Pico?")
         self.help.clicked.connect(self.new_pico)
         footer.addWidget(self.help)
+        self.tuning = QPushButton("Channel tuning…")
+        self.tuning.clicked.connect(self.load_tuning)
+        footer.addWidget(self.tuning)
         footer.addStretch()
         self.start = QPushButton("Update Pico")
         self.start.setObjectName("primary")
@@ -143,7 +151,7 @@ class Setup(QWidget):
         self.scan_timer.start(1500)
 
     def scan(self, force=True):
-        if self.busy:
+        if self.busy or self.editing_tuning:
             return
         # Metadata only. Neither BOOTSEL drives nor serial ports are written/opened.
         previous = self.device.currentData()
@@ -195,6 +203,9 @@ class Setup(QWidget):
         self.start.setText("Install on Pico" if initial else "Update Pico")
         self.start.setEnabled(not self.busy and bool(self.device.currentData()))
         self.hint.setText(self.connection_hint)
+        self.tuning.setEnabled(
+            not self.busy and not initial and bool(self.device.currentData())
+        )
 
     def new_pico(self):
         QMessageBox.information(
@@ -209,7 +220,14 @@ class Setup(QWidget):
 
     def set_busy(self, busy):
         self.busy = busy
-        for widget in (self.device, self.refresh, self.mode, self.start, self.help):
+        for widget in (
+            self.device,
+            self.refresh,
+            self.mode,
+            self.start,
+            self.help,
+            self.tuning,
+        ):
             widget.setEnabled(not busy)
         self.progress.setRange(0, 0 if busy else 1)
         self.mode_changed()
@@ -224,12 +242,35 @@ class Setup(QWidget):
                 "Select a Pico and enter Wi-Fi details for initial setup."
             )
             return
+        summary = ""
+        tuning_context = None
+        if self.tuning_changes and mode == "update":
+            if not self.tuning_profile or self.tuning_profile["port"] != port:
+                self.status.setText(
+                    "CHANNEL_TUNING: Read settings from the selected Pico again."
+                )
+                return
+            tuning_context = {
+                **self.tuning_profile,
+                "changes": {
+                    ch: dict(patch) for ch, patch in self.tuning_changes.items()
+                },
+            }
+            summary = (
+                "\nChannel changes: "
+                + "; ".join(
+                    f"CH{ch:02}: "
+                    + ", ".join(f"{key}={value}" for key, value in patch.items())
+                    for ch, patch in self.tuning_changes.items()
+                )
+                + "\n"
+            )
         if (
             QMessageBox.question(
                 self,
                 "Upload to Pico W",
-                f"{self.device.currentText()}\n\nBack up, upload and restart this Pico?\n"
-                "Check wiring/calibration before initial setup. Keep USB connected.",
+                f"{self.device.currentText()}{summary}\n\nBack up, upload and restart this Pico?\n"
+                "Restart initializes all channels at their Close positions.\nCheck wiring/calibration and keep USB connected.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -240,10 +281,12 @@ class Setup(QWidget):
         self.status.setText("Reading Pico and saving backup…")
         self.password.clear()
         threading.Thread(
-            target=self.work, args=(port, mode, ssid, password), daemon=True
+            target=self.work,
+            args=(port, mode, ssid, password, tuning_context),
+            daemon=True,
         ).start()
 
-    def work(self, port, mode, ssid, password):
+    def work(self, port, mode, ssid, password, tuning_context=None):
         destination = None
         pico = None
         stage = "Read Pico / backup"
@@ -259,7 +302,20 @@ class Setup(QWidget):
             )
             stage = "Prepare update / check existing settings"
             self.events.put(("progress", stage))
-            files = plan(mode, current, ROOT / "server", ssid, password)
+            changes = None
+            if tuning_context:
+                if (
+                    pico.device_id != tuning_context["device_id"]
+                    or hashlib.sha256(current["settings.py"]).hexdigest()
+                    != tuning_context["settings_hash"]
+                ):
+                    raise RuntimeError(
+                        "SETTINGS_CHANGED: Device or settings changed since reading. Read channel tuning again; nothing was uploaded."
+                    )
+                changes = tuning_context["changes"]
+            files = plan(
+                mode, current, ROOT / "server", ssid, password, channel_changes=changes
+            )
             stage = "Upload / verify / commit"
             self.events.put(
                 ("progress", "Uploading and verifying… Keep USB connected.")
@@ -297,10 +353,101 @@ class Setup(QWidget):
                 )
             )
 
+    def load_tuning(self):
+        port = self.device.currentData()
+        if self.busy or not port or self.mode.currentData() != "update":
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Read channel settings",
+                "Reading settings stops the running Pico program and saves a backup.\nAny previously queued edits are replaced by this fresh read.\nNo settings are written until Update Pico is confirmed.\nContinue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        self.tuning_changes = {}
+        self.tuning_profile = None
+        self.set_busy(True)
+        self.status.setText("Reading channel settings and saving backup…")
+        threading.Thread(target=self.read_tuning, args=(port,), daemon=True).start()
+
+    def read_tuning(self, port):
+        try:
+            if self.demo:
+                settings = (ROOT / "server/settings.py").read_bytes()
+                device_id, destination = "demo", "Demo · no USB access"
+            else:
+                pico = Pico(port)
+                current = pico.read(PROGRAMS + PRESERVED)
+                destination = backup(
+                    current, Path.home() / ".kohdalab" / "shutter" / "pico-backups"
+                )
+                settings, device_id = current["settings.py"], pico.device_id
+                if not device_id:
+                    raise RuntimeError(
+                        "CHANNEL_TUNING: Could not identify the Pico; no upload started."
+                    )
+            channels, _ = tuning_channels(settings)
+            self.events.put(
+                (
+                    "tuning",
+                    {
+                        "port": port,
+                        "device_id": device_id,
+                        "settings_hash": hashlib.sha256(settings).hexdigest(),
+                        "channels": channels,
+                        "backup": str(destination),
+                    },
+                )
+            )
+        except RuntimeError as error:
+            self.events.put(("error", f"Read channel settings failed: {error}"))
+        except Exception:
+            self.events.put(
+                (
+                    "error",
+                    "CHANNEL_TUNING: Could not read channel settings or save backup. No upload started.",
+                )
+            )
+
+    def edit_tuning(self, profile):
+        from scripts.pico_tuning import ChannelTuning
+
+        self.set_busy(False)
+        if profile["port"] != self.device.currentData():
+            self.status.setText(
+                "CHANNEL_TUNING: Selected Pico changed. Read settings again."
+            )
+            return
+        self.editing_tuning = True
+        try:
+            dialog = ChannelTuning(profile["channels"], self)
+            if dialog.exec():
+                self.tuning_profile = profile
+                self.tuning_changes = dialog.changes
+                self.status.setText(
+                    f"{len(dialog.changes)} channel(s) queued. Confirm Update Pico to apply.\nBackup: {profile['backup']}"
+                )
+            else:
+                self.status.setText(
+                    "No channel settings written. Restart the Pico to resume its program, or use Update Pico."
+                )
+        finally:
+            self.editing_tuning = False
+
     def receive(self):
         while not self.events.empty():
             state, message = self.events.get_nowait()
+            if state == "tuning":
+                self.edit_tuning(message)
+                continue
             self.status.setText(message)
+            if state == "done":
+                self.tuning_changes = {}
+                self.tuning_profile = None
             if state != "progress":
                 self.set_busy(False)
                 self.progress.setValue(1 if state == "done" else 0)
@@ -336,6 +483,13 @@ def run():
             raise RuntimeError("Backend failure was incorrectly reported as success")
         if window.device.currentData() != "demo":
             raise RuntimeError("Smoke test must be isolated")
+        from scripts.pico_tuning import ChannelTuning
+
+        channels, _ = tuning_channels((ROOT / "server/settings.py").read_bytes())
+        tuning = ChannelTuning(channels, window)
+        if tuning.table.rowCount() != len(channels):
+            raise RuntimeError("Bundled channel tuning failed")
+        tuning.reject()
         QTimer.singleShot(100, app.quit)
     elif "--screenshot" in sys.argv:
         path = sys.argv[sys.argv.index("--screenshot") + 1]

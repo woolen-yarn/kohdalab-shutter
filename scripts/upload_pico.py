@@ -179,6 +179,7 @@ class Pico:
     def __init__(self, port: str) -> None:
         self.port = port
         self.phase = "Read Pico / backup"
+        self.device_id = None
 
     def command(self, *arguments: str) -> str:
         return run_mpremote(["connect", self.port, *arguments])
@@ -191,8 +192,8 @@ class Pico:
 
     def read(self, names: tuple[str, ...]) -> dict[str, bytes]:
         output = self.run(
-            """import os, json, ubinascii
-print(json.dumps({'machine': os.uname().machine}))
+            """import os, json, ubinascii, machine
+print(json.dumps({'machine': os.uname().machine, 'device_id': ubinascii.hexlify(machine.unique_id()).decode()}))
 for name in """
             + repr(names)
             + """:
@@ -208,7 +209,9 @@ for name in """
         )
         try:
             lines = output.splitlines()
-            if "Pico W" not in json.loads(lines[0])["machine"]:
+            header = json.loads(lines[0])
+            self.device_id = header.get("device_id")
+            if "Pico W" not in header["machine"]:
                 raise RuntimeError(
                     "This installer requires Raspberry Pi Pico W MicroPython."
                 )
@@ -228,6 +231,7 @@ for name in """
     def install(self, files: dict[str, bytes]) -> None:
         # Stage all files, verify exact bytes, then compile on MicroPython without
         # executing imports or touching GPIO. main.py is committed last.
+        expected_device = self.device_id
         self.phase = "Stage files on Pico"
         with tempfile.TemporaryDirectory(prefix="shutter-usb-") as directory:
             for name, contents in files.items():
@@ -237,6 +241,10 @@ for name in """
         self.phase = "Verify staged files"
         staged = tuple(name + ".shutter-upload" for name in files)
         actual = self.read(staged)
+        if expected_device is not None and self.device_id != expected_device:
+            raise RuntimeError(
+                "DEVICE_CHANGED: Pico identity changed during staging. No staged files were committed."
+            )
         if any(
             actual.get(name + ".shutter-upload") != contents
             for name, contents in files.items()
@@ -392,12 +400,109 @@ def check_preserved_driver(current: dict[str, bytes], server: Path) -> None:
         ) from error
 
 
+TUNING_FIELDS = {"close", "open", "soft_open", "soft_close"}
+
+
+def tuning_channels(source: bytes):
+    """Read literal channel definitions only; never execute a settings file."""
+    try:
+        tree = ast.parse(source.decode("utf-8"))
+        nodes = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "CHANNELS"
+                for target in node.targets
+            )
+        ]
+        if len(nodes) != 1 or len(nodes[0].targets) != 1:
+            raise ValueError("ambiguous channels")
+        for statement in tree.body:
+            if statement is nodes[0]:
+                continue
+            references = [
+                node
+                for node in ast.walk(statement)
+                if isinstance(node, ast.Name) and node.id == "CHANNELS"
+            ]
+            if references:
+                value = statement.value if isinstance(statement, ast.Assign) else None
+                if not (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Name)
+                    and value.func.id == "len"
+                    and len(value.args) == 1
+                    and not value.keywords
+                    and isinstance(value.args[0], ast.Name)
+                    and value.args[0].id == "CHANNELS"
+                ):
+                    raise ValueError("dynamic channel mutation/reference")
+        channels = ast.literal_eval(nodes[0].value)
+        if not isinstance(channels, (tuple, list)) or not 1 <= len(channels) <= 16:
+            raise ValueError("invalid channels")
+        for channel in channels:
+            if not isinstance(channel, dict):
+                raise ValueError("invalid channel")
+            for field in ("close", "open"):
+                value = channel[field]
+                if type(value) is not int or not 0 <= value <= 180:
+                    raise ValueError("invalid endpoint")
+            if channel["close"] == channel["open"]:
+                raise ValueError("equal endpoints")
+            for field in ("soft_open", "soft_close"):
+                if type(channel.get(field, False)) is not bool:
+                    raise ValueError("invalid motion option")
+        return channels, nodes[0].value
+    except (ValueError, KeyError, TypeError, SyntaxError, UnicodeError) as error:
+        raise RuntimeError(
+            "CHANNEL_TUNING: Could not safely read literal CHANNELS. Settings were not executed or modified."
+        ) from error
+
+
+def apply_channel_tuning(source: bytes, changes: dict) -> bytes:
+    channels, value_node = tuning_channels(source)
+    changed = False
+    for channel_id, patch in changes.items():
+        if (
+            type(channel_id) is not int
+            or not 0 <= channel_id < len(channels)
+            or not isinstance(patch, dict)
+            or not patch.keys() <= TUNING_FIELDS
+        ):
+            raise RuntimeError(
+                "CHANNEL_TUNING: Invalid channel or setting; no upload started."
+            )
+        for field, value in patch.items():
+            if (
+                field in ("close", "open")
+                and (type(value) is not int or not 0 <= value <= 180)
+            ) or (field.startswith("soft_") and type(value) is not bool):
+                raise RuntimeError(
+                    "CHANNEL_TUNING: Invalid endpoint or motion option; no upload started."
+                )
+            if channels[channel_id].get(field, False) != value:
+                channels[channel_id][field] = value
+                changed = True
+        if channels[channel_id]["close"] == channels[channel_id]["open"]:
+            raise RuntimeError(
+                "CHANNEL_TUNING: Open and Close must differ; no upload started."
+            )
+    if not changed:
+        return source
+    lines = source.splitlines(keepends=True)
+    start = sum(map(len, lines[: value_node.lineno - 1])) + value_node.col_offset
+    end = sum(map(len, lines[: value_node.end_lineno - 1])) + value_node.end_col_offset
+    return source[:start] + repr(channels).encode("utf-8") + source[end:]
+
+
 def plan(
     mode: str,
     current: dict[str, bytes],
     server: Path,
     ssid: str | None = None,
     password: str | None = None,
+    channel_changes: dict | None = None,
 ) -> dict[str, bytes]:
     if mode == "initial" and any(name in current for name in PRESERVED + PROGRAMS):
         raise RuntimeError(
@@ -417,6 +522,12 @@ def plan(
     if mode == "update":
         check_preserved_driver(current, server)
         del files["pca9685.py"]  # Never transfer over per-device pulse calibration.
+    if channel_changes:
+        if mode != "update":
+            raise RuntimeError(
+                "CHANNEL_TUNING: Read existing settings in Update mode first."
+            )
+        settings = apply_channel_tuning(settings, channel_changes)
     files["settings.py"] = settings
     if mode == "initial":
         if not ssid or not password:

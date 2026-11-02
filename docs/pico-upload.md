@@ -1,8 +1,8 @@
 # Pico W USB setup / Pico Wへの初回転送・更新
 
-Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.1). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
+Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.1.0). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
 
-専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.1)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
+専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.1.0)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
 
 ## Existing device: normal USB / 既存装置の更新は通常USB接続
 
@@ -35,6 +35,20 @@ If the device is selectable but upload fails, note/copy the displayed **failed s
 Windows is unsigned and Mac is ad-hoc signed, not notarized; first-launch OS approval may still be needed. No claim of warning-free signed distribution is made. Signing enrollment remains pending as for the main app.
 
 Windowsは未署名、Macはアドホック署名・未公証です。PCへの追加ツール導入は不要ですが、初回のOS確認が出る場合があります。署名の登録状況はメインアプリと同じです。
+
+## Per-channel tuning / CHごとの調整
+
+Use **Channel tuning** in Update mode to read and back up the current Pico settings, then edit only the desired CH's Close/Open angle or Soft Open/Soft Close. Reading interrupts the Pico program; the dialog itself never writes or moves a servo. **Queue changes** prepares a patch, and **Update Pico** shows the exact changes for final confirmation. A fresh read discards previous queued edits. The Pico ID and settings hash are checked again before upload, so edits cannot silently follow another Pico or overwrite newer settings.
+
+Updateモードの **Channel tuning** で現在のPico設定を読み込み、バックアップを保存します。必要なCHのClose／Open角度、Soft Open／Soft Closeだけを変更できます。読込はPicoプログラムを停止しますが、編集画面は書き込み・駆動を行いません。**Queue changes**で準備し、**Update Pico**の確認で適用します。再読込は前の未適用編集を破棄します。書込前にPico IDと元設定のハッシュを再確認し、別機器や新しい設定へ黙って適用しません。
+
+For CH00 opening overshoot, opt-in Soft Open slows only that channel's final 12° (≤1° per ≥40 ms); it does not change the Open angle. For CH01 Close pressure, calibrate only CH01's Close endpoint against the real mechanism, keeping it within the truly closed range. No endpoint or pulse limit is automatically changed. Existing PWM release/hold policy remains intact.
+
+CH00のOpen行き過ぎには、Soft OpenでそのCHの終端12°だけ指令を遅くできます。Open角度そのものは変えません。CH01のClose時の押し付けは、実物が閉じる範囲の中でCH01のClose位置だけを校正してください。角度・パルス幅を自動変更することはなく、既存のPWM保持／解放も変えません。
+
+**Update/restart initializes all channels at Close.** Unedited settings remain unchanged, but a reboot is not an in-place live adjustment. Verify mechanical clearance before confirming Update. If the physical stall remains, record the command state versus real behavior; this release does not claim to detect or cure a jam without position feedback.
+
+**更新・再起動では全CHがClose位置へ初期化されます。** 未編集の設定値は変わりませんが、動作を続けたままのライブ調整ではありません。機構を確認してから更新してください。実物の停止が続く場合、この設定だけで解消したとは扱わず、指令状態と実物の挙動を確認します。
 
 ## New Pico: install MicroPython once / 新品Pico：MicroPythonの初回導入
 

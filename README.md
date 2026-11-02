@@ -28,9 +28,9 @@ Choose a named controller on the left and channels in the vertical list on the r
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico USB setup/update:** download the standalone [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.1). Extract the ZIP and double-click the Windows exe or Mac app; no Python or uv installation is needed. Choose Initial setup or Update. Both use DHCP; Update backs up and preserves calibration, pins, Wi-Fi and labels. [Instructions](docs/pico-upload.md)
+**Pico USB setup/update:** download the standalone [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.1.0). Extract the ZIP and double-click the Windows exe or Mac app; no Python or uv installation is needed. Choose Initial setup or Update. Channel tuning offers per-CH endpoints and opt-in gentle approach. Both use DHCP; Update backs up and preserves calibration, pins, Wi-Fi and labels. [Instructions](docs/pico-upload.md)
 
-**Picoへの初回転送・更新：** 専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.0.1)を配布しています。ZIPを展開し、Windowsのexe／Macのappを開くだけで、Python・uvの別途インストールは不要です。初回／更新を選択でき、どちらもDHCPです。更新はバックアップを取り、校正・配線・Wi-Fi・ラベルを保持します。[手順](docs/pico-upload.md)
+**Picoへの初回転送・更新：** 専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.1.0)を配布しています。ZIPを展開し、Windowsのexe／Macのappを開くだけで、Python・uvの別途インストールは不要です。初回／更新と、CH別の角度・終端減速の調整に対応し、どちらもDHCPです。更新はバックアップを取り、校正・配線・Wi-Fi・ラベルを保持します。[手順](docs/pico-upload.md)
 
 <details>
 <summary>Vertical layout / 縦並び</summary>
