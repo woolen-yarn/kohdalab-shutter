@@ -1,31 +1,31 @@
-# KohdaLab Pico Setup 1.0.1
+# KohdaLab Pico Setup 1.1.0
 
-For an **existing shutter update, connect USB normally without holding BOOTSEL**, then select Update. BOOTSEL exposes a UF2 mass-storage drive, not the USB serial interface used to update Python files. Do not reinstall MicroPython merely to update an existing controller.
+Add **Channel tuning** for per-channel Close/Open endpoints and opt-in **Soft Open / Soft Close**. No Python/uv installation is needed on the PC. The main Shutter control window/version is unchanged.
 
-**既存シャッターの更新はBOOTSELを押さずにUSB接続し、Updateを選んでください。** BOOTSELはMicroPython本体を書き込むUF2ドライブのモードで、プログラム更新用のUSB通信とは別です。更新のためにMicroPythonを入れ直す必要はありません。
+CHごとにClose／Open位置と **Soft Open／Soft Close** を調整する **Channel tuning** を追加しました。PCへのPython・uv導入は不要で、普段のShutter操作画面は変更しません。
 
-- Detect labelled BOOTSEL drives and explain how to reconnect for Update. Never write to or reflash a BOOTSEL drive automatically.
-- Refresh USB metadata automatically after reconnection, retaining explicit selection when several devices are present. Disable upload when there is no serial target; keep the last result readable.
-- Correctly propagate the embedded backend's returned failure code. A failed verification/commit no longer continues to automatic restart or reports success through an ignored backend result.
-- Preserve the existing `pca9685.py` driver byte-for-byte on Update, including individually tuned `servo_min_us` / `servo_max_us`. Unsupported legacy APIs or custom main-side initialization stop with CALIBRATION_REVIEW before uploading, rather than guessing or overwriting calibration. Initial setup remains unchanged.
-- Show the failed step and a safe diagnostic code (USB_ACCESS, USB_TIMEOUT, PICO_RESPONSE, PICO_MEMORY, PICO_MODULE, PICO_SYNTAX, PICO_SPACE or USB_COMMAND). Status text can be selected/copied. Private device output and Wi-Fi source are never displayed or saved as public logs.
+## Use / 使い方
 
-更新では既存の`pca9685.py`を転送対象から外し、`servo_min_us`・`servo_max_us`などの個体別調整を残します。古いドライバーや独自の初期化を自動確認できなければ、上書きせずCALIBRATION_REVIEWで止めます。
+1. Extract the complete Windows/Mac ZIP, open Pico Setup, connect USB normally **without BOOTSEL**, and select Update.
+2. Open **Channel tuning**. Reading stops the Pico program and saves a private backup; no settings are written yet. A fresh read replaces any previously queued edits.
+3. Adjust only the channel you intend. For the reported cases, CH00 Soft Open provides a slower final approach; CH01 Close can be calibrated to a position that closes the shutter without pressing against a stop. No new endpoint is chosen automatically.
+4. **Queue changes**, review the exact CH/field/value summary, then confirm **Update Pico**. Device identity and the original settings hash must still match. The updater preserves the existing `pca9685.py` and all its pulse calibration.
+5. Restart initializes **all channels at their configured Close positions**, as existing firmware does. Check mechanical clearance before confirming Update; verify the real shutter afterward. GUI state remains commanded state, not position feedback.
 
-BOOTSEL接続時の案内・つなぎ直し時の自動検出・失敗段階とエラーコードを追加しました。同梱転送プログラムの失敗結果を取りこぼしていた問題も修正しています。1.0.0で報告された実機の失敗原因は、旧表示だけでは断定できません。修正版のエラーコードで切り分けられるようにしています。
+1. ZIPをすべて展開してPico Setupを開き、**BOOTSELを押さずに**USB接続し、Updateを選びます。
+2. **Channel tuning**で設定を読み込みます。Picoのプログラムを停止し、バックアップを保存します。この時点では書き込みません。再読込すると以前の未適用編集を置き換えます。
+3. 必要なCHだけ変更します。CH00は **Soft Open** でOpen終端付近の指令をゆっくりにできます。CH01は、実物が閉じて機構を押し付けないClose位置を校正してください。角度は自動変更しません。
+4. **Queue changes**で変更を準備し、CH・項目・値を確認して **Update Pico** を実行します。対象Picoや設定が読込時から変わっていれば書き込みを止めます。`pca9685.py`と`servo_min_us`／`servo_max_us`は上書きしません。
+5. 更新後の再起動では、従来どおり**全CHを設定済みClose位置へ初期化**します。機構を確認してから更新を確定してください。設定後は実物を確認します。GUI表示は指令状態で、実測位置ではありません。
 
-Python/uv installation on the PC is still unnecessary. Download and extract the native Windows x64, Mac Apple Silicon (arm64), or Mac Intel (x64) ZIP and open the exe/app. Keep the Windows folder together. DHCP, backups, existing Wi-Fi/calibration/pins/motion settings and labels retain their previous behavior. The main Shutter desktop app/version is unchanged.
+Soft motion is disabled by default. When explicitly enabled for a channel/direction, the final 12° uses at most 1° per at least 40 ms, while respecting already slower global settings. Other channels retain their own timing and endpoints; parallel capacity and PWM release/hold behavior are unchanged. This reduces commanded approach speed, but is not a confirmed cure for the reported physical stall/overshoot.
 
-PCへのPython・uv導入は引き続き不要です。Windows／Mac用ZIPをすべて展開してexe／appを開きます。DHCP・バックアップ・既存設定保持の動作は変更していません。メインのShutterアプリもそのまま使えます。
+終端減速は既定で無効です。有効にしたCH・方向だけ、最後の12°を最大1°刻み・最短40ms間隔で進めます。既存設定がもっと遅い場合はその速度を保ちます。他CHのタイミング・角度、並列数、PWM解放／保持の方針は変えません。実機での行き過ぎ・停止が解消した確認ではありません。
 
-Native smoke tests now verify both backend success and expected failure without opening a USB port. Automated tests cover failure propagation, no restart after failed commit, BOOTSEL metadata, reconnection and safe error output. Physical USB/Wi-Fi/servo validation and confirmation of the reported Windows device failure remain pending; no hardware was flashed automatically.
+Literal `CHANNELS` definitions are required for safe editing. Dynamic definitions/modifications are not executed or guessed. All unselected channel fields, pin mappings, Wi-Fi and labels are preserved. Cancelling the dialog does not write settings; restart the stopped Pico to resume its program, or finish Update.
 
-配布テストは転送機能の成功・失敗を両方確認し、USBポートは開きません。BOOTSEL判別・再検出・失敗後の再起動防止・エラー表示は自動テスト済みです。報告されたWindows実機での再確認は未実施です。
+安全な編集には定数で書かれた`CHANNELS`定義が必要です。動的な定義・変更は実行・推測せず止めます。未選択CH・ピン・Wi-Fi・ラベルを保持します。キャンセル時は設定を書き込まず、Picoのプログラム再開には再起動またはUpdate完了が必要です。
 
-Windows remains unsigned; Mac remains ad-hoc signed and not notarized. First-launch OS confirmation can still appear.
+Native app smoke checks cover the bundled editor and USB helper success/failure without opening a serial port. Automated tests cover selective patches, stale-device/settings rejection, preserved pulse driver, exact endpoint bounds, retargeting and independent CH timing. MicroPython runtime verification exercises the actual motion scheduler. Physical USB/servo calibration remains unverified on the reported device.
 
-[Instructions / 手順](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/pico-upload.md)
-
-A separate report of one shutter becoming unresponsive while other channels work, recovering only after power cycling, is not diagnosed by this release. Software tests verify that full-off is cleared on a subsequent PWM command without disturbing other channels; physical servo/power/driver behavior still needs checking. No automatic repeated drive, wider pulse limits or changed release/torque policy is introduced.
-
-一つのCHだけ動かなくなり、電源再投入で戻る症状は未解決です。PWM停止後の再指令で停止ビットが解除され、他CHに書き込まないことはテストしていますが、実際のサーボ・電源・ドライバーの原因は未確定です。自動再駆動・パルス幅拡大・保持トルク設定変更は行いません。
+Windows is unsigned; Mac is ad-hoc signed/not notarized. [Instructions](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/pico-upload.md)

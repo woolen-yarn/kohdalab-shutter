@@ -37,7 +37,73 @@ def require(value, message):
         raise RuntimeError(message)
 
 
+def verify_channel_motion():
+    from servo import ServoBoard
+
+    clock = Clock()
+
+    class Pwm:
+        def __init__(self):
+            self.writes = []
+
+        def set_servo_angle(self, channel, angle):
+            self.writes.append((channel, angle))
+
+        def disable(self, channel):
+            pass
+
+    channels = [
+        {
+            "label": "A",
+            "servo": 0,
+            "switch": 2,
+            "green": 3,
+            "red": 4,
+            "close": 0,
+            "open": 18,
+            "soft_open": True,
+        },
+        {
+            "label": "B",
+            "servo": 1,
+            "switch": 5,
+            "green": 6,
+            "red": 7,
+            "close": 0,
+            "open": 18,
+        },
+    ]
+    pwm = Pwm()
+    board = ServoBoard(
+        channels,
+        pwm,
+        clock.ticks_ms,
+        clock.ticks_diff,
+        max_active=2,
+        release_delay_ms=0,
+    )
+    board.open(0)
+    board.open(1)
+    board.tick()
+    for value in (20, 40, 60):
+        clock.now = value
+        board.tick()
+    require(
+        board.positions == [6, 9],
+        "soft approach changed another channel or missed its interval",
+    )
+    for value in range(80, 1000, 20):
+        clock.now = value
+        board.tick()
+    require(board.positions == [18, 18] and not board.busy(), "motion did not complete")
+    require(
+        all(0 <= angle <= 18 for _, angle in pwm.writes),
+        "motion exceeded calibration endpoints",
+    )
+
+
 def main():
+    verify_channel_motion()
     path = sys.argv[1] if len(sys.argv) > 1 else "micropython-session-label-test.json"
     remove_if_present(path)
     remove_if_present(path + ".tmp")

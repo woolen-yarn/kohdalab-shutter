@@ -1,5 +1,10 @@
 # Changelog
 
+## Pico Setup 1.1.0
+
+- Add USB-backed per-channel Close/Open editing and opt-in Soft Open/Soft Close, with private backups, queued changes, exact update review, device ID/settings-hash checks and preserved PWM-driver calibration. No automatic endpoint change.
+- Add independent soft approach within the selected endpoint's final 12° (≤1° per ≥40 ms), preserving defaults, other CH timing, concurrency and PWM release policy. Verify under CPython and actual MicroPython. Hardware stall/overshoot resolution remains unconfirmed.
+
 ## Pico Setup 1.0.1
 
 - Leave the existing pca9685.py driver out of Update transfers, preserving device-specific servo_min_us/servo_max_us pulse calibration byte-for-byte. Reject incompatible/ambiguous legacy initialization before upload. No servo drive/retry policy changes.

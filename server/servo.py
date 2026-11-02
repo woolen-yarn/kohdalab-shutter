@@ -69,6 +69,12 @@ def validate_channels(channels):
                 "{} open and close angles must differ".format(label)
             )
 
+        for key in ("soft_open", "soft_close"):
+            if key in channel and not isinstance(channel[key], bool):
+                raise ChannelConfigurationError(
+                    "{} {} must be boolean".format(label, key)
+                )
+
 
 class ServoBoard:
     """Queue, slew and release servos without blocking the server event loop.
@@ -173,10 +179,13 @@ class ServoBoard:
             target = self.angles[index]
             position = self.positions[index]
             if position != target:
-                if self._ticks_diff(now, state["last_step"]) < self.step_interval_ms:
+                step_degrees, step_interval_ms = self._motion_parameters(
+                    index, position, target
+                )
+                if self._ticks_diff(now, state["last_step"]) < step_interval_ms:
                     continue
                 distance = target - position
-                step = min(abs(distance), self.step_degrees)
+                step = min(abs(distance), step_degrees)
                 position += step if distance > 0 else -step
                 self.positions[index] = position
                 self._write_angle(index, position)
@@ -230,3 +239,13 @@ class ServoBoard:
 
     def _write_angle(self, index, angle):
         self._pwm.set_servo_angle(self.channels[index]["servo"], angle)
+
+    def _motion_parameters(self, index, position, target):
+        """Return the slew parameters for this channel's current target."""
+        channel = self.channels[index]
+        soft_target = (
+            target == channel["open"] and channel.get("soft_open", False)
+        ) or (target == channel["close"] and channel.get("soft_close", False))
+        if soft_target and abs(target - position) <= 12:
+            return min(self.step_degrees, 1), max(self.step_interval_ms, 40)
+        return self.step_degrees, self.step_interval_ms

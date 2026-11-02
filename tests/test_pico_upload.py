@@ -304,3 +304,89 @@ def test_initial_setup_refuses_a_preexisting_calibrated_driver():
     with pytest.raises(RuntimeError, match="already has files"):
         plan("initial", old, ROOT / "server", "ssid", "fixture")
     assert old["pca9685.py"] == b"custom pulse calibration"
+
+
+def test_tuning_changes_only_chosen_fields_preserving_other_channels_and_config():
+    from scripts.upload_pico import apply_channel_tuning, tuning_channels
+
+    source = (ROOT / "server/settings.py").read_bytes()
+    original, _ = tuning_channels(source)
+    updated = apply_channel_tuning(source, {0: {"soft_open": True}, 1: {"close": 5}})
+    channels, _ = tuning_channels(updated)
+    assert channels[0] == {**original[0], "soft_open": True}
+    assert channels[1] == {**original[1], "close": 5}
+    assert channels[2:] == original[2:]
+    assert updated.split(b"CHANNELS =")[0] == source.split(b"CHANNELS =")[0]
+    assert (
+        updated.split(b"# Drive every configured")[1]
+        == source.split(b"# Drive every configured")[1]
+    )
+    assert apply_channel_tuning(source, {0: {"close": 0, "soft_open": False}}) == source
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {0: {"open": 0}},
+        {True: {"open": 40}},
+        {99: {"close": 1}},
+        {0: {"servo_min_us": 800}},
+        {0: {"soft_open": 1}},
+        {0: {"close": -1}},
+    ],
+)
+def test_bad_channel_edits_fail_without_upload_or_calibration_change(changes):
+    from scripts.upload_pico import apply_channel_tuning
+
+    with pytest.raises(RuntimeError, match="CHANNEL_TUNING"):
+        apply_channel_tuning((ROOT / "server/settings.py").read_bytes(), changes)
+
+
+def test_plan_tuning_keeps_pwm_driver_and_current_settings_untouched():
+    old = calibration_current()
+    from scripts.upload_pico import tuning_channels
+
+    before = dict(old)
+    files = plan(
+        "update",
+        old,
+        ROOT / "server",
+        channel_changes={0: {"soft_open": True}, 1: {"close": 4}},
+    )
+    assert old == before and "pca9685.py" not in files
+    channels, _ = tuning_channels(files["settings.py"])
+    assert channels[0]["soft_open"] is True and channels[1]["close"] == 4
+
+
+def test_settings_parser_does_not_execute_dynamic_channels():
+    from scripts.upload_pico import tuning_channels
+
+    with pytest.raises(RuntimeError, match="CHANNEL_TUNING"):
+        tuning_channels(b"CHANNELS = run_arbitrary_code()")
+
+
+def test_dynamic_post_definition_channel_changes_are_not_guessed():
+    from scripts.upload_pico import tuning_channels
+
+    source = (
+        ROOT / "server/settings.py"
+    ).read_bytes() + b'\nCHANNELS[1]["close"] = 10\n'
+    with pytest.raises(RuntimeError, match="CHANNEL_TUNING"):
+        tuning_channels(source)
+
+
+def test_device_identity_must_still_match_before_committing_staged_files():
+    pico = FakePico()
+    pico.device_id = "first"
+    read = pico.read
+
+    def switched(names):
+        pico.device_id = "second"
+        return read(names)
+
+    with (
+        patch.object(pico, "read", side_effect=switched),
+        pytest.raises(RuntimeError, match="DEVICE_CHANGED"),
+    ):
+        pico.install({"main.py": b"print(1)"})
+    assert not any(call[0] in ("reset", "run-source") for call in pico.calls)
