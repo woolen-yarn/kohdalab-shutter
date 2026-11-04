@@ -1,6 +1,14 @@
-# KohdaLab Shutter 0.6.4
+# KohdaLab Shutter 0.6.5
 
 ## Changes
+
+PC preference saves now remain pending after a transient failure and retry after
+five seconds. The visible error clears only after the save succeeds. Empty native
+home-directory variables now use the valid platform fallback consistently in the
+GUI and common Python client. The client also processes API response fragments
+without rescanning all preceding bytes.
+
+PC設定の保存が一時的に失敗した場合も未保存状態を保持し、5秒後に再試行します。エラー表示は保存成功後にのみ消えます。空のOS固有ホーム環境変数は、GUIと共通Pythonクライアントで有効な代替先を使います。API応答も過去の全データを繰り返し走査しません。
 
 The canonical configuration is `~/.kohdalab/shutter/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config\config.json`). Runtime API descriptors use `shutter/run`; default measurements and application logs use sibling `results` and `logs` where applicable. Camera exports continue to honor the user-selected folder. The shared path definition is vendored identically in all five applications.
 
@@ -8,7 +16,7 @@ The canonical configuration is `~/.kohdalab/shutter/config/config.json` (Windows
 
 A missing default is created atomically on the first normal GUI launch. Existing settings, including invalid/foreign/unsupported files, are preserved with visible errors. Old direct-child, shared, preview and AppData profiles are not imported or removed automatically; use Browse/Load after reviewing an existing profile. Explicit profile and output paths remain respected. No device connection, source output, capture or shutter movement is added. Scientific file formats and control ownership/cleanup policies are unchanged.
 
-Update the bundled Python clients/common SDK (1.0.1) with the GUI. They discover the new app-owned run directory; legacy discovery is read-only. The wire protocol stays at version 1. Existing cross-process recovery interlocks and OS driver caches retain their safety/OS-managed namespaces rather than being mistaken for GUI configuration.
+Update the bundled Python clients/common SDK (1.0.1) with the GUI. They discover the app-owned run directory; legacy discovery is read-only. The wire protocol stays at version 1. Existing cross-process recovery interlocks and OS driver caches retain their safety/OS-managed namespaces rather than being mistaken for GUI configuration.
 
 ## Downloads and validation
 
