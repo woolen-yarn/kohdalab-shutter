@@ -4,6 +4,7 @@ import ast
 import json
 from pathlib import Path
 
+from server.servo import ServoBoard
 from server.sessions import Sessions
 
 
@@ -165,7 +166,7 @@ def test_session_json_preserves_lowercase_token_and_raw_command_is_locked():
     assert servos.actions == [("open", 0)]
 
 
-def test_double_blink_and_button_do_not_change_a_claimed_channel():
+def test_double_blink_and_physical_buttons_work_without_releasing_claim():
     clock = Clock()
     symbols = pico_symbols(clock)
     FakePin.pins = {}
@@ -201,7 +202,47 @@ def test_double_blink_and_button_do_not_change_a_claimed_channel():
     exec(compile(ast.Module([button_node], []), "main.py", "exec"), symbols)  # noqa: S102
     symbols["on_button"](0, False)
     symbols["on_button"](1, False)
-    assert servos.actions[-1] == ("toggle", 1)
+    assert servos.actions == [("toggle", 0), ("toggle", 1)]
+    assert manager.locked_channels() == {0}
+    assert manager.claim("b" * 32, [0])["error"] == "busy"
+
+
+def test_physical_toggle_is_visible_to_connected_client(channels, pwm, clock):
+    symbols = pico_symbols(clock)
+    servos = ServoBoard(channels, pwm, clock.ticks_ms, clock.ticks_diff)
+    manager = Sessions(
+        channels, "id", "Bench", clock.ticks_ms, clock.ticks_diff, lambda _: None
+    )
+    assert manager.claim(TOKEN, [0])["ok"]
+    server = object.__new__(symbols["WifiServer"])
+    server.servos = servos
+    server.sessions = manager
+    server.leds = type(
+        "Leds", (), {"reflect": lambda self: None, "set_claimed": lambda self, _: None}
+    )()
+    server.running = True
+    symbols.update(server=server, servos=servos, leds=server.leds, sessions=manager)
+    connection = Connection()
+
+    symbols["on_button"](0, False)
+    server._handle("STATE", connection)
+    assert connection.writes[-1].startswith(b"CH0=0/90/0/90/1,")
+    # A repeated local press uses the new target; the owning PC can still operate.
+    symbols["on_button"](0, False)
+    server._handle("STATE", connection)
+    assert connection.writes[-1].startswith(b"CH0=0/0/0/90/1,")
+    server._handle("OPEN 0", connection)
+    assert connection.writes[-1] == b"LOCKED\n"
+    server._handle(
+        "SESSION "
+        + json.dumps(
+            {"op": "operate", "token": TOKEN, "action": "open", "channels": [0]}
+        ),
+        connection,
+    )
+    assert json.loads(connection.writes[-1]) == {"ok": True}
+    assert servos.angles[0] == 90
+    assert manager.locked_channels() == {0}
 
 
 def test_incomplete_continuous_request_hits_deadline_without_acting():
