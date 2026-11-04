@@ -21,3 +21,5 @@ Operational limits and safety responsibilities are in [SAFETY.md](../SAFETY.md).
 
 - [Common GUI control / 共通GUI API](reference/common-control-api.md)
 - [Common API validation / 共通APIの検証](validation/common-control-api.md)
+
+- [Suite quality audit / 5アプリ品質点検](validation/suite-quality-audit.md)

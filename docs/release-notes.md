@@ -1,19 +1,29 @@
-# KohdaLab Shutter 0.6.4
+# KohdaLab Shutter 0.6.5
 
 ## Changes
 
-The canonical configuration is `~/.kohdalab/shutter/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config\config.json`). Runtime API descriptors use `shutter/run`; default measurements and application logs use sibling `results` and `logs` where applicable. Camera exports continue to honor the user-selected folder. The shared path definition is vendored identically in all five applications.
+PC preference saves now remain pending after a transient failure and retry after five seconds. The visible error clears only after a successful save.
+
+The bundled common Python control client now ignores an empty native home-directory environment variable and uses a valid platform fallback. Its JSON Lines response reader scans only newly received bytes, while retaining the established response-size limit and error behavior.
 
 ## Compatibility and safety
 
-A missing default is created atomically on the first normal GUI launch. Existing settings, including invalid/foreign/unsupported files, are preserved with visible errors. Old direct-child, shared, preview and AppData profiles are not imported or removed automatically; use Browse/Load after reviewing an existing profile. Explicit profile and output paths remain respected. No device connection, source output, capture or shutter movement is added. Scientific file formats and control ownership/cleanup policies are unchanged.
-
-Update the bundled Python clients/common SDK (1.0.1) with the GUI. They discover the new app-owned run directory; legacy discovery is read-only. The wire protocol stays at version 1. Existing cross-process recovery interlocks and OS driver caches retain their safety/OS-managed namespaces rather than being mistaken for GUI configuration.
+The common SDK remains 1.0.1 and the control wire protocol remains version 1. Shutter command semantics, channel state, lease behavior, Pico firmware, and safety policy are unchanged. Existing settings remain preserved; this release does not migrate or delete profiles.
 
 ## Downloads and validation
 
-Windows Setup/portable, supported Mac distribution and corresponding source/build kit are attached. Windows artifacts remain unsigned; supported Mac applications are ad hoc signed and not notarized. Normal GUI startup is tested in isolated user homes, including restart/invalid-file preservation and canonical config/run paths. Platform tests, installer evidence and artifact/source hashes qualify the attached builds; no new physical-device qualification is claimed.
+This release provides Windows Setup and portable artifacts, supported macOS distribution, and corresponding source/build evidence. Windows artifacts are unsigned; supported macOS applications are ad hoc signed and not notarized. CI checks the packaged software, installer evidence, and artifact/source hashes. It does not constitute new physical Pico, wiring, or optical-path qualification.
 
 ## 日本語
 
-設定は `shutter/config/config.json`、実行時APIファイルは同じアプリ配下の `run` に統一します。結果・アプリログもアプリ配下の `results`・`logs` を使います（明示した保存先は保持）。初回は標準設定を自動作成します。旧設定は削除・自動移行せず、不正な設定は上書きせずエラーを表示します。装置への自動接続・出力ONや、測定・データ形式・安全動作の変更はありません。Pythonクライアントも同梱版へ更新してください。
+PC設定の保存が一時的に失敗した場合は未保存状態を保持し、5秒後に再試行します。表示上のエラーは保存に成功した後だけ消えます。
+
+同梱の共通Python制御クライアントは、OS固有のホームディレクトリ環境変数が空の場合に有効なプラットフォーム側フォールバックを使用します。JSON Lines応答は新しく受信したバイト列だけを走査し、既存の応答サイズ上限とエラー動作を維持します。
+
+## 互換性と安全性
+
+共通SDKは1.0.1、制御通信プロトコルはv1のままです。シャッター指令の意味、チャンネル状態、leaseの動作、Pico firmware、安全方針は変更しません。既存設定は保持し、プロファイルの移行・削除は行いません。
+
+## 配布と検証
+
+Windows Setupとportable成果物、対応するmacOS配布物、source/build証跡を提供します。Windows成果物は未署名で、対応するmacOS appはad hoc署名・未notarizeです。CIはパッケージソフトウェア、installer証跡、成果物とソースのハッシュを検証しますが、新たなPico、配線、光路の実機認定を意味しません。
