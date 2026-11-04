@@ -1587,6 +1587,9 @@ impl App {
             }
             Err(error) => {
                 self.preferences_error = format!("PC settings were not saved: {error}");
+                // Keep the unsaved candidate pending after a transient disk or
+                // sharing error, without retrying a failing write every frame.
+                self.preferences_due = Some(Instant::now() + Duration::from_secs(5));
             }
         }
     }
@@ -2634,6 +2637,38 @@ mod tests {
         app.api_request(&request).unwrap();
         assert_eq!(app.demo_status[&0], before[&0]);
         assert_eq!(app.demo_status[&2], before[&2]);
+    }
+
+    #[test]
+    fn preferences_retry_after_a_temporary_save_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut app = App::demo();
+        app.init_preferences(Some(path.clone()));
+        app.layout = Layout::Vertical;
+        // A directory at the destination causes a portable, deterministic
+        // write failure without changing permissions or touching real settings.
+        std::fs::create_dir(&path).unwrap();
+        app.persist_preferences(true);
+        assert!(!app.preferences_error.is_empty());
+        assert_ne!(app.preferences_candidate, app.preferences_saved);
+        let due = app.preferences_due.expect("failed save remains pending");
+        assert!(due > Instant::now());
+        app.persist_preferences(false);
+        assert_eq!(app.preferences_due, Some(due));
+
+        std::fs::remove_dir(&path).unwrap();
+        app.preferences_due = Some(Instant::now());
+        app.persist_preferences(false);
+        assert!(app.preferences_error.is_empty());
+        assert_eq!(app.preferences_candidate, app.preferences_saved);
+        assert!(app.preferences_due.is_none());
+        assert_eq!(
+            kohdalab_shutter::preferences::Preferences::load(&path)
+                .unwrap()
+                .layout,
+            "vertical"
+        );
     }
 
     #[test]
