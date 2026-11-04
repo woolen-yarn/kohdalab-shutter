@@ -434,9 +434,9 @@ def on_button(channel, is_long_press):
             server.start()
         return
 
-    if not sessions.is_locked(channel):
-        servos.toggle(channel)
-        leds.reflect()
+    # Channel leases exclude other network clients, not the local operator.
+    servos.toggle(channel)
+    leds.reflect()
 
 
 buttons = ButtonDeck(CHANNELS, on_button)

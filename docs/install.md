@@ -55,9 +55,9 @@ Use the standalone [Pico Setup app](pico-upload.md) for initial USB transfer or 
 
 初回転送・更新には専用の[Pico Setupアプリ](pico-upload.md)を使えます。Windows／Mac用ZIPを展開してアプリを開くだけで、Python・uvの導入は不要です。初回／更新ともDHCPで、更新は既存の校正・配線・Wi-Fi・ラベルをバックアップして保持します。新品PicoだけMicroPython本体の導入が一度必要です。
 
-A connected CH repeats two short LED flashes with a pause, using green for Open and red for Close. An unclaimed CH keeps the waiting blink. Physical short presses cannot change a leased CH; long-press server stop remains available. Raw commands from old clients are also rejected for leased CHs.
+A connected CH repeats two short LED flashes with a pause, using green for Open and red for Close. An unclaimed CH keeps the waiting blink. Physical short presses toggle the corresponding CH even while a PC holds its lease. The connected GUI follows the commanded state on its next refresh (normally about one second). The lease stays active and still rejects other network clients, including raw commands from old clients. Long-press server stop remains available.
 
-接続CHは緑（Open）・赤（Close）で二連点滅し、未使用CHは待機点滅を続けます。使用中CHへの物理ボタン短押し・旧クライアントからの操作も拒否します。長押しによるサーバー停止は引き続き可能です。
+接続CHは緑（Open）・赤（Close）で二連点滅し、未使用CHは待機点滅を続けます。PC接続中も物理ボタンの短押しで対応CHを切り替えられます。GUIは次回の状態更新（通常約1秒）で追従します。CHのロックは維持され、他のPCや旧クライアントからの操作は拒否します。長押しによるサーバー停止は引き続き可能です。
 
 For a hardware-free preview, Windows includes a **KohdaLab Shutter Demo** Start menu shortcut (or `Demo.cmd` in the portable ZIP). On Mac, run:
 
