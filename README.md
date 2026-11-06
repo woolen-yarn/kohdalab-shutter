@@ -58,8 +58,8 @@ Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/k
 
 | Platform / OS | Download / ファイル |
 | --- | --- |
-| Windows 10/11 (x64) | `kohdalab-shutter-0.6.6-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
-| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.6.6-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+| Windows 10/11 (x64) | `kohdalab-shutter-<version>-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-<version>-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
 
 The first release is not publisher-signed or Apple-notarized; see the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware upload still requires separate MicroPython tools.
 
@@ -67,9 +67,9 @@ The first release is not publisher-signed or Apple-notarized; see the [installat
 
 ## Code signing / 署名・公証
 
-The v0.6.6 desktop files retain their unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
+Current desktop files retain their unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
 
-v0.6.6デスクトップ版の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
+現行デスクトップ版の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
 
 ## Automatic settings / 設定の自動保存
 

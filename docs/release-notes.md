@@ -1,4 +1,16 @@
-# KohdaLab Shutter 0.6.6
+# KohdaLab Shutter 0.6.7
+
+## Faster shutter feedback / 開閉表示の応答改善
+
+While selected shutters report Moving, the GUI requests another state update after 100 ms instead of one second. Active tasks and motion repaint every 50 ms; settled shutters return to the existing idle intervals. Transport latency is additional, and only one request task runs at a time. Open/Close remains based on controller feedback; the schematic is not an optical measurement. Motor commands, firmware, lease and safety policies are unchanged.
+
+選択したシャッターがMovingの間は、次の状態取得までの待ちを1秒から100 msに短縮します。処理中・移動中は50 ms間隔で再描画し、停止後は従来の待機間隔に戻します。通信時間は別途かかり、照会は重ねて実行しません。Open／Closeは引き続きコントローラーの報告で確定し、図は光学的な実測ではありません。モーター指令・firmware・lease・安全方針は維持します。
+
+A regression test covers moving, endpoint-but-still-busy, settled and unselected-channel feedback. The operation journal introduced in 0.6.6 remains included.
+
+移動中、端点到達後もbusy、停止確定、未選択チャンネルの状態を回帰テストで確認します。0.6.6で追加した操作履歴の保存も含みます。
+
+## 0.6.6 — Persistent recording / 操作履歴の保存
 
 ## Persistent operation history / 操作履歴の保存
 
