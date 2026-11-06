@@ -40,6 +40,11 @@ const TEAL: Color32 = Color32::from_rgb(63, 215, 194);
 const ORANGE: Color32 = Color32::from_rgb(245, 183, 82);
 const RED: Color32 = Color32::from_rgb(255, 123, 130);
 
+const IDLE_REFRESH: Duration = Duration::from_secs(1);
+const MOVING_REFRESH: Duration = Duration::from_millis(100);
+const IDLE_REPAINT: Duration = Duration::from_millis(100);
+const ACTIVE_REPAINT: Duration = Duration::from_millis(50);
+
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 enum Layout {
@@ -792,9 +797,30 @@ impl App {
         snapshot.channels.retain(|ch, _| self.selected.contains(ch));
         self.status = snapshot.positions();
         self.state = snapshot;
-        self.last_update = Some(Instant::now());
-        self.next_refresh = Instant::now() + Duration::from_secs(1);
+        let now = Instant::now();
+        self.last_update = Some(now);
+        self.next_refresh = now
+            + if self.moving() {
+                MOVING_REFRESH
+            } else {
+                IDLE_REFRESH
+            };
         self.journal_snapshot();
+    }
+
+    fn moving(&self) -> bool {
+        self.state
+            .channels
+            .values()
+            .any(|channel| channel.name() == "Moving")
+    }
+
+    fn repaint_interval(&self) -> Duration {
+        if self.pending.is_some() || self.moving() {
+            ACTIVE_REPAINT
+        } else {
+            IDLE_REPAINT
+        }
     }
 
     fn refresh(&mut self) {
@@ -2337,7 +2363,7 @@ impl eframe::App for App {
         }
         self.draw(ctx);
         self.capture(ctx);
-        ctx.request_repaint_after(Duration::from_millis(100));
+        ctx.request_repaint_after(self.repaint_interval());
     }
 }
 
@@ -2673,6 +2699,35 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moving_feedback_stays_fast_until_controller_reports_settled() {
+        let mut app = App::demo();
+        app.selected = [0].into();
+        let mut snapshot = Snapshot::demo(&[(0, 0), (1, 90)].into());
+        let channel = snapshot.channels.get_mut(&0).unwrap();
+        channel.target = Some(90);
+        app.apply_snapshot(snapshot.clone());
+        assert_eq!(app.state.channels[&0].name(), "Moving");
+        assert_eq!(app.status[&0], 0, "retain the reported position");
+        assert_eq!(app.next_refresh - app.last_update.unwrap(), MOVING_REFRESH);
+        assert_eq!(app.repaint_interval(), ACTIVE_REPAINT);
+
+        // Even a reported endpoint does not override a controller's busy flag.
+        snapshot.channels.get_mut(&0).unwrap().position = 90;
+        snapshot.channels.get_mut(&0).unwrap().busy = true;
+        app.apply_snapshot(snapshot.clone());
+        assert_eq!(app.state.channels[&0].name(), "Moving");
+        assert_eq!(app.next_refresh - app.last_update.unwrap(), MOVING_REFRESH);
+
+        snapshot.channels.get_mut(&0).unwrap().busy = false;
+        // Another client's unselected moving channel must not keep us polling fast.
+        snapshot.channels.get_mut(&1).unwrap().busy = true;
+        app.apply_snapshot(snapshot);
+        assert_eq!(app.state.channels[&0].name(), "Open");
+        assert_eq!(app.next_refresh - app.last_update.unwrap(), IDLE_REFRESH);
+        assert_eq!(app.repaint_interval(), IDLE_REPAINT);
+    }
 
     fn deliver(app: &mut App, result: Result<Reply, String>) {
         let (sender, receiver) = mpsc::channel();
