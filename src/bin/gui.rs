@@ -3,12 +3,13 @@
 use clap::Parser;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use kohdalab_control_protocol::{
-    is_common, prepare as prepare_common, response as common_response,
+    is_common, paths::AppPaths, prepare as prepare_common, response as common_response,
 };
 use kohdalab_shutter::{
     DEFAULT_PORT,
     control::{ApiError, Control, response, string},
     discovery::{self, Device},
+    journal::OperationJournal,
     protocol::{Operation, Snapshot, Status},
     remote,
     session::{ChannelInfo, ControllerInfo},
@@ -24,7 +25,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const BG: Color32 = Color32::from_rgb(18, 19, 23);
@@ -95,6 +96,12 @@ enum Reply {
     Config(Result<ControllerInfo, String>),
     Accepted(String),
 }
+#[derive(Clone)]
+struct PendingOperation {
+    id: String,
+    operation: Operation,
+    channels: Vec<u8>,
+}
 #[derive(Clone, Default)]
 struct LabelPatch {
     device: Option<String>,
@@ -155,6 +162,11 @@ struct App {
     api_error: String,
     api_directory: Option<PathBuf>,
     pending_api_job: Option<String>,
+    journal: Option<OperationJournal>,
+    journal_error: String,
+    journal_incomplete: bool,
+    last_journal_state: Option<Value>,
+    pending_operation: Option<PendingOperation>,
 }
 
 impl Default for App {
@@ -213,6 +225,11 @@ impl Default for App {
             api_enabled: false,
             api_error: String::new(),
             pending_api_job: None,
+            journal: None,
+            journal_error: String::new(),
+            journal_incomplete: false,
+            last_journal_state: None,
+            pending_operation: None,
         }
     }
 }
@@ -265,6 +282,146 @@ impl App {
         ));
         if self.log.len() > 100 {
             self.log.pop_front();
+        }
+    }
+
+    fn start_journal(&mut self) {
+        match AppPaths::for_app("shutter") {
+            Ok(paths) => match OperationJournal::open(&paths.logs_dir()) {
+                Ok(journal) => {
+                    self.journal = Some(journal);
+                    self.journal_event(
+                        "session_started",
+                        json!({"optical_verification": "not_available_no_optical_sensor"}),
+                    );
+                }
+                Err(error) => {
+                    self.journal_incomplete = true;
+                    self.journal_error = format!("Operation journal unavailable: {error}")
+                }
+            },
+            Err(error) => {
+                self.journal_incomplete = true;
+                self.journal_error = format!("Operation journal unavailable: {error}")
+            }
+        }
+    }
+
+    fn journal_identity(&self) -> Value {
+        json!({
+            "device_id": self.info.as_ref().map(|info| info.device_id.as_str()),
+            "endpoint": if self.host.trim().is_empty() { Value::Null } else { json!(format!("{}:{}", self.host.trim(), self.port)) },
+            "device_label": self.info.as_ref().map(|info| info.label.as_str()),
+            "demo": self.demo,
+        })
+    }
+
+    fn journal_event(&mut self, event: &str, detail: Value) {
+        let Some(entry) = self.journal_entry(event, detail) else {
+            return;
+        };
+        let journal = self.journal.as_mut().expect("journal exists for entry");
+        if let Err(error) = journal.enqueue(entry) {
+            self.journal_incomplete = true;
+            self.journal_error = format!("Operation journal: {error}");
+            self.record(self.journal_error.clone());
+        }
+    }
+
+    fn journal_entry(&self, event: &str, detail: Value) -> Option<Value> {
+        let journal = self.journal.as_ref()?;
+        let identity = self.journal_identity();
+        let (timestamp, clock_error) = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(value) => (json!(value.as_millis()), Value::Null),
+            Err(error) => (Value::Null, json!(error.to_string())),
+        };
+        let mut entry = json!({
+            "schema_version": 1,
+            "application": "kohdalab-shutter",
+            "application_version": env!("CARGO_PKG_VERSION"),
+            "session_id": &journal.session_id,
+            "timestamp_utc_unix_ms": timestamp,
+            "clock_error": clock_error,
+            "elapsed_ms": self.started.elapsed().as_millis(),
+            "event": event,
+            "device": identity
+        });
+        entry["detail"] = detail;
+        Some(entry)
+    }
+
+    fn poll_journal(&mut self) {
+        if let Some(journal) = &mut self.journal
+            && let Some(error) = journal.poll_error()
+        {
+            self.journal_incomplete = true;
+            self.journal_error = format!("Operation journal: {error}");
+            self.record(self.journal_error.clone());
+        }
+    }
+
+    fn finish_journal(&mut self) {
+        if let Some(pending) = self.pending_operation.take() {
+            self.journal_event(
+                "operation_outcome",
+                json!({
+                    "operation_id": pending.id,
+                    "requested_action": format!("{:?}", pending.operation).to_lowercase(),
+                    "requested_channel_ids": pending.channels,
+                    "outcome": "unresolved",
+                    "reason": "application_exit_before_transport_outcome",
+                    "optical_verification": "not_available_no_optical_sensor"
+                }),
+            );
+        }
+        self.poll_journal();
+        let Some(entry) = self.journal_entry(
+            "session_finished",
+            json!({
+                "known_record_loss": self.journal_incomplete,
+                "completion": "terminal_record_after_all_previously_queued_records",
+                "gui_exit_acknowledgement": "not_observed_by_writer"
+            }),
+        ) else {
+            return;
+        };
+        let result = self
+            .journal
+            .as_mut()
+            .expect("journal exists for terminal entry")
+            .finish(entry, Duration::from_millis(250));
+        match result {
+            Ok(kohdalab_shutter::journal::FinishStatus::Drained) => {}
+            Ok(kohdalab_shutter::journal::FinishStatus::TimedOut) => {
+                self.journal_incomplete = true;
+                self.journal_error =
+                    "Operation journal terminal acknowledgement timed out; provenance is incomplete"
+                        .into();
+            }
+            Err(error) => {
+                self.journal_incomplete = true;
+                self.journal_error = format!("Operation journal terminal write failed: {error}");
+            }
+        }
+    }
+
+    fn journal_snapshot(&mut self) {
+        let reported = serde_json::to_value(&self.state).expect("snapshot is serializable");
+        if self.last_journal_state.as_ref() == Some(&reported) {
+            return;
+        }
+        self.journal_event(
+            "reported_state_changed",
+            json!({
+                "reported_state": reported,
+                "optical_verification": "not_available_no_optical_sensor",
+                "position_semantics": "reported_servo_command_position_not_optical_measurement"
+            }),
+        );
+        // Only suppress the next identical poll after its evidence entered the
+        // bounded queue. A queue failure must remain visible as incomplete.
+        if !self.journal_incomplete {
+            self.last_journal_state = Some(reported);
         }
     }
 
@@ -610,6 +767,7 @@ impl App {
         self.demo_connected = false;
         self.status.clear();
         self.state = Snapshot::default();
+        self.last_journal_state = None;
         self.last_update = None;
         self.message.clear();
         if let Some(client) = client {
@@ -636,6 +794,7 @@ impl App {
         self.state = snapshot;
         self.last_update = Some(Instant::now());
         self.next_refresh = Instant::now() + Duration::from_secs(1);
+        self.journal_snapshot();
     }
 
     fn refresh(&mut self) {
@@ -660,6 +819,20 @@ impl App {
         {
             return;
         }
+        let pending = PendingOperation {
+            id: uuid::Uuid::new_v4().to_string(),
+            operation,
+            channels: channels.clone(),
+        };
+        self.journal_event(
+            "operation_requested",
+            json!({
+                "operation_id": pending.id,
+                "requested_action": format!("{operation:?}").to_lowercase(),
+                "requested_channel_ids": pending.channels,
+                "optical_verification": "not_available_no_optical_sensor"
+            }),
+        );
         if self.demo {
             for channel in &channels {
                 if let Some(angle) = self.demo_status.get_mut(channel) {
@@ -683,6 +856,16 @@ impl App {
             );
             self.last_command = Some(description.clone());
             self.record(description);
+            self.journal_event(
+                "operation_outcome",
+                json!({
+                    "operation_id": pending.id,
+                    "requested_action": format!("{operation:?}").to_lowercase(),
+                    "requested_channel_ids": channels,
+                    "outcome": "accepted",
+                    "optical_verification": "not_available_no_optical_sensor"
+                }),
+            );
             self.last_update = Some(Instant::now());
             return;
         }
@@ -705,6 +888,7 @@ impl App {
                     };
                 }
             }
+            self.pending_operation = Some(pending);
             self.task(move || {
                 let total = channels.len();
                 client.operate_many(operation, &channels)?;
@@ -793,6 +977,7 @@ impl App {
             Ok(Reply::Connected(client, snapshot, info)) => {
                 self.update_info(info);
                 self.client = Some(client);
+                self.last_journal_state = None;
                 self.apply_snapshot(snapshot);
                 self.message.clear();
             }
@@ -822,9 +1007,34 @@ impl App {
             Ok(Reply::Accepted(description)) => {
                 self.record(description.clone());
                 self.last_command = Some(description);
+                if let Some(pending) = self.pending_operation.take() {
+                    self.journal_event(
+                        "operation_outcome",
+                        json!({
+                            "operation_id": pending.id,
+                            "requested_action": format!("{:?}", pending.operation).to_lowercase(),
+                            "requested_channel_ids": pending.channels,
+                            "outcome": "accepted",
+                            "optical_verification": "not_available_no_optical_sensor"
+                        }),
+                    );
+                }
                 self.next_refresh = Instant::now();
             }
             Err(error) => {
+                if let Some(pending) = self.pending_operation.take() {
+                    self.journal_event(
+                        "operation_outcome",
+                        json!({
+                            "operation_id": pending.id,
+                            "requested_action": format!("{:?}", pending.operation).to_lowercase(),
+                            "requested_channel_ids": pending.channels,
+                            "outcome": "unresolved",
+                            "error": error,
+                            "optical_verification": "not_available_no_optical_sensor"
+                        }),
+                    );
+                }
                 self.queued_toggle = None;
                 self.pending_release = false;
                 self.record(format!("ERROR: {error}"));
@@ -832,6 +1042,7 @@ impl App {
                 self.message = error;
                 self.status.clear();
                 self.state = Snapshot::default();
+                self.last_journal_state = None;
                 if let Some(client) = self.client.take() {
                     std::thread::spawn(move || {
                         let _ = client.release();
@@ -893,6 +1104,9 @@ impl App {
             "layout":self.layout,"order":self.order,"display_order":self.ordered_channels(),"host":self.host,"port":self.port,"busy":self.pending.is_some(),
             "owner":self.control.label(),"device_label":self.info.as_ref().map(|info|info.label.as_str()),"selected_channels":self.selected,"channels":channels,"devices":self.devices_json(),
             "message":self.message,"last_command":self.last_command,
+            "journal_path":self.journal.as_ref().map(|journal| journal.path.to_string_lossy().to_string()),
+            "journal_error":if self.journal_error.is_empty() { Value::Null } else { json!(self.journal_error) },
+            "journal_incomplete":self.journal_incomplete,
             "state_semantics":"commanded_not_sensor_verified"})
     }
 
@@ -1405,6 +1619,9 @@ impl App {
         }
         if !self.preferences_error.is_empty() {
             ui.label(RichText::new(&self.preferences_error).small().color(ORANGE));
+        }
+        if !self.journal_error.is_empty() {
+            ui.label(RichText::new(&self.journal_error).small().color(ORANGE));
         }
         if self.error {
             ui.label(RichText::new(&self.message).small().color(RED));
@@ -2100,6 +2317,9 @@ impl eframe::App for App {
         if let Some(client) = self.client.take() {
             let _ = client.release();
         }
+        // Device release remains the priority. This is the sole bounded wait
+        // for journal durability, performed only while the app is exiting.
+        self.finish_journal();
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -2107,6 +2327,7 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_journal();
         self.receive();
         self.process_api();
         self.autosave_labels();
@@ -2409,6 +2630,9 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             app.api_enabled = app.api.is_some();
             app.api_directory = args.api_directory.clone();
             app.init_preferences(preferences_path);
+            if !args.demo {
+                app.start_journal();
+            }
             if args.demo && !args.channels.is_empty() {
                 if args.channels.iter().any(|ch| *ch > 3) {
                     return Err("Demo channels must be in 0..3".into());
@@ -2471,6 +2695,114 @@ mod tests {
         assert!(app.status.is_empty());
         assert!(app.client.is_none());
         assert!(app.error);
+    }
+
+    #[test]
+    fn journal_persists_identity_operation_and_changed_reported_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = App::demo();
+        app.journal = Some(OperationJournal::open(directory.path()).unwrap());
+        let path = app.journal.as_ref().unwrap().path.clone();
+        app.journal_event("session_started", json!({}));
+        app.apply_snapshot(Snapshot::demo(&app.demo_status));
+        app.apply_snapshot(Snapshot::demo(&app.demo_status));
+        app.operate(Operation::Open, vec![0]);
+        app.finish_journal();
+
+        let lines: Vec<Value> = std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line["event"] == "reported_state_changed")
+                .count(),
+            2
+        );
+        assert_eq!(lines[0]["event"], "session_started");
+        assert!(lines[0]["elapsed_ms"].as_u64().is_some());
+        let requested = lines
+            .iter()
+            .find(|line| line["event"] == "operation_requested")
+            .unwrap();
+        let outcome = lines
+            .iter()
+            .find(|line| line["event"] == "operation_outcome")
+            .unwrap();
+        assert_eq!(requested["detail"]["requested_channel_ids"], json!([0]));
+        assert_eq!(outcome["detail"]["outcome"], "accepted");
+        assert_eq!(
+            requested["detail"]["operation_id"],
+            outcome["detail"]["operation_id"]
+        );
+        assert_eq!(outcome["device"]["device_id"], "e6614104037b2a21");
+        assert_eq!(
+            outcome["detail"]["optical_verification"],
+            "not_available_no_optical_sensor"
+        );
+        assert!(outcome["session_id"].as_str().is_some());
+        assert_eq!(outcome["application_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            app.snapshot_json()["journal_path"],
+            json!(
+                app.journal
+                    .as_ref()
+                    .unwrap()
+                    .path
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+        assert_eq!(app.snapshot_json()["journal_incomplete"], false);
+    }
+
+    #[test]
+    fn journal_error_state_does_not_block_demo_close() {
+        let mut app = App::demo();
+        app.journal_incomplete = true;
+        app.journal_error = "journal write failed: disk full".into();
+        app.operate(Operation::Close, vec![1]);
+        assert_eq!(app.demo_status[&1], 0);
+        assert!(!app.journal_error.is_empty());
+        assert_eq!(app.snapshot_json()["journal_incomplete"], true);
+    }
+
+    #[test]
+    fn exit_drains_terminal_marker_and_marks_pending_operation_unresolved() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = App::demo();
+        app.journal = Some(OperationJournal::open(directory.path()).unwrap());
+        let path = app.journal.as_ref().unwrap().path.clone();
+        app.journal_event("session_started", json!({}));
+        app.pending_operation = Some(PendingOperation {
+            id: "operation-at-exit".into(),
+            operation: Operation::Close,
+            channels: vec![1],
+        });
+        app.finish_journal();
+        let entries: Vec<Value> = std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let unresolved = entries
+            .iter()
+            .find(|entry| entry["event"] == "operation_outcome")
+            .unwrap();
+        assert_eq!(unresolved["detail"]["operation_id"], "operation-at-exit");
+        assert_eq!(unresolved["detail"]["outcome"], "unresolved");
+        assert_eq!(entries.last().unwrap()["event"], "session_finished");
+        assert_eq!(
+            entries.last().unwrap()["detail"]["known_record_loss"],
+            false
+        );
+        assert_eq!(
+            entries.last().unwrap()["detail"]["gui_exit_acknowledgement"],
+            "not_observed_by_writer"
+        );
+        assert!(!app.journal_incomplete);
     }
 
     #[test]

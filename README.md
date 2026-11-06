@@ -127,6 +127,20 @@ See the [Python client guide](bindings/python/README.md) and [GUI API reference]
 
 詳しくは[Pythonクライアント](bindings/python/README.md)と[GUI API仕様](docs/gui-api.md)を参照してください。Open/Close表示にはPico側も更新します。旧ファームウェアでは操作は可能ですが、状態はUnknownと表示します。
 
+## Operation journal / 操作ジャーナル
+
+Each normal GUI session appends JSON Lines under `~/.kohdalab/shutter/logs/` (Windows: `%USERPROFILE%\\.kohdalab\\shutter\\logs\\`). One file is created per session as `shutter-session-<UUID>.jsonl`, beginning with `session_started`. Each record includes a UTC Unix-millisecond timestamp (or explicit clock error), monotonic elapsed milliseconds, session UUID, app version, Pico device ID, endpoint and label. An operation has a UUID-linked `operation_requested` record followed by `operation_outcome` (`accepted` or `unresolved`); both carry the actual numeric CH IDs. Reported state is appended only when it changes, including reported servo position, target, busy flag and Open/Close calibration. The journal contains no control tokens or Wi-Fi credentials. A bounded background writer performs disk synchronization; queue/disk failures make provenance explicitly incomplete in the GUI and API status, but never delay or prevent Close/Stop safety actions.
+
+On normal exit, after device release, the app records an unresolved in-flight operation if needed and requests an ordered `session_finished` marker. It waits at most 250 ms for writer acknowledgement; a timeout is reported as incomplete, never as a confirmed drain. The terminal record describes known record loss and writer ordering, not whether the GUI received the acknowledgement; a delayed writer may finish after the GUI timed out.
+
+The records distinguish Pico-reported/commanded servo position from optical verification: this controller has no optical sensor, so an Open/Close record is not evidence of transmitted light. Retain the JSONL with the corresponding measurement record when provenance is required.
+
+通常GUIの各セッションは `~/.kohdalab/shutter/logs/`（Windows: `%USERPROFILE%\\.kohdalab\\shutter\\logs\\`）にJSON Linesを追記します。セッションごとに `shutter-session-<UUID>.jsonl` を作成し、先頭は `session_started` です。各記録にはUTC Unixミリ秒時刻（時計異常時は明示的なエラー）、単調増加の経過ミリ秒、セッションUUID、アプリ版、Pico ID、接続先、ラベルを含めます。操作は同じUUIDの `operation_requested` と `operation_outcome`（`accepted` または `unresolved`）で結び、両方に実際の数値CH IDを記録します。状態記録には変化時のみPico報告のサーボ位置・目標・busy・Open/Close校正値を含めます。制御トークンとWi-Fi認証情報は保存しません。ディスク同期は上限付きのバックグラウンド書込みで行い、キュー/ディスク失敗はGUIとAPI状態に「来歴不完全」として明示しますが、Close/Stop等の安全操作を遅延・妨害しません。
+
+通常終了では、機器のrelease後に未完了操作を必要に応じてunresolvedとして記録し、順序保証された `session_finished` マーカーを要求します。書込み側の確認待ちは最大250 msであり、タイムアウトは完了済みとは扱わず来歴不完全として扱います。終了レコードは既知の記録欠落と書込み順序を示し、GUI側の確認受信を保証しません。書込みがGUIのタイムアウト後に完了する場合もあります。
+
+Pico報告/指令のサーボ位置と光学的な透過確認は明確に区別します。本コントローラーには光センサーがないため、Open/Close記録は透過光の確認ではありません。来歴が必要な測定では対応する測定記録とJSONLを一緒に保管してください。
+
 ## Development / 開発
 
 ```sh
