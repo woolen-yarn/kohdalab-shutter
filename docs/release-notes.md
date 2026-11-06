@@ -1,29 +1,17 @@
-# KohdaLab Shutter 0.6.5
+# KohdaLab Shutter 0.6.6
 
-## Changes
+## Persistent operation history / 操作履歴の保存
 
-PC preference saves now remain pending after a transient failure and retry after five seconds. The visible error clears only after a successful save.
+Normal GUI sessions now record a host-side JSONL journal under `~/.kohdalab/shutter/logs`. Each operation preserves numeric channel IDs, a linked request/outcome ID, device identity, UTC and monotonic timing. Changed reported servo states and calibration are retained. These are controller reports, not optical measurements. No access tokens or Wi-Fi credentials are recorded.
 
-The bundled common Python control client now ignores an empty native home-directory environment variable and uses a valid platform fallback. Its JSON Lines response reader scans only newly received bytes, while retaining the established response-size limit and error behavior.
+通常GUIの操作を`~/.kohdalab/shutter/logs`のJSONLへ保存します。実チャンネル番号、要求・結果を結ぶID、機器情報、UTC・単調時計の時刻、変化したサーボ報告値と校正を記録します。コントローラーの報告であり、光学的な開閉測定ではありません。アクセストークン・Wi-Fi認証情報は保存しません。
 
-## Compatibility and safety
+A bounded background queue keeps disk synchronization off the control path. Storage/queue errors are visible in GUI/API without blocking Close. Normal exit records unresolved operations and requests an ordered terminal record, with a maximum 250 ms acknowledgement wait. Missing terminal records, known record loss and unresolved outcomes remain distinguishable; a journal is not a guarantee of physical shutter closure.
 
-The common SDK remains 1.0.1 and the control wire protocol remains version 1. Shutter command semantics, channel state, lease behavior, Pico firmware, and safety policy are unchanged. Existing settings remain preserved; this release does not migrate or delete profiles.
+上限付きの別スレッドで書き込み、disk同期が操作を妨げない構成にしました。記録失敗はGUI／APIへ表示し、Closeを妨げません。通常終了時は未確定操作を記録し、終了レコードの確認を最大250 ms待ちます。終了レコード欠落・既知の記録欠落・操作結果未確定を区別し、実際の光学的閉鎖を保証した記録とは扱いません。
 
-## Downloads and validation
+## Compatibility and checks / 互換性と検証
 
-This release provides Windows Setup and portable artifacts, supported macOS distribution, and corresponding source/build evidence. Windows artifacts are unsigned; supported macOS applications are ad hoc signed and not notarized. CI checks the packaged software, installer evidence, and artifact/source hashes. It does not constitute new physical Pico, wiring, or optical-path qualification.
+Shutter commands, Pico firmware, lease and safety policies are unchanged. Existing profiles are retained. Tests cover event identities, deduplication, disk failure, immediate exit and bounded writer timeout. Windows Setup/portable and Mac packages are verified in release CI. No new hardware qualification is claimed.
 
-## 日本語
-
-PC設定の保存が一時的に失敗した場合は未保存状態を保持し、5秒後に再試行します。表示上のエラーは保存に成功した後だけ消えます。
-
-同梱の共通Python制御クライアントは、OS固有のホームディレクトリ環境変数が空の場合に有効なプラットフォーム側フォールバックを使用します。JSON Lines応答は新しく受信したバイト列だけを走査し、既存の応答サイズ上限とエラー動作を維持します。
-
-## 互換性と安全性
-
-共通SDKは1.0.1、制御通信プロトコルはv1のままです。シャッター指令の意味、チャンネル状態、leaseの動作、Pico firmware、安全方針は変更しません。既存設定は保持し、プロファイルの移行・削除は行いません。
-
-## 配布と検証
-
-Windows Setupとportable成果物、対応するmacOS配布物、source/build証跡を提供します。Windows成果物は未署名で、対応するmacOS appはad hoc署名・未notarizeです。CIはパッケージソフトウェア、installer証跡、成果物とソースのハッシュを検証しますが、新たなPico、配線、光路の実機認定を意味しません。
+指令、Pico firmware、lease、安全方針、既存設定は維持します。操作ID・重複抑制・書込失敗・直後終了・書込み待機上限をテストし、Windows Setup／portableとMac配布物をCIで検証します。新たな実機検証ではありません。
