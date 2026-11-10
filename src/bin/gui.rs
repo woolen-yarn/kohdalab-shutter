@@ -163,6 +163,7 @@ struct App {
     order: Order,
     control: Control,
     api: Option<remote::Server>,
+    api_wake: Arc<dyn Fn() + Send + Sync>,
     api_enabled: bool,
     api_error: String,
     api_directory: Option<PathBuf>,
@@ -226,6 +227,7 @@ impl Default for App {
             order: Order::Ascending,
             control: Control::default(),
             api: None,
+            api_wake: Arc::new(|| {}),
             api_directory: None,
             api_enabled: false,
             api_error: String::new(),
@@ -1694,6 +1696,14 @@ impl App {
         });
     }
 
+    fn start_api(&mut self) -> Result<(), String> {
+        self.api = Some(remote::Server::start_with_waker(
+            self.api_directory.clone(),
+            self.api_wake.clone(),
+        )?);
+        Ok(())
+    }
+
     fn automation_settings(&mut self, ui: &mut egui::Ui) {
         let mut enabled = self.api_enabled;
         if ui
@@ -1706,8 +1716,8 @@ impl App {
             self.api_enabled = enabled;
             self.api_error.clear();
             if enabled {
-                match remote::Server::start(self.api_directory.clone()) {
-                    Ok(server) => self.api = Some(server),
+                match self.start_api() {
+                    Ok(()) => {}
                     Err(error) => {
                         self.api_error = format!("Local API could not start: {error}");
                     }
@@ -1753,8 +1763,8 @@ impl App {
                 self.port = preferences.manual_port;
                 self.api_enabled |= preferences.local_control_api;
                 if self.api_enabled && self.api.is_none() {
-                    match remote::Server::start(self.api_directory.clone()) {
-                        Ok(server) => self.api = Some(server),
+                    match self.start_api() {
+                        Ok(()) => {}
                         Err(error) => {
                             self.api_error = format!("Local API could not start: {error}")
                         }
@@ -2129,17 +2139,17 @@ impl App {
         }
     }
 
-    fn header(&mut self, ctx: &egui::Context) {
+    fn header(&mut self, root: &mut egui::Ui) {
         let connected = self.connected();
-        egui::TopBottomPanel::top("header")
-            .exact_height(44.0)
+        egui::Panel::top("header")
+            .exact_size(44.0)
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
                     .fill(PANEL)
                     .inner_margin(egui::Margin::symmetric(12, 7)),
             )
-            .show(ctx, |ui| {
+            .show_inside(root, |ui| {
                 ui.horizontal(|ui| {
                     if connected {
                         status_dot(ui, if self.error { RED } else { TEAL });
@@ -2247,7 +2257,8 @@ impl App {
         }
     }
 
-    fn draw(&mut self, ctx: &egui::Context) {
+    fn draw(&mut self, root: &mut egui::Ui) {
+        let ctx = root.ctx().clone();
         let desired = self.desired_size();
         if self.last_size != Some(desired) {
             self.last_size = Some(desired);
@@ -2258,21 +2269,21 @@ impl App {
                 "Connect · KohdaLab Shutter".into()
             }));
         }
-        self.header(ctx);
+        self.header(root);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
                     .fill(BG)
                     .inner_margin(if self.connected() { 12 } else { 20 }),
             )
-            .show(ctx, |ui| {
+            .show_inside(root, |ui| {
                 if self.connected() {
                     self.channels_panel(ui);
                 } else {
                     egui::ScrollArea::vertical().show(ui, |ui| self.connection_panel(ui));
                 }
             });
-        self.settings_panel(ctx);
+        self.settings_panel(&ctx);
     }
 
     fn capture(&mut self, ctx: &egui::Context) {
@@ -2352,7 +2363,7 @@ impl eframe::App for App {
         BG.to_normalized_gamma_f32()
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_journal();
         self.receive();
         self.process_api();
@@ -2361,8 +2372,13 @@ impl eframe::App for App {
         if self.connected() && self.pending.is_none() && Instant::now() >= self.next_refresh {
             self.refresh();
         }
-        self.draw(ctx);
-        self.capture(ctx);
+        ctx.request_repaint_after(self.repaint_interval());
+    }
+
+    fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = root.ctx().clone();
+        self.draw(root);
+        self.capture(&ctx);
         ctx.request_repaint_after(self.repaint_interval());
     }
 }
@@ -2532,7 +2548,7 @@ fn style(ctx: &egui::Context) {
     visuals.widgets.active.bg_fill = BLUE;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(0.6_f32, BORDER);
     ctx.set_visuals(visuals);
-    ctx.style_mut(|style| {
+    ctx.global_style_mut(|style| {
         style.spacing.item_spacing = Vec2::new(8.0, 7.0);
         style.spacing.button_padding = Vec2::new(10.0, 6.0);
         style.spacing.interact_size = Vec2::new(36.0, 30.0);
@@ -2614,11 +2630,6 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             std::fs::create_dir_all(parent)?;
         }
     }
-    let api = if args.gui_api {
-        Some(remote::Server::start(args.api_directory.clone()).map_err(std::io::Error::other)?)
-    } else {
-        None
-    };
     let success = Arc::new(AtomicBool::new(false));
     let flag = success.clone();
     let expected_screenshot = args.screenshot.is_some();
@@ -2652,9 +2663,13 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             {
                 app.preferences_error = format!("Default settings could not be created: {error}");
             }
-            app.api = api;
-            app.api_enabled = app.api.is_some();
+            let wake_ctx = cc.egui_ctx.clone();
+            app.api_wake = Arc::new(move || wake_ctx.request_repaint());
             app.api_directory = args.api_directory.clone();
+            if args.gui_api {
+                app.start_api().map_err(std::io::Error::other)?;
+            }
+            app.api_enabled = app.api.is_some();
             app.init_preferences(preferences_path);
             if !args.demo {
                 app.start_journal();
@@ -2734,6 +2749,23 @@ mod tests {
         sender.send(result).unwrap();
         app.pending = Some(receiver);
         app.receive();
+    }
+
+    #[test]
+    fn hidden_gui_logic_receives_worker_completion_without_drawing() {
+        use eframe::App as _;
+        let mut app = App::default();
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(Ok(Reply::Accepted("Close accepted".into())))
+            .unwrap();
+        app.pending = Some(receiver);
+        app.logic(
+            &egui::Context::default(),
+            &mut eframe::Frame::_new_kittest(),
+        );
+        assert!(app.pending.is_none());
+        assert_eq!(app.last_command.as_deref(), Some("Close accepted"));
     }
 
     #[test]
@@ -3203,7 +3235,7 @@ mod tests {
     }
 
     fn ui_frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
-        ctx.run(
+        ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -3401,7 +3433,7 @@ mod tests {
         }
         let ctx = egui::Context::default();
         style(&ctx);
-        let output = ctx.run(
+        let output = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,

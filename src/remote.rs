@@ -38,6 +38,14 @@ pub struct Server {
 impl Server {
     /// Start a private, loopback-only API endpoint and publish its descriptor.
     pub fn start(directory: Option<PathBuf>) -> Result<Self, String> {
+        Self::start_with_waker(directory, Arc::new(|| {}))
+    }
+
+    /// Start the bridge and wake the GUI whenever a request is queued.
+    pub fn start_with_waker(
+        directory: Option<PathBuf>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> Result<Self, String> {
         let directory = match directory {
             Some(path) => path,
             None => AppPaths::for_app("shutter")
@@ -90,11 +98,12 @@ impl Server {
                             if let Some(permit) = Permit::acquire(&peers) {
                                 let sender = sender.clone();
                                 let token = token.clone();
+                                let wake = wake.clone();
                                 let _ = thread::Builder::new()
                                     .name("shutter-api-peer".into())
                                     .spawn(move || {
                                         let _permit = permit;
-                                        let _ = serve(stream, &token, &sender);
+                                        let _ = serve(stream, &token, &sender, &wake);
                                     });
                             }
                         }
@@ -153,6 +162,7 @@ fn serve(
     mut stream: TcpStream,
     token: &str,
     sender: &mpsc::SyncSender<Request>,
+    wake: &Arc<dyn Fn() + Send + Sync>,
 ) -> Result<(), String> {
     // Accepted descriptors may inherit O_NONBLOCK on macOS; workers use a
     // single absolute deadline instead so a slow trickle cannot extend it.
@@ -204,24 +214,29 @@ fn serve(
                             native
                         }
                     }
-                    Ok(()) => match deadline.checked_duration_since(Instant::now()) {
-                        Some(remaining) => receive.recv_timeout(remaining).unwrap_or_else(|_| {
-                            let native = envelope_error("timeout", "GUI request timed out");
-                            if common {
-                                common_response(&body, native)
-                            } else {
-                                native
+                    Ok(()) => {
+                        wake();
+                        match deadline.checked_duration_since(Instant::now()) {
+                            Some(remaining) => {
+                                receive.recv_timeout(remaining).unwrap_or_else(|_| {
+                                    let native = envelope_error("timeout", "GUI request timed out");
+                                    if common {
+                                        common_response(&body, native)
+                                    } else {
+                                        native
+                                    }
+                                })
                             }
-                        }),
-                        None => {
-                            let native = envelope_error("timeout", "GUI request timed out");
-                            if common {
-                                common_response(&body, native)
-                            } else {
-                                native
+                            None => {
+                                let native = envelope_error("timeout", "GUI request timed out");
+                                if common {
+                                    common_response(&body, native)
+                                } else {
+                                    native
+                                }
                             }
                         }
-                    },
+                    }
                 }
             }
         },
@@ -322,6 +337,36 @@ mod tests {
         drop(server);
         assert!(!descriptor.exists());
     }
+    #[test]
+    fn queued_authenticated_request_wakes_idle_gui() {
+        let directory = tempfile::tempdir().unwrap();
+        let (wake_tx, wake_rx) = mpsc::channel();
+        let server = Server::start_with_waker(
+            Some(directory.path().into()),
+            Arc::new(move || {
+                wake_tx.send(()).unwrap();
+            }),
+        )
+        .unwrap();
+        let declaration: Value =
+            serde_json::from_slice(&std::fs::read(&server.descriptor).unwrap()).unwrap();
+        let port = declaration["port"].as_u64().unwrap() as u16;
+        assert_eq!(
+            exchange(port, json!({"token":"wrong","method":"status"}))["error_code"],
+            "authentication"
+        );
+        assert!(wake_rx.try_recv().is_err());
+        let token = declaration["token"].clone();
+        let worker =
+            thread::spawn(move || exchange(port, json!({"token":token,"method":"status"})));
+        // No GUI polling: only the wake signal allows this request to progress.
+        wake_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let request = server.requests.try_recv().unwrap();
+        request.reply.send(json!({"ok":true,"result":{}})).unwrap();
+        assert_eq!(worker.join().unwrap()["ok"], true);
+        assert!(wake_rx.try_recv().is_err());
+    }
+
     #[test]
     fn oversized_request_never_reaches_gui() {
         let directory = tempfile::tempdir().unwrap();

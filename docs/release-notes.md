@@ -1,6 +1,24 @@
-# KohdaLab Shutter 0.6.7
+# KohdaLab Shutter 0.6.8
 
-## Faster shutter feedback / 開閉表示の応答改善
+## Maintained GUI runtime and responsive API / GUI実行基盤とAPI応答
+
+The desktop GUI now uses the maintained eframe/egui 0.34 stack and no longer ships the unmaintained font parser. Authenticated API requests wake an idle GUI on every startup path. Controller polling and API processing run independently of visible drawing, so a covered window keeps processing requests and operation outcomes.
+
+Desktop GUIを保守中のeframe/egui 0.34系へ更新し、保守終了したフォント解析を除去しました。認証済みAPI要求はすべての起動経路で待機中GUIを起こします。制御照会・API処理を描画から分離し、ウィンドウが隠れた場合も要求と操作結果の処理を継続します。
+
+The shared Python control client now serializes lease release/reacquisition and ignores retired heartbeat workers. A queued heartbeat from a voluntarily released lease cannot break a later acquisition; real active-lease revocation remains an error.
+
+共通Python制御クライアントでは、制御権の解放・再取得を直列化し、終了済みheartbeatを無視します。正常に解放した制御権の待機heartbeatが次の取得を失敗させることはなく、実際の制御権喪失は引き続きエラーです。
+
+## Compatibility and checks / 互換性と検証
+
+Shutter commands, Pico firmware, profile format, lease policy and safety behavior are unchanged. Existing profiles and operation journals remain usable. Windows Setup/portable and macOS universal ZIP/DMG are verified in CI, including an Intel Mac package smoke test and a native Demo control API test. Windows binaries are unsigned; macOS applications use ad hoc signatures and are not notarized. No new physical-device qualification was performed.
+
+シャッター指令、Pico firmware、設定形式、lease方針、安全動作は変更していません。既存設定・操作履歴は継続して使えます。Windows Setup／portableとmacOS universal ZIP／DMGをCIで検証し、Intel Macの配布アプリ確認とDemo制御API試験も実施しました。Windows版は未署名、macOS版はアドホック署名でApple公証は受けていません。今回、新たな実機適合試験は実施していません。
+
+## 0.6.7 — Faster shutter feedback / 開閉表示の応答改善
+
+### Faster shutter feedback / 開閉表示の応答改善
 
 While selected shutters report Moving, the GUI requests another state update after 100 ms instead of one second. Active tasks and motion repaint every 50 ms; settled shutters return to the existing idle intervals. Transport latency is additional, and only one request task runs at a time. Open/Close remains based on controller feedback; the schematic is not an optical measurement. Motor commands, firmware, lease and safety policies are unchanged.
 
