@@ -12,6 +12,7 @@ const QUEUE_CAPACITY: usize = 256;
 
 enum Command {
     Entry(Value),
+    Flush(mpsc::Sender<Result<(), String>>),
     Finish(Value, mpsc::Sender<Result<(), String>>),
 }
 
@@ -85,6 +86,30 @@ impl OperationJournal {
         }
     }
 
+    /// Test support: wait for entries queued before this call to reach the writer.
+    /// Application controls never invoke this test-only synchronization seam.
+    #[doc(hidden)]
+    pub fn flush_for_test(&mut self, timeout: Duration) -> Result<FinishStatus, String> {
+        if self.poisoned {
+            return Err("journal writer is unavailable; provenance is incomplete".into());
+        }
+        if let Some(error) = self.poll_error() {
+            return Err(error);
+        }
+        let (sender, receiver) = mpsc::channel();
+        match self.sender.try_send(Command::Flush(sender)) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => {
+                return Err("journal queue is full; flush was not queued".into());
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.poisoned = true;
+                return Err("journal writer stopped; flush was not queued".into());
+            }
+        }
+        wait_for_ack(receiver, timeout, &mut self.poisoned, "flush")
+    }
+
     /// Request an ordered terminal record and wait only for this bounded exit
     /// handshake. Normal GUI controls never call this method.
     pub fn finish(&mut self, entry: Value, timeout: Duration) -> Result<FinishStatus, String> {
@@ -105,17 +130,26 @@ impl OperationJournal {
                 return Err("journal writer stopped; terminal record was not queued".into());
             }
         }
-        match receiver.recv_timeout(timeout) {
-            Ok(Ok(())) => Ok(FinishStatus::Drained),
-            Ok(Err(error)) => {
-                self.poisoned = true;
-                Err(error)
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(FinishStatus::TimedOut),
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                self.poisoned = true;
-                Err("journal writer stopped before terminal record".into())
-            }
+        wait_for_ack(receiver, timeout, &mut self.poisoned, "terminal record")
+    }
+}
+
+fn wait_for_ack(
+    receiver: Receiver<Result<(), String>>,
+    timeout: Duration,
+    poisoned: &mut bool,
+    operation: &str,
+) -> Result<FinishStatus, String> {
+    match receiver.recv_timeout(timeout) {
+        Ok(Ok(())) => Ok(FinishStatus::Drained),
+        Ok(Err(error)) => {
+            *poisoned = true;
+            Err(error)
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => Ok(FinishStatus::TimedOut),
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            *poisoned = true;
+            Err(format!("journal writer stopped before {operation}"))
         }
     }
 }
@@ -130,6 +164,11 @@ fn writer(mut file: File, receiver: Receiver<Command>, errors: mpsc::Sender<Stri
                     let _ = errors.send(format!("journal write failed: {error}"));
                     break;
                 }
+            }
+            Command::Flush(reply) => {
+                // Every preceding Entry is synchronised before the writer can
+                // receive this barrier, so acknowledgement is an ordered drain.
+                let _ = reply.send(Ok(()));
             }
             Command::Finish(entry, reply) => {
                 let result = write_entry(&mut file, &entry)
@@ -180,6 +219,24 @@ mod tests {
             .collect();
         assert_eq!(entries[0]["event"], "first");
         assert_eq!(entries[1]["event"], "session_finished");
+    }
+
+    #[test]
+    fn flush_confirms_prior_entries_before_reading() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut journal = OperationJournal::open(directory.path()).unwrap();
+        let path = journal.path.clone();
+        journal
+            .enqueue(serde_json::json!({"event":"first"}))
+            .unwrap();
+        assert_eq!(
+            journal.flush_for_test(Duration::from_secs(1)).unwrap(),
+            FinishStatus::Drained
+        );
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "{\"event\":\"first\"}\n"
+        );
     }
 
     #[test]

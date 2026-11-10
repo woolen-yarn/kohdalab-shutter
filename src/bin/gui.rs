@@ -44,6 +44,8 @@ const IDLE_REFRESH: Duration = Duration::from_secs(1);
 const MOVING_REFRESH: Duration = Duration::from_millis(100);
 const IDLE_REPAINT: Duration = Duration::from_millis(100);
 const ACTIVE_REPAINT: Duration = Duration::from_millis(50);
+/// Keep application exit responsive even if the journal writer is blocked on I/O.
+const JOURNAL_EXIT_ACK_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -368,6 +370,13 @@ impl App {
     }
 
     fn finish_journal(&mut self) {
+        self.finish_journal_with_timeout(JOURNAL_EXIT_ACK_TIMEOUT);
+    }
+
+    /// Finish the ordered journal stream. Tests can use a longer bounded timeout
+    /// so filesystem scheduling cannot turn a successful-drain assertion into a
+    /// race with the asynchronous writer.
+    fn finish_journal_with_timeout(&mut self, timeout: Duration) {
         if let Some(pending) = self.pending_operation.take() {
             self.journal_event(
                 "operation_outcome",
@@ -396,7 +405,14 @@ impl App {
             .journal
             .as_mut()
             .expect("journal exists for terminal entry")
-            .finish(entry, Duration::from_millis(250));
+            .finish(entry, timeout);
+        self.record_journal_finish(result);
+    }
+
+    fn record_journal_finish(
+        &mut self,
+        result: Result<kohdalab_shutter::journal::FinishStatus, String>,
+    ) {
         match result {
             Ok(kohdalab_shutter::journal::FinishStatus::Drained) => {}
             Ok(kohdalab_shutter::journal::FinishStatus::TimedOut) => {
@@ -2794,7 +2810,15 @@ mod tests {
         app.apply_snapshot(Snapshot::demo(&app.demo_status));
         app.apply_snapshot(Snapshot::demo(&app.demo_status));
         app.operate(Operation::Open, vec![0]);
-        app.finish_journal();
+        assert_eq!(
+            app.journal
+                .as_mut()
+                .unwrap()
+                .flush_for_test(Duration::from_secs(1))
+                .unwrap(),
+            kohdalab_shutter::journal::FinishStatus::Drained
+        );
+        app.finish_journal_with_timeout(Duration::from_secs(1));
 
         let lines: Vec<Value> = std::fs::read_to_string(path)
             .unwrap()
@@ -2868,7 +2892,15 @@ mod tests {
             operation: Operation::Close,
             channels: vec![1],
         });
-        app.finish_journal();
+        assert_eq!(
+            app.journal
+                .as_mut()
+                .unwrap()
+                .flush_for_test(Duration::from_secs(1))
+                .unwrap(),
+            kohdalab_shutter::journal::FinishStatus::Drained
+        );
+        app.finish_journal_with_timeout(Duration::from_secs(1));
         let entries: Vec<Value> = std::fs::read_to_string(path)
             .unwrap()
             .lines()
@@ -2890,6 +2922,16 @@ mod tests {
             "not_observed_by_writer"
         );
         assert!(!app.journal_incomplete);
+        assert_eq!(JOURNAL_EXIT_ACK_TIMEOUT, Duration::from_millis(250));
+    }
+
+    #[test]
+    fn terminal_ack_timeout_marks_journal_incomplete() {
+        let mut app = App::demo();
+        app.record_journal_finish(Ok(kohdalab_shutter::journal::FinishStatus::TimedOut));
+        assert!(app.journal_incomplete);
+        assert!(app.journal_error.contains("timed out"));
+        assert_eq!(JOURNAL_EXIT_ACK_TIMEOUT, Duration::from_millis(250));
     }
 
     #[test]

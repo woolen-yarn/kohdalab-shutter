@@ -1,4 +1,4 @@
-# KohdaLab Shutter 0.6.8
+# KohdaLab Shutter 0.6.9
 
 ## Maintained GUI runtime and responsive API / GUI実行基盤とAPI応答
 
@@ -9,6 +9,10 @@ Desktop GUIを保守中のeframe/egui 0.34系へ更新し、保守終了した�
 The shared Python control client now serializes lease release/reacquisition and ignores retired heartbeat workers. A queued heartbeat from a voluntarily released lease cannot break a later acquisition; real active-lease revocation remains an error.
 
 共通Python制御クライアントでは、制御権の解放・再取得を直列化し、終了済みheartbeatを無視します。正常に解放した制御権の待機heartbeatが次の取得を失敗させることはなく、実際の制御権喪失は引き続きエラーです。
+
+Journal-content tests now wait for an ordered writer acknowledgement before inspecting records. The production 250 ms exit acknowledgement budget is unchanged, and timeout still marks provenance incomplete. This separates record-content verification from disk-speed-dependent scheduling.
+
+操作履歴の内容試験はwriterからの順序付き完了通知を待ってから記録を確認します。実アプリの終了ack上限250 msは変更せず、時間切れは引き続き証跡不完全として記録します。記録内容の検証とディスク速度に依存するスケジューリングを分離しました。
 
 ## Compatibility and checks / 互換性と検証
 
