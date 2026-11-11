@@ -1,8 +1,15 @@
+[workspace]
+members = [".", "crates/kohdalab-control-protocol"]
+resolver = "3"
+
+[workspace.package]
+rust-version = "1.92"
+
 [package]
 name = "kohdalab-shutter"
 version = "0.6.9"
 edition = "2024"
-rust-version = "1.92"
+rust-version.workspace = true
 description = "Rust desktop controller for the KohdaLab Pico W shutter"
 license = "MIT"
 default-run = "kohdalab-shutter-gui"
