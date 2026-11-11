@@ -173,7 +173,7 @@ struct App {
     journal: Option<OperationJournal>,
     journal_error: String,
     journal_incomplete: bool,
-    last_journal_state: Option<Value>,
+    last_journal_state: Option<(Value, Vec<u8>)>,
     pending_operation: Option<PendingOperation>,
 }
 
@@ -430,13 +430,22 @@ impl App {
 
     fn journal_snapshot(&mut self) {
         let reported = serde_json::to_value(&self.state).expect("snapshot is serializable");
-        if self.last_journal_state.as_ref() == Some(&reported) {
+        let faulted: Vec<_> = self
+            .state
+            .channels
+            .keys()
+            .copied()
+            .filter(|&channel| self.channel_fault(channel))
+            .collect();
+        let current = (reported, faulted);
+        if self.last_journal_state.as_ref() == Some(&current) {
             return;
         }
         self.journal_event(
             "reported_state_changed",
             json!({
-                "reported_state": reported,
+                "reported_state": current.0,
+                "faulted_channel_ids": current.1,
                 "optical_verification": "not_available_no_optical_sensor",
                 "position_semantics": "reported_servo_command_position_not_optical_measurement"
             }),
@@ -444,7 +453,7 @@ impl App {
         // Only suppress the next identical poll after its evidence entered the
         // bounded queue. A queue failure must remain visible as incomplete.
         if !self.journal_incomplete {
-            self.last_journal_state = Some(reported);
+            self.last_journal_state = Some(current);
         }
     }
 
@@ -588,6 +597,23 @@ impl App {
             .filter(|label| !label.trim().is_empty())
             .cloned()
             .unwrap_or_else(|| format!("CH{channel:02}"))
+    }
+
+    fn channel_fault(&self, channel: u8) -> bool {
+        self.info
+            .as_ref()
+            .is_some_and(|info| info.channels.iter().any(|ch| ch.id == channel && ch.fault))
+    }
+
+    fn displayed_channel_state(&self, channel: u8) -> &'static str {
+        if self.channel_fault(channel) {
+            "Fault"
+        } else {
+            self.state
+                .channels
+                .get(&channel)
+                .map_or("Unknown", |state| state.name())
+        }
     }
 
     fn changed_label(&mut self) {
@@ -1037,8 +1063,8 @@ impl App {
                 self.update_info(info);
             }
             Ok(Reply::Refreshed(status, info)) => {
-                self.apply_snapshot(status);
                 self.update_info(info);
+                self.apply_snapshot(status);
                 self.message.clear();
             }
             Ok(Reply::Config(result)) => {
@@ -1135,6 +1161,7 @@ impl App {
             .map(|(&channel, state)| {
                 let mut value = serde_json::to_value(state).expect("channel state is serializable");
                 value["state"] = json!(state.name());
+                value["fault"] = json!(self.channel_fault(channel));
                 value["label"] = json!(
                     self.info
                         .as_ref()
@@ -2082,11 +2109,7 @@ impl App {
                                     );
                                     self.inline_channel_name(ui, channel);
                                     ui.add_space(6.0);
-                                    let state = self
-                                        .state
-                                        .channels
-                                        .get(&channel)
-                                        .map_or("Unknown", |state| state.name());
+                                    let state = self.displayed_channel_state(channel);
                                     let response = ui
                                         .vertical_centered(|ui| {
                                             ui.add_enabled_ui(enabled, |ui| {
@@ -2125,11 +2148,7 @@ impl App {
                                     );
                                     self.inline_channel_name(ui, channel);
                                 });
-                                let state = self
-                                    .state
-                                    .channels
-                                    .get(&channel)
-                                    .map_or("Unknown", |state| state.name());
+                                let state = self.displayed_channel_state(channel);
                                 let response = ui
                                     .add_enabled_ui(enabled, |ui| shutter_window(ui, state, 0.50))
                                     .inner;
@@ -2415,6 +2434,7 @@ fn demo_info(id: &str, index: usize) -> ControllerInfo {
                 id,
                 label: ["Pump", "Probe", "Reference", "Gate"][id as usize].into(),
                 locked: index == 1 && id < 2,
+                fault: false,
             })
             .collect(),
     }
@@ -2444,7 +2464,7 @@ fn card_frame() -> egui::Frame {
 fn state_color(name: &str) -> Color32 {
     match name {
         "Open" => TEAL,
-        "Close" => RED,
+        "Close" | "Fault" => RED,
         "Moving" => ORANGE,
         _ => MUTED,
     }
@@ -2477,7 +2497,7 @@ fn shutter_window(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response 
             Color32::from_white_alpha(90),
         );
     }
-    if state != "Unknown" {
+    if state != "Unknown" && state != "Fault" {
         let opening = match state {
             "Open" => 0.90,
             "Moving" => 0.35,
@@ -2508,11 +2528,17 @@ fn shutter_window(ui: &mut egui::Ui, state: &str, scale: f32) -> egui::Response 
             );
         }
     }
-    if state == "Moving" || state == "Unknown" {
+    let symbol = match state {
+        "Moving" => "↔",
+        "Unknown" => "?",
+        "Fault" => "Fault",
+        _ => "",
+    };
+    if !symbol.is_empty() {
         painter.text(
             centre,
             egui::Align2::CENTER_CENTER,
-            if state == "Moving" { "↔" } else { "?" },
+            symbol,
             egui::FontId::proportional(23.0 * scale),
             state_color(state),
         );
@@ -2870,6 +2896,60 @@ mod tests {
     }
 
     #[test]
+    fn fault_only_changes_are_displayed_and_journaled() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = App::demo();
+        let snapshot = Snapshot::demo(&app.demo_status);
+        let mut info = app.info.clone().unwrap();
+        app.journal = Some(OperationJournal::open(directory.path()).unwrap());
+        let path = app.journal.as_ref().unwrap().path.clone();
+
+        deliver(
+            &mut app,
+            Ok(Reply::Refreshed(snapshot.clone(), info.clone())),
+        );
+        let normal = app.displayed_channel_state(0);
+        info.channels[0].fault = true;
+        deliver(
+            &mut app,
+            Ok(Reply::Refreshed(snapshot.clone(), info.clone())),
+        );
+        assert_eq!(app.displayed_channel_state(0), "Fault");
+        assert_eq!(state_color("Fault"), RED);
+        for layout in [Layout::Horizontal, Layout::Vertical] {
+            app.layout = layout;
+            assert!(
+                render_text(&mut app)
+                    .iter()
+                    .any(|(label, _)| label == "Fault")
+            );
+        }
+        deliver(
+            &mut app,
+            Ok(Reply::Refreshed(snapshot.clone(), info.clone())),
+        );
+        info.channels[0].fault = false;
+        deliver(&mut app, Ok(Reply::Refreshed(snapshot, info)));
+        assert_eq!(app.displayed_channel_state(0), normal);
+        assert_eq!(
+            app.journal
+                .as_mut()
+                .unwrap()
+                .flush_for_test(Duration::from_secs(1))
+                .unwrap(),
+            kohdalab_shutter::journal::FinishStatus::Drained
+        );
+        let fault_states: Vec<Value> = std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|line| line["event"] == "reported_state_changed")
+            .map(|line| line["detail"]["faulted_channel_ids"].clone())
+            .collect();
+        assert_eq!(fault_states, [json!([]), json!([0]), json!([])]);
+    }
+
+    #[test]
     fn journal_error_state_does_not_block_demo_close() {
         let mut app = App::demo();
         app.journal_incomplete = true;
@@ -3019,6 +3099,23 @@ mod tests {
         let mut request = json!({"client":uuid::Uuid::new_v4().to_string(),"method":"acquire"});
         request["lease"] = app.api_request(&request).unwrap()["lease"].clone();
         request
+    }
+
+    #[test]
+    fn api_status_exposes_fault_without_changing_commanded_state() {
+        let mut app = App::demo();
+        app.operate(Operation::Open, vec![1]);
+        let info = app.info.as_mut().unwrap();
+        info.channels[0].fault = true;
+        info.channels[1].fault = true;
+        let status = app.api_request(&json!({"method":"status"})).unwrap();
+        assert_eq!(status["channels"]["0"]["fault"], true);
+        assert_eq!(status["channels"]["0"]["state"], "Close");
+        assert_eq!(status["channels"]["1"]["fault"], true);
+        assert_eq!(status["channels"]["1"]["state"], "Open");
+        assert_eq!(status["channels"]["2"]["fault"], false);
+        app.info = None;
+        assert_eq!(app.snapshot_json()["channels"]["0"]["fault"], false);
     }
 
     #[test]

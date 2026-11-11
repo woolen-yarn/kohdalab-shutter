@@ -297,3 +297,90 @@ def test_state_includes_custom_calibration_targets_and_motion(channels, pwm, clo
     assert board.state_text() == "CH0=0/0/0/90/0,CH1=10/10/10/70/0"
     board.open(1)
     assert "CH1=10/70/10/70/1" in board.state_text()
+
+
+@pytest.mark.parametrize("release_fails", [False, True])
+def test_step_failure_keeps_last_successful_angle_and_requires_a_new_command(
+    channels, pwm, clock, monkeypatch, release_fails
+):
+    board = make_board(channels, pwm, clock, max_active=2)
+    board.open(0)
+    board.open(1)
+    board.tick()
+    clock.advance(20)
+    board.tick()
+    assert board.positions == [30, 40]
+
+    def fail_step(output, angle):
+        if output == 0:
+            raise OSError("I2C write failed")
+        pwm.writes.append((output, angle))
+
+    with monkeypatch.context() as failed:
+        failed.setattr(pwm, "set_servo_angle", fail_step)
+        if release_fails:
+
+            def fail_release(output):
+                pwm.disabled.append(output)
+                raise OSError("I2C release failed")
+
+            failed.setattr(pwm, "disable", fail_release)
+        clock.advance(20)
+        board.tick()
+
+    assert board.faults == [True, False]
+    assert board.positions == [30, 70]
+    assert board.state_text() == "CH0=30/30/0/90/0,CH1=70/70/10/70/1"
+    assert pwm.disabled == [0]
+    writes = list(pwm.writes)
+    clock.advance(100)
+    board.tick()
+    assert not board.busy()
+    assert pwm.writes == writes
+    assert pwm.disabled == [0, 1]
+
+    assert board.open(0)
+    assert board.faults == [False, False]
+    for _ in range(3):
+        clock.advance(20)
+        board.tick()
+    assert board.positions == [90, 70]
+
+
+def test_starting_channel_fault_does_not_consume_the_motion_slot(
+    channels, pwm, clock, monkeypatch
+):
+    def fail_first(output, angle):
+        if output == 0:
+            raise OSError("I2C write failed")
+        pwm.writes.append((output, angle))
+
+    board = make_board(channels, pwm, clock)
+    monkeypatch.setattr(pwm, "set_servo_angle", fail_first)
+    board.tick()
+    assert pwm.writes == [(1, 10)]
+    assert pwm.disabled == [0]
+    assert board.faults == [True, False]
+    assert not board.busy(0)
+    assert board.busy(1)
+
+
+def test_pwm_release_failure_attempts_one_best_effort_release(
+    channels, pwm, clock, monkeypatch
+):
+    def fail_disable(output):
+        pwm.disabled.append(output)
+        if output == 0:
+            raise OSError("I2C release failed")
+
+    board = make_board(channels, pwm, clock, max_active=2)
+    monkeypatch.setattr(pwm, "disable", fail_disable)
+    board.tick()
+    clock.advance(100)
+    board.tick()
+    assert board.faults == [True, False]
+    assert not board.busy()
+    assert pwm.disabled == [0, 1]
+    clock.advance(100)
+    board.tick()
+    assert pwm.disabled == [0, 1]

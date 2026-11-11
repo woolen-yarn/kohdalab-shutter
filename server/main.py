@@ -51,6 +51,7 @@ class LedDeck:
     NORMAL = 0
     BLINK = 1
     FAST = 2
+    RECONNECTING = 3
 
     def __init__(self, channels, servos):
         self.channels = channels
@@ -61,20 +62,16 @@ class LedDeck:
         self._phase = False
         self._last_ms = time.ticks_ms()
         self._blink_started = self._last_ms
+        self._fault_last_ms = self._last_ms
+        self._fault_phase = True
         self.claimed = set()
 
     def reflect(self):
-        if self.mode != self.NORMAL:
+        if self.mode != self.NORMAL or self.servos is None:
             return
-        for index, angle in enumerate(self.servos.positions):
-            self.red[index].value(1 if angle == self.servos.close_angle(index) else 0)
-            self.green[index].value(1 if angle == self.servos.open_angle(index) else 0)
-            if angle not in (
-                self.servos.close_angle(index),
-                self.servos.open_angle(index),
-            ):
-                self.red[index].value(1)
-                self.green[index].value(1)
+        for index in range(len(self.channels)):
+            if not self.servos.faults[index]:
+                self._state_led(index, True)
 
     def set_mode(self, mode):
         if self.mode == mode:
@@ -108,30 +105,41 @@ class LedDeck:
             self.green[index].value(enabled)
 
     def tick(self):
-        if self.mode == self.NORMAL:
-            return
-
         now = time.ticks_ms()
-        interval = 60 if self.mode == self.FAST else 50
-        if time.ticks_diff(now, self._last_ms) < interval:
-            return
+        fault_elapsed = time.ticks_diff(now, self._fault_last_ms)
+        if fault_elapsed >= 100:
+            self._fault_last_ms = now
+            self._fault_phase = not self._fault_phase
 
-        self._last_ms = now
+        interval = 60 if self.mode == self.FAST else 50
+        update_blink = time.ticks_diff(now, self._last_ms) >= interval
+        if update_blink:
+            self._last_ms = now
 
         if self.mode == self.FAST:
-            self._phase = not self._phase
-            for red, green in zip(self.red, self.green):
-                red.value(self._phase)
-                green.value(self._phase)
+            if update_blink:
+                self._phase = not self._phase
+                for red, green in zip(self.red, self.green):
+                    red.value(self._phase)
+                    green.value(self._phase)
             return
 
-        elapsed = time.ticks_diff(now, self._blink_started) % 1200
+        elapsed = time.ticks_diff(now, self._blink_started)
         for index in range(len(self.channels)):
-            if index in self.claimed:
-                # Connected channel: two short flashes, then a long pause.
-                self._state_led(index, elapsed < 100 or 200 <= elapsed < 300)
-            else:
-                self._state_led(index, (elapsed // 250) % 2 == 0)
+            if self.servos is None or self.servos.faults[index]:
+                self.red[index].value(self._fault_phase)
+                self.green[index].value(not self._fault_phase)
+            elif not update_blink:
+                continue
+            elif self.mode == self.RECONNECTING:
+                self._state_led(index, (elapsed // 1000) % 2 == 0)
+            elif self.mode == self.BLINK:
+                blink = elapsed % 1200
+                if index in self.claimed:
+                    # Connected channel: two short flashes, then a long pause.
+                    self._state_led(index, blink < 100 or 200 <= blink < 300)
+                else:
+                    self._state_led(index, (blink // 250) % 2 == 0)
 
 
 class ButtonDeck:
@@ -195,9 +203,13 @@ class WifiServer:
             DISCOVERY_PORT,
         )
         self.running = False
+        self.reconnecting = False
+        self.wlan = None
+        self._last_wifi_check = None
+        self._last_connect = None
 
     def start(self):
-        if self.running:
+        if self.running or self.reconnecting:
             return True
         self.leds.set_mode(LedDeck.FAST)
         if not self._connect_ap():
@@ -205,7 +217,11 @@ class WifiServer:
             self.leds.set_mode(LedDeck.NORMAL)
             return False
 
+        return self._open_sockets()
+
+    def _open_sockets(self):
         try:
+            ip = self.wlan.ifconfig()[0]
             self.sock = socket.socket()
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.bind(("0.0.0.0", SERVER_PORT))
@@ -213,43 +229,79 @@ class WifiServer:
             self.sock.settimeout(0)
         except Exception as exc:
             print("TCP server start failed:", exc)
-            if self.sock:
-                try:
-                    self.sock.close()
-                except Exception:
-                    pass
-                self.sock = None
-            self.discovery.stop()
-            self.leds.set_mode(LedDeck.NORMAL)
+            self._close_sockets()
+            if not self.reconnecting:
+                self.leds.set_mode(LedDeck.NORMAL)
             return False
-        self.running = True
-        self.leds.set_mode(LedDeck.BLINK)
-
         if not self.discovery.start():
             print("UDP discovery unavailable; TCP control remains available")
 
-        ip = network.WLAN(network.STA_IF).ifconfig()[0]
+        self.running = True
+        self.reconnecting = False
+        self._last_wifi_check = time.ticks_ms()
+        self.leds.set_mode(LedDeck.BLINK)
         print("Server listening on {}:{}".format(ip, SERVER_PORT))
         return True
 
-    def stop(self):
-        if not self.running:
-            return False
-        self.running = False
-        if self.sock:
+    def _close_sockets(self):
+        if self.sock is not None:
             try:
                 self.sock.close()
-            except Exception:
+            except OSError:
                 pass
             self.sock = None
         self.discovery.stop()
         self.sessions.clear()
         self.leds.set_claimed(())
+
+    def stop(self):
+        if not self.running and not self.reconnecting:
+            return False
+        if self.reconnecting:
+            try:
+                self.wlan.disconnect()
+            except OSError as exc:
+                print("Wi-Fi disconnect failed:", exc)
+        self.running = False
+        self.reconnecting = False
+        self._close_sockets()
         self.leds.set_mode(LedDeck.NORMAL)
         print("Server stopped")
         return True
 
+    def _retry_connect(self, now):
+        self._last_connect = now
+        try:
+            self.wlan.connect(SSID, PASSWORD)
+        except OSError as exc:
+            print("Wi-Fi reconnect attempt failed:", exc)
+
+    def _poll_wifi(self):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._last_wifi_check) < 2000:
+            return
+        self._last_wifi_check = now
+        if self.wlan.isconnected():
+            if self.reconnecting:
+                try:
+                    self._configure_ip()
+                except OSError as exc:
+                    print("Wi-Fi IP setup failed:", exc)
+                    return
+                self._open_sockets()
+        elif self.running:
+            self.running = False
+            self.reconnecting = True
+            self._close_sockets()
+            self.leds.set_mode(LedDeck.RECONNECTING)
+            print("Wi-Fi disconnected; reconnecting")
+            self._retry_connect(now)
+        elif time.ticks_diff(now, self._last_connect) >= 10_000:
+            self._retry_connect(now)
+
     def poll(self):
+        if self.running or self.reconnecting:
+            self._poll_wifi()
         if not self.running:
             return
 
@@ -308,6 +360,7 @@ class WifiServer:
             return False
 
         wlan = network.WLAN(network.STA_IF)
+        self.wlan = wlan
         wlan.active(True)
 
         if not wlan.isconnected():
@@ -322,11 +375,13 @@ class WifiServer:
                 self.leds.tick()
                 time.sleep(0.3)
 
-        if USE_STATIC_IP:
-            wlan.ifconfig(STATIC_IFCONFIG)
-
+        self._configure_ip()
         print("Wi-Fi", wlan.ifconfig())
         return True
+
+    def _configure_ip(self):
+        if USE_STATIC_IP:
+            self.wlan.ifconfig(STATIC_IFCONFIG)
 
     def _handle(self, command, conn):
         if command.startswith("SESSION "):
@@ -395,8 +450,16 @@ class WifiServer:
         return True
 
 
-i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
-pwm = PCA9685(i2c, address=PCA9685_ADDRESS, angle_offset=PCA9685_ANGLE_OFFSET)
+try:
+    i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
+    pwm = PCA9685(i2c, address=PCA9685_ADDRESS, angle_offset=PCA9685_ANGLE_OFFSET)
+except OSError as exc:
+    print("PCA9685 initialization failed; power cycle after checking I2C:", exc)
+    leds = LedDeck(CHANNELS, None)
+    while True:
+        leds.tick()
+        time.sleep(0.02)
+
 servos = ServoBoard(
     CHANNELS,
     pwm,
@@ -419,6 +482,7 @@ sessions = Sessions(
     time.ticks_diff,
     device_label.save,
     config_store=device_label,
+    faults=servos.faults,
 )
 server = WifiServer(servos, leds, sessions)
 leds.reflect()
@@ -426,7 +490,7 @@ leds.reflect()
 
 def on_button(channel, is_long_press):
     if is_long_press:
-        if server.running:
+        if server.running or server.reconnecting:
             server.stop()
         else:
             server.start()
@@ -446,18 +510,24 @@ def sync_led_mode():
         leds.set_mode(LedDeck.FAST)
     elif server.running:
         leds.set_mode(LedDeck.BLINK)
+    elif server.reconnecting:
+        leds.set_mode(LedDeck.RECONNECTING)
     else:
         leds.set_mode(LedDeck.NORMAL)
 
 
-if AUTO_START_SERVER:
-    server.start()
-
-while True:
+def poll_controller():
     buttons.poll()
     servos.tick()
     leds.reflect()
     sync_led_mode()
     leds.tick()
     server.poll()
+
+
+if AUTO_START_SERVER:
+    server.start()
+
+while True:
+    poll_controller()
     time.sleep(0.02)

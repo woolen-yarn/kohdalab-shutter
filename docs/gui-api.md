@@ -70,9 +70,13 @@ The GUI retains the last **64** receipts and remembers **4096** action IDs until
 
 ジョブ完了はコマンド受付であり、移動完了とは区別します。`wait_for_state()` はPico側の移動・整定情報を確認します。新しい指令後は古い表示を完了扱いせず、最新の応答を待ちます。
 
-Each `status().channels` entry contains `state`, `position`, `target`, `close_angle`, `open_angle`, and `busy`. Open/Close use the Pico's own per-channel calibration; busy/queued/settling is Moving. Older firmware without `STATE` is Unknown. All states are software-commanded/output states, not sensor confirmation. `status` also includes connection, demo mode, layout, order, the numeric `display_order` array, owner, command-task busy flag, endpoint and discovered devices.
+Each `status().channels` entry contains `state`, `position`, `target`, `close_angle`, `open_angle`, `busy`, and boolean `fault`. Open/Close use the Pico's own per-channel calibration; busy/queued/settling is Moving. Older firmware without `STATE` is Unknown. All states are software-commanded/output states, not sensor confirmation. `status` also includes connection, demo mode, layout, order, the numeric `display_order` array, owner, command-task busy flag, endpoint and discovered devices.
 
 Open/Close判定は各チャンネルの校正値を使います。移動待ち・駆動・整定中はMoving、校正情報のない旧ファームウェアはUnknownです。位置センサーによる確認ではありません。
+
+`channels[CH].fault` reports the Pico channel fault independently of `state`; a faulted channel can still report `state: "Open"` or `"Close"` for script compatibility. Python `wait_for_state()` raises `GuiShutterError` with `code == "fault"` as soon as the target channel reports `fault: true`, even if `state` matches, without waiting for its timeout. Older GUIs without `fault` retain the previous waiting behavior; firmware without fault reporting yields `false`.
+
+各CHの真偽値 `fault` はPicoの異常を示します。互換性のため `state` は異常中も従来のOpen/Close等の値を維持します。`wait_for_state()` は対象CHの `fault` が真なら、状態が一致していても待たずに `GuiShutterError`（`code == "fault"`）を送出します。`fault` のない旧GUIでは従来どおり待機し、異常報告のない旧ファームウェアでは `false` になります。
 
 The transport admits at most four peers and sixteen queued GUI requests. Input is bounded to 64 KiB with a two-second absolute read/response deadline. Expired requests are discarded before dispatch. After a lost response, use the same request ID or `result(id)`; do not invent a new ID for a blind Toggle retry.
 

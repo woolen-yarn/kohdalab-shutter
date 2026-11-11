@@ -76,6 +76,8 @@
 | --- | --- | --- |
 | NORMAL | Server stopped or normal idle / サーバ停止中、通常待機 | Red for CLOSE, green for OPEN / CLOSE なら赤点灯、OPEN なら緑点灯 |
 | BLINK | TCP server running / TCP サーバ起動中 | Blink the state LED at about 250 ms / 現在状態に対応する LED を約 250 ms 周期で点滅 |
+| RECONNECTING | Wi-Fi reconnection / Wi-Fi 再接続中 | State LED on for 1 s, then off for 1 s / 状態 LED が1秒点灯、1秒消灯 |
+| FAULT | Channel I2C fault / CH の I2C 異常 | Alternate red and green every 100 ms, with priority over server indications except FAST / 赤と緑を100 msごとに交互点灯。FAST を除きサーバ状態表示より優先 |
 | FAST | Button long-press in progress / ボタン長押し中 | Blink all red/green LEDs at about 60 ms / 全チャンネルの赤/緑 LED を約 60 ms 周期で高速点滅 |
 
 **JP:** サーボ移動中の中間角では赤・緑の両方を点灯または点滅します。物理ボタンは 50 ms のデバウンス後に確定するため、接点バウンスによる二重操作を抑えます。
@@ -98,6 +100,20 @@
 **JP:** PCA9685 は 50Hz で動作します。標準設定ではサーボパルス幅を 500us から 2500us へ線形変換し、0 度から 180 度に対応させます。現在のシャッター制御では `close=0`, `open=90` を使います。移動は非ブロッキングで段階的に行い、既定では設定済みの全チャンネルを同時駆動し、到達後に PWM を解放します。外部電源に余裕がない場合は `SERVO_MAX_ACTIVE` を小さくして同時駆動数を制限できます。`STATUS` は最後に出力した段階角を返すため、移動中は中間角になることがあります。
 
 **EN:** The PCA9685 runs at 50 Hz. By default, servo pulse width is mapped linearly from 500 us to 2500 us, corresponding to 0 to 180 degrees. The current shutter control uses `close=0` and `open=90`. Motion is stepped without blocking the event loop, drives every configured channel in parallel by default, and releases PWM after settling. If the external supply cannot support simultaneous motion, lower `SERVO_MAX_ACTIVE` to limit concurrency. `STATUS` reports the last commanded step, so it may contain an intermediate angle during motion.
+
+**JP:** 電源投入またはリセットのたびに全 CH に設定済みの close 角を出力します。初期位置を close と仮定するため、段階送りは行いません。既定設定では全 CH が同時に動きます。測定中に電源が瞬断すると、復電時に全シャッターが閉じます。
+
+**EN:** Each power-on or reset writes the configured close angle to every channel. The controller assumes an initial close position and writes the close angle directly. All channels move together with the default settings. A brief power interruption during measurement can close every shutter when power returns.
+
+## Faults and recovery / 異常と復帰
+
+**JP:** PWM の I2C 書き込みに失敗すると、その CH の駆動と待ちを解除し、最後に書き込みが成功した角度を位置と目標の両方に使います。PWM 解放は1回試みます。他の CH の処理は続きます。配線と電源を確認し、ボタンまたはネットワークから開閉を指令すると、その CH の異常を解除して駆動を試みます。PCA9685 の起動時初期化に失敗した場合は、全 CH が異常表示になり、駆動と通信を開始しません。機器を確認して電源を入れ直してください。Pico は異常で自動再起動しません。
+
+**EN:** An I2C write error cancels active or queued motion for the affected channel, keeps its last successfully written angle as both position and target, and attempts PWM release once. Other channels continue. Check wiring and power, then issue a physical or network command to clear the channel fault and retry motion. If PCA9685 initialization fails at startup, all channels show the fault pattern and the Pico stays idle with the network server off. Check the hardware and power-cycle the Pico. Faults do not trigger an automatic reboot.
+
+**JP:** TCP サーバ動作中は Wi-Fi の接続を2秒ごとに確認します。切断を検出すると TCP と検索用 UDP のソケットを閉じ、全 CH の確保を解除します。ボタンとサーボ処理を続けながら再接続を開始し、未接続なら10秒ごとに再試行します。接続が戻ると固定 IP 設定を再適用し、TCP と UDP を開き直します。再接続中は3秒長押しで停止できます。復帰後は PC から手動で接続し直してください。
+
+**EN:** While the TCP server runs, it checks the Wi-Fi connection every two seconds. On loss it closes TCP and discovery UDP sockets and clears all channel leases. Buttons and servo updates continue while Wi-Fi reconnects, with a new attempt every ten seconds until connected. The Pico reapplies any static IP configuration and reopens both sockets on recovery. A three-second button hold cancels reconnection. Reconnect the desktop manually after recovery.
 
 ## n-Channel Expansion Rules / nCH 拡張ルール
 
@@ -152,11 +168,16 @@ that every channel uses 0/90-degree calibration.
 
 `STATE\n` returns comma-separated fields such as `CH0=10/70/10/70/1`.
 Each field is `CH<index>=<position>/<target>/<close>/<open>/<busy>`.
-Position and target are the most recently commanded output step and target;
-close/open come from that channel's `CHANNELS` calibration. `busy` is 1 for
+Position is the last successfully written output step; target is the requested angle.
+Close/open come from that channel's `CHANNELS` calibration. `busy` is 1 for
 queued, active, or settling motion, and 0 when idle. GUI state is Moving while
 busy or position differs from target; otherwise it is Open or Close only when
-position equals the matching calibration. Other states are Unknown.
+position equals the matching calibration. Other states are Unknown. On an I2C
+fault, `STATE` reports position equal to target and `busy=0`. The
+`SESSION info` response adds a boolean `fault` to each channel. The desktop
+shows `Fault` and journals transitions to and from that state. CLI `info`
+marks faulted channels. Older firmware may omit the field. An `OK` response
+acknowledges command acceptance before the I2C write.
 
 `STATUS` remains unchanged for existing CLI/Python clients. New desktop clients
 fall back to `STATUS` when an old server replies `UNKNOWN` to `STATE`, but do

@@ -8,6 +8,8 @@ pub struct ChannelInfo {
     pub id: u8,
     pub label: String,
     pub locked: bool,
+    #[serde(default)]
+    pub fault: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, Deserialize)]
@@ -61,7 +63,13 @@ mod tests {
     fn controller_info_requires_unique_valid_channels() {
         let value = json!({"protocol":2,"device_id":"a0ff","label":"Bay A","lease_ms":15000,
             "channels":[{"id":0,"label":"CH00","locked":false}]});
-        assert_eq!(parse_info(value).unwrap().label, "Bay A");
+        let legacy = parse_info(value.clone()).unwrap();
+        assert_eq!(legacy.label, "Bay A");
+        assert!(!legacy.channels[0].fault);
+
+        let mut value = value;
+        value["channels"][0]["fault"] = json!(true);
+        assert!(parse_info(value).unwrap().channels[0].fault);
         for value in [
             json!({"protocol":1,"device_id":"a0","label":"x","lease_ms":1,"channels":[]}),
             json!({"protocol":2,"device_id":"z","label":"x","lease_ms":1,"channels":[{"id":0,"label":"x","locked":false}]}),
