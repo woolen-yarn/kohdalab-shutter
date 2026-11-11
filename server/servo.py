@@ -115,6 +115,7 @@ class ServoBoard:
 
         self.angles = [channel["close"] for channel in channels]
         self.positions = list(self.angles)
+        self.faults = [False] * len(channels)
         self._pending = list(range(len(channels)))
         self._active = {}
 
@@ -144,6 +145,7 @@ class ServoBoard:
         if not 0 <= angle <= 180:
             return False
 
+        self.faults[index] = False
         self.angles[index] = angle
         if index in self._active:
             self._active[index]["settle_at"] = (
@@ -187,15 +189,19 @@ class ServoBoard:
                 distance = target - position
                 step = min(abs(distance), step_degrees)
                 position += step if distance > 0 else -step
-                self.positions[index] = position
-                self._write_angle(index, position)
+                if not self._write_angle(index, position):
+                    finished.append(index)
+                    continue
                 state["last_step"] = now
                 state["settle_at"] = now if position == target else None
                 continue
 
             if self._ticks_diff(now, state["settle_at"]) >= self.release_delay_ms:
                 if self.release_pwm:
-                    self._pwm.disable(self.channels[index]["servo"])
+                    try:
+                        self._pwm.disable(self.channels[index]["servo"])
+                    except OSError:
+                        self._mark_fault(index)
                 finished.append(index)
 
         for index in finished:
@@ -203,7 +209,8 @@ class ServoBoard:
 
         while self._pending and len(self._active) < self.max_active:
             index = self._pending.pop(0)
-            self._write_angle(index, self.positions[index])
+            if not self._write_angle(index, self.positions[index]):
+                continue
             self._active[index] = {
                 "last_step": now,
                 "settle_at": now
@@ -238,7 +245,22 @@ class ServoBoard:
         )
 
     def _write_angle(self, index, angle):
-        self._pwm.set_servo_angle(self.channels[index]["servo"], angle)
+        try:
+            self._pwm.set_servo_angle(self.channels[index]["servo"], angle)
+        except OSError:
+            self._mark_fault(index)
+            return False
+        self.positions[index] = angle
+        return True
+
+    def _mark_fault(self, index):
+        self.faults[index] = True
+        self.angles[index] = self.positions[index]
+        try:
+            self._pwm.disable(self.channels[index]["servo"])
+        except OSError:
+            # The I2C bus may still be unavailable. Wait for another command.
+            pass
 
     def _motion_parameters(self, index, position, target):
         """Return the slew parameters for this channel's current target."""

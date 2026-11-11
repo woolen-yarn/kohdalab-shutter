@@ -45,12 +45,16 @@ def verify_channel_motion():
     class Pwm:
         def __init__(self):
             self.writes = []
+            self.failed = None
 
         def set_servo_angle(self, channel, angle):
+            if channel == self.failed:
+                raise OSError("mock I2C write")
             self.writes.append((channel, angle))
 
         def disable(self, channel):
-            pass
+            if channel == self.failed:
+                raise OSError("mock I2C release")
 
     channels = [
         {
@@ -100,6 +104,34 @@ def verify_channel_motion():
         all(0 <= angle <= 18 for _, angle in pwm.writes),
         "motion exceeded calibration endpoints",
     )
+
+    sessions = Sessions(
+        channels,
+        "a0ff",
+        "Bench",
+        clock.ticks_ms,
+        clock.ticks_diff,
+        lambda label: None,
+        faults=board.faults,
+    )
+    pwm.failed = 0
+    board.close(0)
+    board.close(1)
+    board.tick()
+    require(board.faults == [True, False], "I2C fault escaped or affected another CH")
+    require(not board.busy(0) and board.positions[0] == 18, "fault lost last angle")
+    require(sessions.info()["channels"][0]["fault"], "fault missing from info")
+    pwm.failed = None
+    for value in range(1000, 1200, 20):
+        clock.now = value
+        board.tick()
+    require(board.positions == [18, 0], "automatic retry or other CH stopped")
+    board.close(0)
+    for value in range(1200, 1400, 20):
+        clock.now = value
+        board.tick()
+    require(board.positions == [0, 0] and not board.busy(), "manual retry failed")
+    require(not sessions.info()["channels"][0]["fault"], "fault did not clear")
 
 
 def main():

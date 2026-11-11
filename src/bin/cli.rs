@@ -102,14 +102,15 @@ fn execute(client: &Client, command: Command) -> io::Result<()> {
             println!("{}\t{}\t{} ms", info.label, info.device_id, info.lease_ms);
             for channel in info.channels {
                 println!(
-                    "CH{:02}\t{}\t{}",
+                    "CH{:02}\t{}\t{}{}",
                     channel.id,
                     channel.label,
                     if channel.locked {
                         "in use"
                     } else {
                         "available"
-                    }
+                    },
+                    if channel.fault { "\tFault" } else { "" }
                 );
             }
             return Ok(());

@@ -153,6 +153,7 @@ class Sessions:
         ticks_diff,
         save_label,
         config_store=None,
+        faults=None,
     ):
         self.channels = channels
         self.device_id = device_id
@@ -161,6 +162,7 @@ class Sessions:
         self.ticks_diff = ticks_diff
         self.save_label = save_label
         self.config_store = config_store
+        self.faults = faults if faults is not None else [False] * len(channels)
         self.channel_labels = (
             config_store.channel_labels if config_store is not None else {}
         )
@@ -215,6 +217,7 @@ class Sessions:
                     "id": index,
                     "label": self.channel_labels.get(str(index), channel["label"]),
                     "locked": index in self.claims,
+                    "fault": self.faults[index],
                 }
                 for index, channel in enumerate(self.channels)
             ],
