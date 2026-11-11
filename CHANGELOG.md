@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.6.10 — 2026-11-11
+
+- Show `Fault` in the GUI and in CLI `info` for a channel whose Pico reports an I2C write fault, and record fault transitions in the operation journal. Requires the firmware in Pico Setup 1.2.0; older firmware is displayed as before. / PicoがI2C書き込み異常を報告したCHを、GUIとCLIの`info`で`Fault`と表示し、操作ジャーナルに記録します。Pico Setup 1.2.0のファームウェアが必要で、旧ファームウェアは従来どおり表示します。
+- Add a boolean `fault` to each channel of GUI API `status`; the existing `state` value is unchanged. Python `wait_for_state()` raises `GuiShutterError` with code `fault` immediately for a faulted channel. The Python client package is 0.6.10. / GUI APIの`status`の各CHに真偽値`fault`を追加しました。`state`の値は変わりません。Pythonの`wait_for_state()`は異常中のCHに対して待たずに`fault`エラーを出します。
+- Run the shared control protocol crate's tests in CI through a Cargo workspace. / 共通制御プロトコルcrateのテストをCIで実行します。
+- Publish release evidence with the packages: a source archive of the release commit, `RELEASE-VERIFICATION.json`, the GUI API simulation report, and `SHA256SUMS.txt` covering every published file. / 配布物と一緒に、リリースcommitのソースアーカイブ、`RELEASE-VERIFICATION.json`、GUI APIの模擬検証結果、全ファイルを含む`SHA256SUMS.txt`を公開します。
+- Shutter commands, `STATE`/`STATUS`, profiles and lease policy are unchanged. No physical-device qualification was performed. / 指令、`STATE`/`STATUS`、設定形式、lease方針は変わりません。実機での検証は行っていません。
+
+## Pico Setup 1.2.0 — 2026-11-11
+
+- Run a TCP command only after its complete line arrives. A request cut off before the newline is answered with `UNKNOWN` and moves nothing. / TCPコマンドは改行まで届いたときだけ実行します。途中で止まった要求は`UNKNOWN`を返し、何も動かしません。
+- Isolate an I2C write fault to its channel: keep the last successfully written angle, stop that channel, alternate its red and green LEDs, and retry only on the next operator command. Other channels, buttons and the network keep working. The Pico does not reboot automatically. / I2C書き込み異常をそのCHだけに留めます。最後に成功した角度を保持して停止し、赤と緑のLEDを交互に点灯し、次の操作で再試行します。他のCH・ボタン・通信は動き続けます。自動再起動はしません。
+- If the PCA9685 cannot be initialized at startup, show the fault pattern on every channel and keep servo drive and the network off until power is cycled. / 起動時にPCA9685を初期化できない場合は、全CHを異常表示にして駆動と通信を開始しません。
+- Detect Wi-Fi loss while the server runs, clear channel leases, and reconnect in the background while buttons and servo motion continue. A one-second on/off state LED indicates reconnection. / サーバー動作中のWi-Fi切断を検出してCHの確保を解除し、ボタンとサーボを動かしたまま再接続します。再接続中は状態LEDが1秒周期で点滅します。
+- Document that every power-on or reset drives all channels to their Close angle. This behaviour is unchanged. / 電源投入・リセットのたびに全CHをClose角へ動かすことを文書に明記しました。挙動は変わりません。
+- This firmware has not been run on a physical Pico W or servos. / このファームウェアは実機のPico W・サーボでは動かしていません。
+
+## 0.6.9 — 2026-11-10
+
+- Move the GUI to the maintained eframe/egui 0.34 stack and drop the unmaintained font parser. Process API requests and controller polling independently of drawing so a covered window keeps responding. / GUIを保守中のeframe/egui 0.34系へ更新し、保守終了したフォント解析を除去。描画と切り離してAPI要求と状態照会を処理します。
+- Serialize lease release and reacquisition in the shared Python control client. / 共通Python制御クライアントで制御権の解放・再取得を直列化しました。
+- Make journal-content tests wait for an ordered writer acknowledgement. The 250 ms exit budget is unchanged. / 操作履歴の内容試験を順序付き完了通知に同期しました。終了時の上限250 msは変わりません。
+
+## 0.6.8 — not published / 未公開
+
+- Tag `v0.6.8` points at a commit whose CI failed, so no release was published. Its changes were released as 0.6.9. / tag `v0.6.8` はCIが失敗したcommitを指すため公開していません。内容は0.6.9として公開しました。
+
+## 0.6.7 — 2026-11-06
+
+- Refresh state after 100 ms instead of one second while a selected shutter reports Moving, and repaint every 50 ms during motion. Open/Close still comes from controller feedback. / 選択したシャッターがMovingの間は状態取得を1秒から100 ms間隔にし、50 msごとに再描画します。Open/Closeは引き続きコントローラーの報告で確定します。
+
+## 0.6.6 — 2026-11-06
+
+- Record each normal GUI session as a JSON Lines operation journal under `~/.kohdalab/shutter/logs`, with linked request/outcome records, device identity, UTC and monotonic timing. A bounded background writer keeps disk I/O off the control path. / 通常GUIの各セッションを`~/.kohdalab/shutter/logs`のJSON Lines操作ジャーナルに記録します。書き込みは上限付きの別スレッドで行い、操作を妨げません。
+
+## Pico Setup 1.1.1 — 2026-11-04
+
+- Restore physical channel buttons while a PC holds the channel lease. Other PCs stay locked out. / PCがCHを確保している間も物理ボタンを使えるようにしました。他のPCへのロックは維持します。
+
 ## 0.6.5 — 2026-11-05
 
 - Ignore empty home-directory environment values and use the valid platform fallback consistently in the GUI and common Python client. / GUIと共通Pythonクライアントで、空のホーム環境変数を除外して有効な代替先を使います。
