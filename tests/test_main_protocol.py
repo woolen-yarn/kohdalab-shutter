@@ -614,3 +614,36 @@ def test_complete_maximum_unicode_label_patch_exceeds_old_limit_but_is_accepted(
             return bytes([next(self.data)])
 
     assert server._readline(FullConnection()) == command
+
+
+def test_open_without_newline_times_out_and_returns_unknown():
+    clock = Clock()
+    symbols = pico_symbols(clock)
+    server = object.__new__(symbols["WifiServer"])
+    server.servos = FakeServos()
+    server.leds = symbols["LedDeck"](CHANNELS, server.servos)
+    server.sessions = Sessions(
+        CHANNELS, "id", "Bench", clock.ticks_ms, clock.ticks_diff, lambda _: None
+    )
+
+    class StalledConnection(Connection):
+        def __init__(self):
+            super().__init__()
+            self.data = iter(b"OPEN 1")
+
+        def settimeout(self, timeout):
+            self.timeout = timeout
+
+        def recv(self, _size):
+            byte = next(self.data, None)
+            if byte is not None:
+                return bytes([byte])
+            clock.now += round(self.timeout * 1000)
+            raise OSError("timed out")
+
+    connection = StalledConnection()
+    server._handle(server._readline(connection), connection)
+    assert connection.writes == [b"UNKNOWN\n"]
+    assert server.servos.actions == []
+    assert server.servos.ticks > 0
+    assert clock.now == 1000

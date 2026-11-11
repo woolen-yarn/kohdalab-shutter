@@ -154,9 +154,9 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --check
       - name: Check Rust code
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test Rust client and mock network servers
-        run: cargo test --locked --all-targets
+        run: cargo test --locked --workspace --all-targets
       - name: Build native clients
         run: cargo build --release --locked
       - name: Check CLI entry point

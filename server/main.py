@@ -343,18 +343,16 @@ class WifiServer:
             except OSError:
                 self.servos.tick()
                 self.leds.tick()
-                if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
-                    break
                 continue
             if not chunk:
                 return ""
             if chunk == b"\n":
-                break
+                if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
+                    return ""
+                return bytes(buffer).decode().strip()
             buffer += chunk
         # Commands are line framed. Never operate on a truncated request.
-        if len(buffer) >= max_length:
-            return ""
-        return bytes(buffer).decode().strip()
+        return ""
 
     def _connect_ap(self):
         if not SSID or not PASSWORD:
