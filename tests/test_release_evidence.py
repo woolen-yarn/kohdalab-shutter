@@ -32,8 +32,9 @@ def repository(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     run_git(repo, "init", "--quiet")
-    (repo / "README.md").write_text("release source\n", encoding="utf-8")
-    run_git(repo, "add", "README.md")
+    (repo / ".gitattributes").write_bytes(b"README.md -text\n")
+    (repo / "README.md").write_bytes(b"release source\n")
+    run_git(repo, "add", ".gitattributes", "README.md")
     run_git(
         repo,
         "-c",
