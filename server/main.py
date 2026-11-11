@@ -234,9 +234,6 @@ class WifiServer:
                 self.leds.set_mode(LedDeck.NORMAL)
             return False
         if not self.discovery.start():
-            if self.reconnecting:
-                self._close_sockets()
-                return False
             print("UDP discovery unavailable; TCP control remains available")
 
         self.running = True

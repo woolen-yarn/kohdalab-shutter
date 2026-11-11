@@ -1161,6 +1161,7 @@ impl App {
             .map(|(&channel, state)| {
                 let mut value = serde_json::to_value(state).expect("channel state is serializable");
                 value["state"] = json!(state.name());
+                value["fault"] = json!(self.channel_fault(channel));
                 value["label"] = json!(
                     self.info
                         .as_ref()
@@ -3098,6 +3099,23 @@ mod tests {
         let mut request = json!({"client":uuid::Uuid::new_v4().to_string(),"method":"acquire"});
         request["lease"] = app.api_request(&request).unwrap()["lease"].clone();
         request
+    }
+
+    #[test]
+    fn api_status_exposes_fault_without_changing_commanded_state() {
+        let mut app = App::demo();
+        app.operate(Operation::Open, vec![1]);
+        let info = app.info.as_mut().unwrap();
+        info.channels[0].fault = true;
+        info.channels[1].fault = true;
+        let status = app.api_request(&json!({"method":"status"})).unwrap();
+        assert_eq!(status["channels"]["0"]["fault"], true);
+        assert_eq!(status["channels"]["0"]["state"], "Close");
+        assert_eq!(status["channels"]["1"]["fault"], true);
+        assert_eq!(status["channels"]["1"]["state"], "Open");
+        assert_eq!(status["channels"]["2"]["fault"], false);
+        app.info = None;
+        assert_eq!(app.snapshot_json()["channels"]["0"]["fault"], false);
     }
 
     #[test]

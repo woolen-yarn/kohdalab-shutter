@@ -50,6 +50,10 @@ Job completion means command acknowledgement. `wait_for_state(channel, "Open" | 
 
 ジョブ完了はコマンド受付です。`wait_for_state()` は校正値・移動待ち・整定を含むPicoの状態を別途確認します。Unknownや切断はエラーです。どちらも位置センサーによる物理的な開閉確認ではありません。Open/Close判定には `STATE` 対応のPicoファームウェアが必要です。
 
+`status()["channels"][str(channel)]["fault"]` is a boolean reporting a channel fault. The `state` string keeps its existing meaning and can remain Open/Close during a fault. `wait_for_state()` raises `GuiShutterError` with `code == "fault"` immediately when the target channel's fault is true, even if its state matches. Older GUIs without this field retain the previous waiting behavior; firmware without fault reporting yields `false`.
+
+`status()["channels"][str(channel)]["fault"]` はCHの異常を示す真偽値です。`state` の意味は従来どおりで、異常中もOpen/Close等の値になり得ます。対象CHの `fault` が真なら、`wait_for_state()` は状態が一致していても待たずに `GuiShutterError`（`code == "fault"`）を送出します。この項目がない旧GUIでは従来どおり待機し、異常報告のない旧ファームウェアでは `false` になります。
+
 `close(channel)` closes a shutter. `close()` without a channel, context exit, and `release()` release API ownership; they do not send Close to hardware. Accepted finite jobs may finish after release or heartbeat expiry; the last requested shutter state is retained. Take control revokes the old client, which must create a new instance to reacquire.
 
 `close(channel)` はシャッターを閉じます。引数なしの `close()`、with終了、`release()` は操作権の解放であり、実機へCloseを送りません。受付済みの処理は解放・接続失効後も完了する場合があり、最後に要求した状態を維持します。Take control後、古いクライアントは再取得できず、新しいインスタンスが必要です。

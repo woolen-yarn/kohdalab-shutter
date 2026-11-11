@@ -394,7 +394,10 @@ def start_controller(clock):
     return server, buttons, wifi, symbols["poll_controller"]
 
 
-def test_wifi_reconnect_keeps_buttons_and_servo_ticks_running(monkeypatch):
+@pytest.mark.parametrize("discovery_available", [True, False])
+def test_wifi_reconnect_keeps_buttons_and_servo_ticks_running(
+    monkeypatch, discovery_available, capsys
+):
     clock = Clock()
     server, buttons, wifi, poll = start_controller(clock)
     assert server.sessions.claim(TOKEN, [0])["ok"]
@@ -435,14 +438,25 @@ def test_wifi_reconnect_keeps_buttons_and_servo_ticks_running(monkeypatch):
 
     wifi.connected = True
     with monkeypatch.context() as unavailable:
-        unavailable.setattr(server.discovery, "start", lambda: False)
+        if not discovery_available:
+            unavailable.setattr(server.discovery, "start", lambda: False)
         at(14000)
-    assert server.reconnecting and server.sock is None
-    assert server.discovery.sock is None
+    recovered_tcp = server.sock
+    assert server.running and not server.reconnecting
+    assert recovered_tcp is not None and recovered_tcp is not tcp
+    assert not recovered_tcp.closed
+    if discovery_available:
+        assert server.discovery.sock is not None and server.discovery.sock is not udp
+    else:
+        assert server.discovery.sock is None
+        assert (
+            "UDP discovery unavailable; TCP control remains available"
+            in capsys.readouterr().out
+        )
     at(16000)
     assert server.running and not server.reconnecting
-    assert server.sock is not tcp and server.discovery.sock is not udp
-    assert wifi.configurations == [wifi.configurations[0]] * 3
+    assert server.sock is recovered_tcp
+    assert wifi.configurations == [wifi.configurations[0]] * 2
 
     class StateConnection(Connection):
         data = iter(b"STATE\n")

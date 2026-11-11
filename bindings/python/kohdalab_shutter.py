@@ -344,8 +344,8 @@ class GuiShutter:
         """Poll GUI state without issuing another shutter command.
 
         ``Open`` and ``Close`` are accepted only after the firmware reports a
-        calibrated state.  ``Unknown`` and a dropped connection fail rather
-        than implying a physical result from a command acknowledgement.
+        calibrated state.  A channel fault, ``Unknown`` and a dropped connection
+        fail rather than implying a physical result from a command acknowledgement.
         """
         if not isinstance(channel, int) or isinstance(channel, bool) or channel < 0:
             raise ValueError("channel must be a non-negative integer")
@@ -362,6 +362,8 @@ class GuiShutter:
                 raise GuiShutterError("Shutter is disconnected", "disconnected")
             channels = snapshot.get("channels")
             current = channels.get(str(channel)) if isinstance(channels, dict) else None
+            if isinstance(current, dict) and current.get("fault", False):
+                raise GuiShutterError(f"Shutter CH{channel} is faulted", "fault")
             observed = current.get("state") if isinstance(current, dict) else "Unknown"
             if observed == state:
                 return snapshot

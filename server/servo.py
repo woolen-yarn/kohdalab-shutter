@@ -249,6 +249,11 @@ class ServoBoard:
             self._pwm.set_servo_angle(self.channels[index]["servo"], angle)
         except OSError:
             self._mark_fault(index)
+            try:
+                self._pwm.disable(self.channels[index]["servo"])
+            except OSError:
+                # The I2C bus may still be unavailable. Wait for another command.
+                pass
             return False
         self.positions[index] = angle
         return True
@@ -256,11 +261,6 @@ class ServoBoard:
     def _mark_fault(self, index):
         self.faults[index] = True
         self.angles[index] = self.positions[index]
-        try:
-            self._pwm.disable(self.channels[index]["servo"])
-        except OSError:
-            # The I2C bus may still be unavailable. Wait for another command.
-            pass
 
     def _motion_parameters(self, index, position, target):
         """Return the slew parameters for this channel's current target."""

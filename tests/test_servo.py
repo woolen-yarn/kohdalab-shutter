@@ -299,8 +299,9 @@ def test_state_includes_custom_calibration_targets_and_motion(channels, pwm, clo
     assert "CH1=10/70/10/70/1" in board.state_text()
 
 
+@pytest.mark.parametrize("release_fails", [False, True])
 def test_step_failure_keeps_last_successful_angle_and_requires_a_new_command(
-    channels, pwm, clock, monkeypatch
+    channels, pwm, clock, monkeypatch, release_fails
 ):
     board = make_board(channels, pwm, clock, max_active=2)
     board.open(0)
@@ -317,6 +318,13 @@ def test_step_failure_keeps_last_successful_angle_and_requires_a_new_command(
 
     with monkeypatch.context() as failed:
         failed.setattr(pwm, "set_servo_angle", fail_step)
+        if release_fails:
+
+            def fail_release(output):
+                pwm.disabled.append(output)
+                raise OSError("I2C release failed")
+
+            failed.setattr(pwm, "disable", fail_release)
         clock.advance(20)
         board.tick()
 
@@ -372,7 +380,7 @@ def test_pwm_release_failure_attempts_one_best_effort_release(
     board.tick()
     assert board.faults == [True, False]
     assert not board.busy()
-    assert pwm.disabled == [0, 0, 1]
+    assert pwm.disabled == [0, 1]
     clock.advance(100)
     board.tick()
-    assert pwm.disabled == [0, 0, 1]
+    assert pwm.disabled == [0, 1]
