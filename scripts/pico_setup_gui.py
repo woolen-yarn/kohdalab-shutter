@@ -33,7 +33,7 @@ from scripts.upload_pico import (
     tuning_channels,
 )
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 STYLE = """
 QWidget { background: #121317; color: #EBECF1; font-size: 13px; }
 QLineEdit, QComboBox { background: #1A1B20; border: 1px solid #383A43; border-radius: 6px; padding: 7px; }
