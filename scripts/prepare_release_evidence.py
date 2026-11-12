@@ -92,6 +92,8 @@ def prepare(
         or report.get("hardware_connected") is not False
     ):
         raise ValueError("GUI API validation is not a passing simulation report")
+    if report.get("commit") != commit:
+        raise ValueError("GUI API validation commit does not match the release commit")
     validation_name = "validation-linux-gui-api.json"
     shutil.copyfile(validation, assets / validation_name)
 

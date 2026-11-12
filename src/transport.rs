@@ -17,6 +17,7 @@ pub struct Client {
     pub timeout: Duration,
     pub retries: u8,
     token: Option<String>,
+    poll_supported: bool,
 }
 
 impl std::fmt::Debug for Client {
@@ -46,6 +47,7 @@ impl Client {
             timeout,
             retries,
             token: None,
+            poll_supported: false,
         })
     }
 
@@ -123,13 +125,14 @@ impl Client {
 
     fn claim_with_token(&self, channels: &[u8], token: String) -> io::Result<Self> {
         validate_channels(channels)?;
-        self.session("claim", json!({"token": token, "channels": channels}), true)?;
+        let reply = self.session("claim", json!({"token": token, "channels": channels}), true)?;
         Ok(Self {
             host: self.host.clone(),
             port: self.port,
             timeout: self.timeout,
             retries: self.retries,
             token: Some(token),
+            poll_supported: reply["poll_supported"].as_bool() == Some(true),
         })
     }
 
@@ -138,6 +141,20 @@ impl Client {
     pub fn renew(&self) -> io::Result<()> {
         self.session_with_token("renew", json!({}), true)?;
         Ok(())
+    }
+
+    /// Renew the lease and read state and faults in one request when supported.
+    pub fn poll(&self) -> io::Result<(Snapshot, ControllerInfo)> {
+        if !self.poll_supported {
+            self.renew()?;
+            return Ok((self.snapshot()?, self.info()?));
+        }
+
+        let reply = self.session_with_token("poll", json!({}), true)?;
+        let raw_state = reply["state"]
+            .as_str()
+            .ok_or_else(|| invalid("Missing state in Pico poll response"))?;
+        Ok((parse_state(raw_state)?, parse_info(reply["info"].clone())?))
     }
 
     /// Release this client's channels. It is idempotent at the Pico protocol
@@ -481,6 +498,42 @@ mod tests {
         assert!(commands[3].contains("\"action\":\"open\""));
         assert!(commands[4].contains("\"op\":\"release\""));
         assert!(!format!("{leased:?}").contains("token"));
+    }
+
+    #[test]
+    fn poll_preserves_snapshot_and_fault_with_one_exchange_or_legacy_fallback() {
+        const INFO: &[u8] = b"{\"ok\":true,\"protocol\":2,\"device_id\":\"a0ff\",\"label\":\"Bay A\",\"lease_ms\":15000,\"channels\":[{\"id\":0,\"label\":\"CH00\",\"locked\":true,\"fault\":true}]}\n";
+        const POLL: &[u8] = b"{\"ok\":true,\"state\":\"CH0=70/70/10/70/0\",\"info\":{\"protocol\":2,\"device_id\":\"a0ff\",\"label\":\"Bay A\",\"lease_ms\":15000,\"channels\":[{\"id\":0,\"label\":\"CH00\",\"locked\":true,\"fault\":true}]}}\n";
+
+        for (replies, exchanges) in [
+            (
+                vec![b"{\"ok\":true,\"poll_supported\":true}\n".as_slice(), POLL],
+                1,
+            ),
+            (
+                vec![
+                    b"{\"ok\":true}\n".as_slice(),
+                    b"{\"ok\":true}\n",
+                    b"CH0=70/70/10/70/0\n",
+                    INFO,
+                ],
+                3,
+            ),
+        ] {
+            let (client, worker) = server(replies);
+            let (snapshot, info) = client.claim(&[0]).unwrap().poll().unwrap();
+            assert_eq!(snapshot.channels[&0].name(), "Open");
+            assert!(info.channels[0].fault);
+            let commands = worker.join().unwrap();
+            assert_eq!(commands.len() - 1, exchanges);
+            if exchanges == 1 {
+                assert!(commands[1].contains("\"op\":\"poll\""));
+            } else {
+                assert!(commands[1].contains("\"op\":\"renew\""));
+                assert_eq!(commands[2], "STATE\n");
+                assert!(commands[3].contains("\"op\":\"info\""));
+            }
+        }
     }
 
     #[test]

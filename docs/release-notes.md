@@ -1,3 +1,17 @@
+# KohdaLab Shutter 0.6.11
+
+- GUI API requests received during a device refresh wait in the existing bounded queue until the refresh finishes, subject to their request deadline.
+- With [Pico Setup 1.2.1 firmware](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.1), each refresh uses one TCP connection to renew the lease and read state and faults. Older firmware uses the existing three requests.
+- The release includes the source ZIP, build manifests, SHA-256 checksums and Linux GUI API simulation evidence tied to the tagged commit. Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. This release was tested in simulation without a physical Pico or shutter.
+
+## 日本語
+
+- 機器の定期更新中に届いた GUI API の要求は、期限内であれば既存のキューで待機し、更新後に処理されます。
+- [Pico Setup 1.2.1 のファームウェア](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.1)では、定期更新1回につき TCP 接続1回で所有権を延長し、状態と異常を取得します。旧ファームウェアでは従来の3要求を使います。
+- ソース ZIP、ビルド記録、SHA-256、タグのコミットに紐付いた Linux GUI API 模擬検証結果を同梱します。Windows 版は未署名、macOS 版はアドホック署名で未公証です。実機の Pico とシャッターによる検証は行っていません。
+
+---
+
 # KohdaLab Shutter 0.6.10
 
 ## Changes

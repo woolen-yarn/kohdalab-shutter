@@ -7,7 +7,7 @@ rust-version = "1.92"
 
 [package]
 name = "kohdalab-shutter"
-version = "0.6.10"
+version = "0.6.11"
 edition = "2024"
 rust-version.workspace = true
 description = "Rust desktop controller for the KohdaLab Pico W shutter"

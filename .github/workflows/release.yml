@@ -223,8 +223,18 @@ jobs:
           --validation validation/gui-api-validation.json
       - name: Create draft and verify uploaded files before publishing
         run: |
-          gh release create "$RELEASE_TAG" --verify-tag --target "$RELEASE_COMMIT" --draft --title "KohdaLab Shutter $RELEASE_TAG" --notes-file docs/release-notes.md release-assets/*
+          if existing=$(gh release view "$RELEASE_TAG" --json isDraft,targetCommitish,url); then
+            if ! jq -e --arg commit "$RELEASE_COMMIT" '.isDraft and .targetCommitish == $commit' <<< "$existing"; then
+              echo "Existing release is published or targets a different commit" >&2
+              exit 1
+            fi
+            echo "Verifying existing draft: $(jq -r .url <<< "$existing")"
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --target "$RELEASE_COMMIT" --draft --title "KohdaLab Shutter $RELEASE_TAG" --notes-file docs/release-notes.md release-assets/*
+          fi
           mkdir downloaded
           gh release download "$RELEASE_TAG" --dir downloaded
+          cmp release-assets/SHA256SUMS.txt downloaded/SHA256SUMS.txt
+          diff <(ls -1 release-assets) <(ls -1 downloaded)
           (cd downloaded && sha256sum --check SHA256SUMS.txt)
           gh release edit "$RELEASE_TAG" --draft=false --latest

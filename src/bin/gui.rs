@@ -872,9 +872,7 @@ impl App {
             self.apply_snapshot(Snapshot::demo(&self.demo_status));
         } else if let Some(client) = self.client.clone() {
             self.task(move || {
-                client.renew()?;
-                let state = client.snapshot()?;
-                let info = client.info()?;
+                let (state, info) = client.poll()?;
                 Ok(Reply::Refreshed(state, info))
             });
             self.refreshing = true;
@@ -1184,6 +1182,11 @@ impl App {
     fn process_api(&mut self) {
         if self.control.expire() {
             self.record("External control expired; holding last requested state");
+        }
+        // Keep requests in the bounded transport queue until polling finishes.
+        // The original request deadlines still apply before dispatch.
+        if self.refreshing {
+            return;
         }
         let requests: Vec<_> = self
             .api

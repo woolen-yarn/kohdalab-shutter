@@ -71,7 +71,12 @@ def candidates(tmp_path, repository):
     validation = tmp_path / "gui-api-validation.json"
     validation.write_text(
         json.dumps(
-            {"result": "passed", "mode": "simulation", "hardware_connected": False}
+            {
+                "result": "passed",
+                "mode": "simulation",
+                "hardware_connected": False,
+                "commit": commit,
+            }
         ),
         encoding="utf-8",
     )
@@ -174,4 +179,17 @@ def test_other_checkout_tag_or_failed_validation_is_rejected(repository, candida
         validation.write_text(json.dumps(report), encoding="utf-8")
         with pytest.raises(ValueError, match="passing simulation"):
             prepare(repository, candidates)
+    validation.write_text(
+        json.dumps(
+            {
+                "result": "passed",
+                "mode": "simulation",
+                "hardware_connected": False,
+                "commit": "0" * 40,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="validation commit"):
+        prepare(repository, candidates)
     assert not (assets / "RELEASE-VERIFICATION.json").exists()
