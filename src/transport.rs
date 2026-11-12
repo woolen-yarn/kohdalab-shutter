@@ -506,8 +506,19 @@ mod tests {
         const POLL: &[u8] = b"{\"ok\":true,\"state\":\"CH0=70/70/10/70/0\",\"info\":{\"protocol\":2,\"device_id\":\"a0ff\",\"label\":\"Bay A\",\"lease_ms\":15000,\"channels\":[{\"id\":0,\"label\":\"CH00\",\"locked\":true,\"fault\":true}]}}\n";
 
         for (replies, exchanges) in [
-            (vec![b"{\"ok\":true,\"poll_supported\":true}\n".as_slice(), POLL], 1),
-            (vec![b"{\"ok\":true}\n".as_slice(), b"{\"ok\":true}\n", b"CH0=70/70/10/70/0\n", INFO], 3),
+            (
+                vec![b"{\"ok\":true,\"poll_supported\":true}\n".as_slice(), POLL],
+                1,
+            ),
+            (
+                vec![
+                    b"{\"ok\":true}\n".as_slice(),
+                    b"{\"ok\":true}\n",
+                    b"CH0=70/70/10/70/0\n",
+                    INFO,
+                ],
+                3,
+            ),
         ] {
             let (client, worker) = server(replies);
             let (snapshot, info) = client.claim(&[0]).unwrap().poll().unwrap();
