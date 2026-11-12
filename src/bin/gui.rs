@@ -165,7 +165,7 @@ struct App {
     order: Order,
     control: Control,
     api: Option<remote::Server>,
-    api_wake: Arc<dyn Fn() + Send + Sync>,
+    wake_gui: Arc<dyn Fn() + Send + Sync>,
     api_enabled: bool,
     api_error: String,
     api_directory: Option<PathBuf>,
@@ -229,7 +229,7 @@ impl Default for App {
             order: Order::Ascending,
             control: Control::default(),
             api: None,
-            api_wake: Arc::new(|| {}),
+            wake_gui: Arc::new(|| {}),
             api_directory: None,
             api_enabled: false,
             api_error: String::new(),
@@ -462,10 +462,15 @@ impl App {
         self.pending = Some(receiver);
         self.refreshing = false;
         self.error = false;
+        let wake_gui = self.wake_gui.clone();
         std::thread::spawn(move || {
             let result = job().map_err(|e| e.to_string());
-            if let Err(mpsc::SendError(Ok(Reply::Connected(client, _, _)))) = sender.send(result) {
-                let _ = client.release();
+            match sender.send(result) {
+                Ok(()) => wake_gui(),
+                Err(mpsc::SendError(Ok(Reply::Connected(client, _, _)))) => {
+                    let _ = client.release();
+                }
+                Err(_) => {}
             }
         });
     }
@@ -1745,7 +1750,7 @@ impl App {
     fn start_api(&mut self) -> Result<(), String> {
         self.api = Some(remote::Server::start_with_waker(
             self.api_directory.clone(),
-            self.api_wake.clone(),
+            self.wake_gui.clone(),
         )?);
         Ok(())
     }
@@ -2709,7 +2714,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 app.preferences_error = format!("Default settings could not be created: {error}");
             }
             let wake_ctx = cc.egui_ctx.clone();
-            app.api_wake = Arc::new(move || wake_ctx.request_repaint());
+            app.wake_gui = Arc::new(move || wake_ctx.request_repaint());
             app.api_directory = args.api_directory.clone();
             if args.gui_api {
                 app.start_api().map_err(std::io::Error::other)?;
@@ -2794,6 +2799,22 @@ mod tests {
         sender.send(result).unwrap();
         app.pending = Some(receiver);
         app.receive();
+    }
+
+    #[test]
+    fn background_task_wakes_gui_after_sending_the_reply() {
+        let (wakeup, events) = mpsc::channel();
+        let mut app = App {
+            wake_gui: Arc::new(move || {
+                let _ = wakeup.send(());
+            }),
+            ..App::default()
+        };
+        app.task(|| Ok(Reply::Accepted("Close accepted".into())));
+
+        events.recv_timeout(Duration::from_secs(2)).unwrap();
+        let reply = app.pending.as_ref().unwrap().try_recv().unwrap().unwrap();
+        assert!(matches!(reply, Reply::Accepted(message) if message == "Close accepted"));
     }
 
     #[test]

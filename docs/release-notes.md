@@ -1,3 +1,17 @@
+# KohdaLab Shutter 0.6.12
+
+- Device replies wake the GUI as soon as the background task completes. This reduces the time between receiving a reply and processing it on the GUI thread.
+- [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.2) fixes USB updates for Pico 2 W and verifies backups before writing. A controller already running the 1.2.1 firmware can continue to use it.
+- The release includes the source ZIP, build manifests, SHA-256 checksums and Linux GUI API simulation evidence. Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. The GUI wake-up change was tested in software.
+
+## 日本語
+
+- 機器からの応答をバックグラウンド処理が受け取ると GUI を即座に起こし、状態反映までの待ち時間を減らします。
+- [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.2) は Pico 2 W の USB 更新を修正し、書き込み前にバックアップを検証します。すでに 1.2.1 のファームウェアで稼働中の Pico はそのまま使えます。
+- ソース ZIP、ビルド記録、SHA-256、Linux GUI API 模擬検証結果を同梱します。Windows 版は未署名、macOS 版はアドホック署名で未公証です。GUI の変更はソフトウェアで検証しました。
+
+---
+
 # KohdaLab Shutter 0.6.11
 
 - GUI API requests received during a device refresh wait in the existing bounded queue until the refresh finishes, subject to their request deadline.

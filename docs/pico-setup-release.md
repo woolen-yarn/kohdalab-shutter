@@ -1,11 +1,11 @@
-# KohdaLab Pico Setup 1.2.1
+# KohdaLab Pico Setup 1.2.2
 
-- Initial Wi-Fi connection attempts run in the background and retry while local buttons and servo updates continue. Hold a button for three seconds to cancel.
-- The controller continues servicing local buttons and servos while waiting for TCP input. The firmware also supports a combined lease renewal, state and fault poll for Shutter 0.6.11. Existing clients remain compatible.
-- The bundled firmware was tested with simulated hardware. The packaged setup app was smoke-tested without opening USB. Windows is unsigned. macOS is ad hoc signed and not notarized. [Setup instructions](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/pico-upload.md)
+- The USB updater recognizes both Raspberry Pi Pico W and Pico 2 W running MicroPython.
+- Files are read in small chunks and checked against SHA-256 computed on the Pico. If the read is incomplete or corrupt, the updater stops before replacing any files.
+- The corrected updater was used on a Pico 2 W with MicroPython 1.28.0. The server firmware is unchanged from 1.2.1. Windows is unsigned. macOS is ad hoc signed and not notarized. [Setup instructions](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/pico-upload.md)
 
 ## 日本語
 
-- 初回の Wi-Fi 接続と再試行をバックグラウンドで行い、物理ボタンとサーボの処理を続けます。3秒長押しで接続試行を中止できます。
-- TCP 入力待ち中も物理ボタンとサーボを処理します。Shutter 0.6.11 は所有権更新・状態・異常を1回の要求で取得できます。既存クライアントも引き続き使えます。
-- ファームウェアは模擬環境で検証し、配布アプリは USB を開かず起動確認しました。実機検証は未実施です。Windows 版は未署名、macOS 版はアドホック署名で未公証です。 [セットアップ手順](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/pico-upload.md)
+- MicroPython が動作する Raspberry Pi Pico W と Pico 2 W の両方を USB 更新ツールが認識します。
+- ファイルを小分けに読み取り、Pico 側で計算した SHA-256 と照合します。読み取りに欠落や破損があれば、Pico のファイルを置き換える前に停止します。
+- 修正した更新ツールを MicroPython 1.28.0 の Pico 2 W 実機で確認しました。Pico 上で動作するファームウェアは 1.2.1 と同じです。Windows 版は未署名、macOS 版はアドホック署名で未公証です。 [セットアップ手順](https://github.com/woolen-yarn/kohdalab-shutter/blob/main/docs/pico-upload.md)

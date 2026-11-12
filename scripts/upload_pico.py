@@ -6,6 +6,7 @@ import argparse
 import ast
 from datetime import datetime
 import getpass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -192,36 +193,64 @@ class Pico:
 
     def read(self, names: tuple[str, ...]) -> dict[str, bytes]:
         output = self.run(
-            """import os, json, ubinascii, machine
+            """import os, json, ubinascii, machine, hashlib, time
 print(json.dumps({'machine': os.uname().machine, 'device_id': ubinascii.hexlify(machine.unique_id()).decode()}))
 for name in """
             + repr(names)
             + """:
     try:
-        with open(name, 'rb') as f:
-            value = ubinascii.hexlify(f.read()).decode()
-        print(json.dumps({'name': name, 'data': value}))
-        del value
+        f = open(name, 'rb')
     except OSError as e:
         if e.args[0] != 2:
             raise
+        print(json.dumps({'name': name, 'sha256': None}))
+        continue
+    digest = hashlib.sha256()
+    with f:
+        while True:
+            chunk = f.read(256)
+            if not chunk:
+                break
+            digest.update(chunk)
+            print(json.dumps({'name': name, 'data': ubinascii.hexlify(chunk).decode()}))
+            time.sleep_ms(3)
+    print(json.dumps({'name': name, 'sha256': ubinascii.hexlify(digest.digest()).decode()}))
 """
         )
         try:
             lines = output.splitlines()
             header = json.loads(lines[0])
             self.device_id = header.get("device_id")
-            if "Pico W" not in header["machine"]:
+            if not header["machine"].startswith(
+                ("Raspberry Pi Pico W with ", "Raspberry Pi Pico 2 W with ")
+            ):
                 raise RuntimeError(
-                    "This installer requires Raspberry Pi Pico W MicroPython."
+                    "This installer requires Raspberry Pi Pico W or Pico 2 W MicroPython."
                 )
-            files = {}
+            files: dict[str, bytes] = {}
+            pending: dict[str, bytearray] = {}
+            completed: set[str] = set()
             for line in lines[1:]:
                 record = json.loads(line)
                 name = record["name"]
-                if name not in names or name in files:
+                if name not in names or name in completed:
                     raise ValueError("Unexpected file")
-                files[name] = bytes.fromhex(record["data"])
+                if "data" in record:
+                    pending.setdefault(name, bytearray()).extend(
+                        bytes.fromhex(record["data"])
+                    )
+                    continue
+                digest = record["sha256"]
+                data = bytes(pending.pop(name, b""))
+                if digest is not None:
+                    if hashlib.sha256(data).hexdigest() != digest:
+                        raise ValueError("File checksum mismatch")
+                    files[name] = data
+                elif data:
+                    raise ValueError("Missing file has received data")
+                completed.add(name)
+            if completed != set(names):
+                raise ValueError("Incomplete read")
             return files
         except (IndexError, KeyError, ValueError, TypeError) as error:
             raise RuntimeError(

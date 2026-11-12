@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.12 — 2026-11-12
+
+- Wake the GUI when a device response is ready. / 機器応答の受信後に GUI をすぐ更新します。
+
+## Pico Setup 1.2.2 — 2026-11-12
+
+- Recognize Pico 2 W and verify USB reads before backup and update. / Pico 2 W を認識し、バックアップと更新の前に USB 読み取りを検証します。
+
 ## 0.6.11 — 2026-11-12
 
 - Queue GUI API requests during device refresh and combine refresh requests on compatible firmware. / 定期更新中の GUI API 要求をキューに保持し、対応ファームウェアでは更新の通信を1回にまとめます。

@@ -1,6 +1,7 @@
 """USB uploader regressions without opening serial ports or moving hardware."""
 
 import ast
+import hashlib
 from pathlib import Path
 import subprocess
 from unittest.mock import patch
@@ -114,12 +115,20 @@ def test_remote_failure_never_prints_private_source():
     assert "private-secret" not in str(error.value)
 
 
-def test_read_distinguishes_absent_files_from_read_errors_and_checks_board():
+@pytest.mark.parametrize(
+    "board", ["Raspberry Pi Pico W with RP2040", "Raspberry Pi Pico 2 W with RP2350"]
+)
+def test_read_distinguishes_absent_files_from_read_errors_and_checks_board(board):
     pico = Pico("test")
     with patch.object(
         pico,
         "run",
-        return_value='{ "machine":"Raspberry Pi Pico W with RP2040"}\n{"name":"settings.py","data":"6162"}',
+        return_value='{ "machine":"'
+        + board
+        + '"}\n{"name":"settings.py","data":"61"}\n{"name":"settings.py","data":"62"}'
+        + '\n{"name":"settings.py","sha256":"'
+        + hashlib.sha256(b"ab").hexdigest()
+        + '"}',
     ):
         assert pico.read(("settings.py",)) == {"settings.py": b"ab"}
     with (
@@ -132,6 +141,19 @@ def test_read_distinguishes_absent_files_from_read_errors_and_checks_board():
         pytest.raises(RuntimeError, match="no originals are committed"),
     ):
         pico.read(("settings.py",))
+
+
+def test_read_rejects_corrupt_or_truncated_backup():
+    pico = Pico("test")
+    header = '{"machine":"Raspberry Pi Pico 2 W with RP2350"}'
+    chunk = '{"name":"main.py","data":"6162"}'
+    footer = '{"name":"main.py","sha256":"' + hashlib.sha256(b"abc").hexdigest() + '"}'
+    for lines in ((header, chunk), (header, chunk, footer)):
+        with (
+            patch.object(pico, "run", return_value="\n".join(lines)),
+            pytest.raises(RuntimeError, match="no originals are committed"),
+        ):
+            pico.read(("main.py",))
 
 
 @pytest.mark.parametrize("existing", [True, False])
