@@ -1,8 +1,8 @@
 # Pico W USB setup / Pico Wへの初回転送・更新
 
-Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.1.1). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
+Download the dedicated [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.0). No Python, uv or Thonny installation is needed on the PC. The app bundles the runtime, USB transfer backend and Pico server files. It is separate from the main Shutter control GUI.
 
-専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.1.1)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
+専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.0)を使う場合、PCへPython・uv・Thonnyを入れる必要はありません。実行環境・USB転送機能・Pico側プログラムを同梱しています。普段使うShutter操作GUIとは別のアプリです。
 
 ## Existing device: normal USB / 既存装置の更新は通常USB接続
 

@@ -1,6 +1,44 @@
-# KohdaLab Shutter 0.6.9
+# KohdaLab Shutter 0.6.10
 
-## Maintained GUI runtime and responsive API / GUI実行基盤とAPI応答
+## Changes
+
+- **Channel faults are visible.** When the Pico reports an I2C write fault on a channel, the GUI shows `Fault` in red on that shutter and CLI `info` marks the channel. The operation journal records when a channel enters and leaves the fault state. Clicking a faulted shutter sends a new command, which is how the Pico retries the channel.
+- **Scripts can see faults.** Each channel in GUI API `status` has a boolean `fault`. The `state` value keeps its existing meaning, so existing scripts read the same strings. Python `wait_for_state()` raises `GuiShutterError` with `code == "fault"` immediately instead of waiting for its timeout. The Python client package `kohdalab-shutter-api` is 0.6.10.
+- **Release evidence is published with the packages.** See Validation and provenance.
+
+## Compatibility and migration
+
+- Fault reporting needs the firmware in [Pico Setup 1.2.0](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.0). With older firmware this desktop version works as 0.6.9 did and never shows `Fault`. Older desktop versions work with the new firmware and ignore the fault report.
+- Shutter commands, `STATE`/`STATUS`, the profile format, lease policy and safety behaviour are unchanged. Existing profiles and operation journals remain usable.
+- Journal records of type `reported_state_changed` gain a `faulted_channel_ids` array.
+
+## Downloads
+
+| Platform | File |
+| --- | --- |
+| Windows 10/11 (x64), installer | `kohdalab-shutter-0.6.10-windows-x64-Setup.exe` |
+| Windows 10/11 (x64), portable | `kohdalab-shutter-0.6.10-windows-x64.zip` |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-0.6.10-macos-universal.dmg` or `.zip` |
+| Source of the release commit | `kohdalab-shutter-0.6.10-source.zip` |
+
+Windows binaries are unsigned. Mac applications are ad hoc signed and not notarized. Checksums show that a file is the one built here; they are not a publisher signature. Pico W firmware is installed with the separate Pico Setup app.
+
+## Validation and provenance
+
+- `RELEASE-VERIFICATION.json` records the release commit, its source tree, the validation and release workflow runs, the signing state, and the SHA-256 of every other published file. `SHA256SUMS.txt` covers every published file, including `BUILD-*.json` and `RELEASE-VERIFICATION.json`.
+- The publish job accepts the four packages only when each platform's `BUILD-*.json` names the release commit and version and its digests match the bytes.
+- `validation-linux-gui-api.json` is the isolated-simulation run of the real GUI and its API, built from the release commit on Linux. The Windows and Mac packages are built, installed or opened, and version-checked in the release workflow, including an Intel Mac run; the GUI API simulation is not repeated on those packages.
+- No physical Pico W, servo or optical measurement was involved. Fault display was exercised with simulated controller responses only.
+
+## 日本語
+
+- **CHの異常が見えるようになりました。** PicoがCHのI2C書き込み異常を報告すると、GUIはそのシャッターを赤い`Fault`で表示し、CLIの`info`にも印が付きます。異常の発生と解消は操作ジャーナルに記録します。異常中のシャッターをクリックすると新しい指令が送られ、Picoがそのチャンネルを再試行します。
+- **スクリプトから異常が分かります。** GUI APIの`status`の各CHに真偽値`fault`があります。`state`の意味は変わらないので、既存のスクリプトが読む文字列は同じです。Pythonの`wait_for_state()`はtimeoutを待たずに`GuiShutterError`（`code == "fault"`）を出します。Pythonクライアント`kohdalab-shutter-api`は0.6.10です。
+- **互換性：** 異常の報告には[Pico Setup 1.2.0](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.0)のファームウェアが必要です。旧ファームウェアでは0.6.9と同じ動作で、`Fault`は表示されません。旧デスクトップ版は新ファームウェアでも動き、異常の報告を無視します。指令、`STATE`/`STATUS`、設定形式、lease方針、安全動作は変わりません。
+- **配布物：** Windows版は未署名、Mac版はアドホック署名でApple公証は受けていません。リリースcommitのソースを`kohdalab-shutter-0.6.10-source.zip`として同梱します。
+- **検証と来歴：** `RELEASE-VERIFICATION.json`にリリースcommit、ソースtree、検証・配布workflowの実行、署名状態、各ファイルのSHA-256を記録します。`SHA256SUMS.txt`は公開する全ファイルを含みます。`validation-linux-gui-api.json`は、リリースcommitをLinuxでビルドした実GUIとAPIの模擬検証です。WindowsとMacの配布物はビルド・インストールまたは起動・版の確認までで、GUI APIの模擬検証は繰り返していません。実機のPico W・サーボ・光学測定は使用していません。
+
+## 0.6.9 — Maintained GUI runtime and responsive API / GUI実行基盤とAPI応答
 
 The desktop GUI now uses the maintained eframe/egui 0.34 stack and no longer ships the unmaintained font parser. Authenticated API requests wake an idle GUI on every startup path. Controller polling and API processing run independently of visible drawing, so a covered window keeps processing requests and operation outcomes.
 
