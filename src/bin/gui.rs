@@ -44,6 +44,8 @@ const IDLE_REFRESH: Duration = Duration::from_secs(1);
 const MOVING_REFRESH: Duration = Duration::from_millis(100);
 const IDLE_REPAINT: Duration = Duration::from_millis(100);
 const ACTIVE_REPAINT: Duration = Duration::from_millis(50);
+/// Upper bound for holding a silent connection, whatever lease the Pico reports.
+const MAX_LINK_GRACE: Duration = Duration::from_secs(60);
 /// Keep application exit responsive even if the journal writer is blocked on I/O.
 const JOURNAL_EXIT_ACK_TIMEOUT: Duration = Duration::from_millis(250);
 
@@ -100,6 +102,8 @@ enum Reply {
     Connected(Client, Snapshot, ControllerInfo),
     Released(ControllerInfo, Option<String>),
     Refreshed(Snapshot, ControllerInfo),
+    /// A poll could not reach the Pico; nothing was commanded.
+    LinkInterrupted(String),
     Config(Result<ControllerInfo, String>),
     Accepted(String),
 }
@@ -175,6 +179,10 @@ struct App {
     journal_incomplete: bool,
     last_journal_state: Option<(Value, Vec<u8>)>,
     pending_operation: Option<PendingOperation>,
+    /// Last exchange known to have renewed the Pico lease.
+    last_contact: Option<Instant>,
+    /// Set while polls fail transiently; no commands are sent until cleared.
+    link_interrupted: Option<String>,
 }
 
 impl Default for App {
@@ -239,6 +247,8 @@ impl Default for App {
             journal_incomplete: false,
             last_journal_state: None,
             pending_operation: None,
+            last_contact: None,
+            link_interrupted: None,
         }
     }
 }
@@ -691,6 +701,7 @@ impl App {
         if !self.connected()
             || self.control.owned()
             || self.pending.is_some()
+            || self.link_interrupted.is_some()
             || self.config_due.is_none_or(|due| Instant::now() < due)
         {
             return;
@@ -818,6 +829,8 @@ impl App {
         self.active_name = None;
         self.name_edits.clear();
         self.queued_toggle = None;
+        self.link_interrupted = None;
+        self.last_contact = None;
         self.demo_connected = false;
         self.status.clear();
         self.state = Snapshot::default();
@@ -848,6 +861,7 @@ impl App {
         self.state = snapshot;
         let now = Instant::now();
         self.last_update = Some(now);
+        self.last_contact = Some(now);
         self.next_refresh = now
             + if self.moving() {
                 MOVING_REFRESH
@@ -876,9 +890,14 @@ impl App {
         if self.demo {
             self.apply_snapshot(Snapshot::demo(&self.demo_status));
         } else if let Some(client) = self.client.clone() {
-            self.task(move || {
-                let (state, info) = client.poll()?;
-                Ok(Reply::Refreshed(state, info))
+            // Polls only renew and read; a link failure is reported separately
+            // so the GUI can keep its Pico lease instead of dropping it.
+            self.task(move || match client.poll() {
+                Ok((state, info)) => Ok(Reply::Refreshed(state, info)),
+                Err(error) if transient_link_error(error.kind()) => {
+                    Ok(Reply::LinkInterrupted(error.to_string()))
+                }
+                Err(error) => Err(error),
             });
             self.refreshing = true;
         }
@@ -887,6 +906,7 @@ impl App {
     fn operate(&mut self, operation: Operation, channels: Vec<u8>) {
         if !self.connected()
             || self.pending.is_some()
+            || self.link_interrupted.is_some()
             || channels.is_empty()
             || channels.iter().any(|ch| !self.selected.contains(ch))
         {
@@ -1066,10 +1086,15 @@ impl App {
                 self.update_info(info);
             }
             Ok(Reply::Refreshed(status, info)) => {
+                if let Some(error) = self.link_interrupted.take() {
+                    self.record("Connection restored; Pico lease kept");
+                    self.journal_event("link_restored", json!({"previous_error": error}));
+                }
                 self.update_info(info);
                 self.apply_snapshot(status);
                 self.message.clear();
             }
+            Ok(Reply::LinkInterrupted(error)) => self.hold_interrupted_link(error),
             Ok(Reply::Config(result)) => {
                 let patch = self.config_pending.take().unwrap_or_default();
                 match result {
@@ -1078,6 +1103,8 @@ impl App {
                 }
             }
             Ok(Reply::Accepted(description)) => {
+                // An accepted session operation also renewed the Pico lease.
+                self.last_contact = Some(Instant::now());
                 self.record(description.clone());
                 self.last_command = Some(description);
                 if let Some(pending) = self.pending_operation.take() {
@@ -1094,35 +1121,7 @@ impl App {
                 }
                 self.next_refresh = Instant::now();
             }
-            Err(error) => {
-                if let Some(pending) = self.pending_operation.take() {
-                    self.journal_event(
-                        "operation_outcome",
-                        json!({
-                            "operation_id": pending.id,
-                            "requested_action": format!("{:?}", pending.operation).to_lowercase(),
-                            "requested_channel_ids": pending.channels,
-                            "outcome": "unresolved",
-                            "error": error,
-                            "optical_verification": "not_available_no_optical_sensor"
-                        }),
-                    );
-                }
-                self.queued_toggle = None;
-                self.pending_release = false;
-                self.record(format!("ERROR: {error}"));
-                self.error = true;
-                self.message = error;
-                self.status.clear();
-                self.state = Snapshot::default();
-                self.last_journal_state = None;
-                if let Some(client) = self.client.take() {
-                    std::thread::spawn(move || {
-                        let _ = client.release();
-                    });
-                }
-                self.last_update = None;
-            }
+            Err(error) => self.drop_connection(error),
         }
         if let Some(id) = self.pending_api_job.take() {
             let result = api_error.map_or_else(
@@ -1137,6 +1136,73 @@ impl App {
         {
             self.operate(Operation::Toggle, vec![channel]);
         }
+    }
+
+    /// Keep the session through a transient poll failure while the Pico lease
+    /// may still be valid. Controls stay blocked and every channel reads
+    /// Unknown until a poll succeeds; that poll renews the lease or the Pico
+    /// reports `lease_lost`, which disconnects as before.
+    fn hold_interrupted_link(&mut self, error: String) {
+        let grace = self.info.as_ref().map_or(Duration::ZERO, |info| {
+            Duration::from_millis(info.lease_ms.into()).min(MAX_LINK_GRACE)
+        });
+        if self
+            .last_contact
+            .is_none_or(|contact| contact.elapsed() >= grace)
+        {
+            self.drop_connection(format!(
+                "{error}. Connection did not recover within the {} s Pico lease.",
+                grace.as_secs()
+            ));
+            return;
+        }
+        if self.link_interrupted.is_none() {
+            self.record(format!("Connection interrupted; retrying: {error}"));
+            self.journal_event(
+                "link_interrupted",
+                json!({"error": error, "lease_grace_ms": grace.as_millis() as u64}),
+            );
+        }
+        self.link_interrupted = Some(error);
+        self.queued_toggle = None;
+        self.message = "Connection interrupted; retrying while the Pico lease is held.".into();
+        // Never present an unconfirmed endpoint as the current state.
+        self.state = Snapshot::legacy(self.status.clone());
+        self.last_update = None;
+        self.last_journal_state = None;
+        self.next_refresh = Instant::now() + IDLE_REFRESH;
+    }
+
+    fn drop_connection(&mut self, error: String) {
+        if let Some(pending) = self.pending_operation.take() {
+            self.journal_event(
+                "operation_outcome",
+                json!({
+                    "operation_id": pending.id,
+                    "requested_action": format!("{:?}", pending.operation).to_lowercase(),
+                    "requested_channel_ids": pending.channels,
+                    "outcome": "unresolved",
+                    "error": error,
+                    "optical_verification": "not_available_no_optical_sensor"
+                }),
+            );
+        }
+        self.queued_toggle = None;
+        self.pending_release = false;
+        self.link_interrupted = None;
+        self.last_contact = None;
+        self.record(format!("ERROR: {error}"));
+        self.error = true;
+        self.message = error;
+        self.status.clear();
+        self.state = Snapshot::default();
+        self.last_journal_state = None;
+        if let Some(client) = self.client.take() {
+            std::thread::spawn(move || {
+                let _ = client.release();
+            });
+        }
+        self.last_update = None;
     }
 
     fn devices_json(&self) -> Value {
@@ -1440,6 +1506,12 @@ impl App {
                     return Err(ApiError::new(
                         "disconnected",
                         "Connect and read channels before sending an action",
+                    ));
+                }
+                if self.link_interrupted.is_some() {
+                    return Err(ApiError::new(
+                        "disconnected",
+                        "Pico connection interrupted; retrying. No action was sent",
                     ));
                 }
                 action = Some(match method {
@@ -2072,6 +2144,7 @@ impl App {
             || !self.selected.contains(&channel)
             || self.control.owned()
             || self.queued_toggle.is_some()
+            || self.link_interrupted.is_some()
         {
             return;
         }
@@ -2088,6 +2161,7 @@ impl App {
         let enabled = self.connected()
             && (self.pending.is_none() || self.refreshing)
             && self.queued_toggle.is_none()
+            && self.link_interrupted.is_none()
             && !self.control.owned();
         let channels = self.ordered_channels();
         let device_id = self
@@ -2195,7 +2269,17 @@ impl App {
             .show_inside(root, |ui| {
                 ui.horizontal(|ui| {
                     if connected {
-                        status_dot(ui, if self.error { RED } else { TEAL });
+                        let interrupted = self.link_interrupted.is_some();
+                        status_dot(
+                            ui,
+                            if interrupted {
+                                ORANGE
+                            } else if self.error {
+                                RED
+                            } else {
+                                TEAL
+                            },
+                        );
                         let label = self
                             .info
                             .as_ref()
@@ -2220,7 +2304,15 @@ impl App {
                                     .truncate(),
                                 )
                                 .ui(ui, |ui| {
-                                    ui.label(RichText::new("Connected").small().color(TEAL));
+                                    if interrupted {
+                                        ui.label(
+                                            RichText::new("Reconnecting… lease held")
+                                                .small()
+                                                .color(ORANGE),
+                                        );
+                                    } else {
+                                        ui.label(RichText::new("Connected").small().color(TEAL));
+                                    }
                                     ui.label(RichText::new(&label).strong());
                                     ui.label(
                                         RichText::new(format!("{}:{}", self.host, self.port))
@@ -2380,8 +2472,11 @@ impl eframe::App for App {
             self.config_due = Some(Instant::now());
             self.autosave_labels();
         }
+        // During a link interruption only the lease release below is attempted,
+        // so closing is bounded by one retried exchange.
         if let Some(client) = self.client.clone()
             && self.config_pending.is_none()
+            && self.link_interrupted.is_none()
             && let Ok(patch) = self.label_patch()
             && (patch.device.is_some() || !patch.channels.is_empty())
         {
@@ -2424,6 +2519,29 @@ impl eframe::App for App {
         self.capture(&ctx);
         ctx.request_repaint_after(self.repaint_interval());
     }
+}
+
+/// Poll failures that may clear up on their own while the Pico keeps the lease.
+/// A refused connection means its server stopped or restarted, which clears
+/// every lease, so it disconnects immediately. Protocol errors and
+/// `lease_lost` are never transient. `WouldBlock` is a read timeout on Unix;
+/// poll and renew never return the session `busy` error that also maps to it.
+fn transient_link_error(kind: std::io::ErrorKind) -> bool {
+    use std::io::ErrorKind as Kind;
+    matches!(
+        kind,
+        Kind::TimedOut
+            | Kind::WouldBlock
+            | Kind::Interrupted
+            | Kind::ConnectionReset
+            | Kind::ConnectionAborted
+            | Kind::NotConnected
+            | Kind::BrokenPipe
+            | Kind::UnexpectedEof
+            | Kind::HostUnreachable
+            | Kind::NetworkUnreachable
+            | Kind::NetworkDown
+    )
 }
 
 fn demo_info(id: &str, index: usize) -> ControllerInfo {
@@ -2848,6 +2966,128 @@ mod tests {
         assert!(app.status.is_empty());
         assert!(app.client.is_none());
         assert!(app.error);
+    }
+
+    fn wait_for_reply(app: &mut App) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while app.pending.is_some() {
+            assert!(Instant::now() < deadline, "worker reply timed out");
+            app.receive();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn dropped_poll_keeps_the_pico_lease_and_resumes_with_the_same_token() {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        const POLL_OK: &[u8] = b"{\"ok\":true,\"state\":\"CH0=70/70/10/70/0\",\"info\":{\"protocol\":2,\"device_id\":\"a0ff\",\"label\":\"Bay A\",\"lease_ms\":15000,\"channels\":[{\"id\":0,\"label\":\"CH00\",\"locked\":true}]}}\n";
+        let replies = vec![
+            Some(b"{\"ok\":true,\"poll_supported\":true}\n".as_slice()),
+            None, // The request goes unanswered: a dropped link.
+            Some(POLL_OK),
+        ];
+        let worker = std::thread::spawn(move || {
+            replies
+                .into_iter()
+                .map(|reply| {
+                    let (mut conn, _) = listener.accept().unwrap();
+                    let mut line = String::new();
+                    BufReader::new(conn.try_clone().unwrap())
+                        .read_line(&mut line)
+                        .unwrap();
+                    if let Some(reply) = reply {
+                        conn.write_all(reply).unwrap();
+                    }
+                    serde_json::from_str::<Value>(line.trim().strip_prefix("SESSION ").unwrap())
+                        .unwrap()
+                })
+                .collect::<Vec<_>>()
+        });
+        let client = Client::new("127.0.0.1".into(), port, Duration::from_millis(500), 1)
+            .unwrap()
+            .claim(&[0])
+            .unwrap();
+        let mut app = App {
+            client: Some(client),
+            info: Some(demo_info("a0ff", 0)),
+            selected: [0].into(),
+            ..App::default()
+        };
+        app.apply_snapshot(kohdalab_shutter::protocol::parse_state("CH0=70/70/10/70/0").unwrap());
+
+        app.refresh();
+        wait_for_reply(&mut app);
+        assert!(
+            app.client.is_some(),
+            "a transient poll failure must keep the lease"
+        );
+        assert!(app.link_interrupted.is_some());
+        assert_eq!(app.displayed_channel_state(0), "Unknown");
+        assert_eq!(app.snapshot_json()["connected"], false);
+        app.request_toggle(0);
+        assert!(app.pending.is_none() && app.queued_toggle.is_none());
+
+        app.refresh();
+        wait_for_reply(&mut app);
+        assert!(app.link_interrupted.is_none());
+        assert_eq!(app.displayed_channel_state(0), "Open");
+        assert_eq!(app.snapshot_json()["connected"], true);
+
+        let requests = worker.join().unwrap();
+        let ops: Vec<_> = requests.iter().map(|r| r["op"].as_str().unwrap()).collect();
+        assert_eq!(ops, ["claim", "poll", "poll"], "no release or command sent");
+        assert!(requests.iter().all(|r| r["token"] == requests[0]["token"]));
+    }
+
+    #[test]
+    fn interrupted_link_blocks_actions_and_disconnects_after_the_lease() {
+        use std::io::ErrorKind;
+        for kind in [
+            ErrorKind::TimedOut,
+            ErrorKind::WouldBlock,
+            ErrorKind::UnexpectedEof,
+        ] {
+            assert!(transient_link_error(kind), "{kind:?}");
+        }
+        for kind in [
+            ErrorKind::ConnectionRefused,
+            ErrorKind::PermissionDenied,
+            ErrorKind::InvalidData,
+        ] {
+            assert!(!transient_link_error(kind), "{kind:?}");
+        }
+
+        let mut app = App {
+            client: Some(
+                Client::new("127.0.0.1".into(), DEFAULT_PORT, Duration::from_secs(1), 1).unwrap(),
+            ),
+            info: Some(demo_info("a0ff", 0)),
+            selected: [0].into(),
+            ..App::default()
+        };
+        app.apply_snapshot(Snapshot::demo(&[(0, 0)].into()));
+        deliver(&mut app, Ok(Reply::LinkInterrupted("timed out".into())));
+        assert!(app.client.is_some());
+        let mut request = api_owner(&mut app);
+        request["method"] = json!("open");
+        request["channel"] = json!(0);
+        request["request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        assert_eq!(app.api_request(&request).unwrap_err().code, "disconnected");
+        assert!(app.pending.is_none(), "no command task was started");
+        assert!(
+            app.control
+                .result(request["request_id"].as_str().unwrap())
+                .is_err()
+        );
+
+        // Once the Pico lease must have lapsed, stop holding the connection.
+        app.last_contact = Some(Instant::now() - Duration::from_secs(15));
+        deliver(&mut app, Ok(Reply::LinkInterrupted("timed out".into())));
+        assert!(app.client.is_none());
+        assert!(app.link_interrupted.is_none());
+        assert!(app.error && app.message.contains("15 s Pico lease"));
     }
 
     #[test]
