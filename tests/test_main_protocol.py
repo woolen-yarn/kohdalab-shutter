@@ -135,6 +135,7 @@ def pico_symbols(clock):
             "WifiServer",
             "on_button",
             "sync_led_mode",
+            "service_local",
             "poll_controller",
         }
     ]
@@ -174,6 +175,7 @@ def test_session_json_preserves_lowercase_token_and_raw_command_is_locked():
         "ok": True,
         "channels": [0],
         "lease_ms": 15000,
+        "poll_supported": True,
     }
     server._handle("OPEN 0", connection)
     assert connection.writes[-1] == b"LOCKED\n"
@@ -478,6 +480,65 @@ def test_wifi_reconnect_keeps_buttons_and_servo_ticks_running(
     assert connection.closed
 
 
+def test_session_poll_renews_and_returns_state_and_faults():
+    clock = Clock()
+    server, _, _, _ = start_controller(clock)
+    conn = Connection()
+
+    def request(body):
+        server._handle("SESSION " + json.dumps(body), conn)
+        return json.loads(conn.writes[-1])
+
+    assert request({"op": "claim", "token": TOKEN, "channels": [0]})["poll_supported"]
+    clock.now = 14000
+    result = request({"op": "poll", "token": TOKEN})
+    assert result["ok"] and result["state"] == "STATE"
+    assert result["info"]["channels"][0]["locked"]
+    assert result["info"]["channels"][0]["fault"] is False
+    clock.now = 28000
+    assert request({"op": "poll", "token": TOKEN})["ok"]
+    clock.now = 44000
+    assert request({"op": "poll", "token": TOKEN}) == {
+        "ok": False,
+        "error": "lease_lost",
+    }
+
+
+def test_initial_wifi_connect_failure_retries_without_stopping_local_control(
+    monkeypatch,
+):
+    clock = Clock()
+    server, buttons, wifi, poll = start_controller(clock)
+    assert server.stop()
+    wifi.connected = False
+    connect = wifi.connect
+
+    def fail_connect(*args):
+        connect(*args)
+        raise OSError("Wi-Fi unavailable")
+
+    with monkeypatch.context() as unavailable:
+        unavailable.setattr(wifi, "connect", fail_connect)
+        assert server.start()
+    assert server.reconnecting and not server.running
+
+    buttons.switches[0].value(0)
+    for moment in (10, 60):
+        clock.now = moment
+        poll()
+    buttons.switches[0].value(1)
+    for moment in (110, 160, 10000):
+        clock.now = moment
+        poll()
+    assert server.servos.actions == [("toggle", 0)]
+    assert wifi.connect_times == [0, 10000]
+
+    wifi.connected = True
+    clock.now = 12000
+    poll()
+    assert server.running and not server.reconnecting
+
+
 def test_long_press_cancels_reconnect():
     clock = Clock()
     server, buttons, wifi, poll = start_controller(clock)
@@ -605,15 +666,20 @@ def test_complete_maximum_unicode_label_patch_exceeds_old_limit_but_is_accepted(
 
     class FullConnection:
         def __init__(self):
-            self.data = iter((command + "\n").encode())
+            self.data = (command + "\n").encode()
+            self.reads = 0
 
         def settimeout(self, _timeout):
             pass
 
-        def recv(self, _size):
-            return bytes([next(self.data)])
+        def recv(self, size):
+            self.reads += 1
+            chunk, self.data = self.data[:size], self.data[size:]
+            return chunk
 
-    assert server._readline(FullConnection()) == command
+    connection = FullConnection()
+    assert server._readline(connection) == command
+    assert connection.reads == (len(command.encode()) + 256) // 256
 
 
 def test_open_without_newline_times_out_and_returns_unknown():

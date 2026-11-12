@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -179,6 +180,7 @@ def verify(binary, output):
                         "heartbeat-release",
                     ],
                     "hardware_connected": False,
+                    "commit": os.environ.get("GITHUB_SHA"),
                 }
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text(

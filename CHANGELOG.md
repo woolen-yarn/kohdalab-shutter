@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.11 — 2026-11-12
+
+- Queue GUI API requests during device refresh and combine refresh requests on compatible firmware. / 定期更新中の GUI API 要求をキューに保持し、対応ファームウェアでは更新の通信を1回にまとめます。
+
+## Pico Setup 1.2.1 — 2026-11-12
+
+- Keep local controls responsive during Wi-Fi startup and TCP input waits, and support combined polling. / 初回 Wi-Fi 接続中と TCP 入力待ち中もローカル操作を処理し、定期更新の一括取得に対応します。
+
 ## 0.6.10 — 2026-11-11
 
 - Show `Fault` in the GUI and in CLI `info` for a channel whose Pico reports an I2C write fault, and record fault transitions in the operation journal. Requires the firmware in Pico Setup 1.2.0; older firmware is displayed as before. / PicoがI2C書き込み異常を報告したCHを、GUIとCLIの`info`で`Fault`と表示し、操作ジャーナルに記録します。Pico Setup 1.2.0のファームウェアが必要で、旧ファームウェアは従来どおり表示します。

@@ -111,6 +111,14 @@
 
 **EN:** An I2C write error cancels active or queued motion for the affected channel, keeps its last successfully written angle as both position and target, and attempts PWM release once. Other channels continue. Check wiring and power, then issue a physical or network command to clear the channel fault and retry motion. If PCA9685 initialization fails at startup, all channels show the fault pattern and the Pico stays idle with the network server off. Check the hardware and power-cycle the Pico. Faults do not trigger an automatic reboot.
 
+**JP:** セッションの確保応答に `poll_supported: true` がある場合、GUI は `SESSION {"op":"poll","token":"…"}` で確保を延長し、状態と機器情報を1回の接続で取得します。非対応のファームウェアでは従来の3回の要求を使います。
+
+**EN:** When the claim response advertises `poll_supported: true`, the GUI uses one session poll to renew the lease and read state and controller information. Older firmware uses the existing three requests.
+
+**JP:** サーバ開始時に Wi-Fi が未接続なら、ボタンとサーボの処理を続けながら接続を試みます。接続できるまで TCP サーバは起動せず、3秒長押しで接続試行を中止できます。
+
+**EN:** If Wi-Fi is disconnected when the server is started, the controller attempts to connect while continuing to service buttons and servos. TCP starts after Wi-Fi connects. A three-second press cancels the connection attempts.
+
 **JP:** TCP サーバ動作中は Wi-Fi の接続を2秒ごとに確認します。切断を検出すると TCP と検索用 UDP のソケットを閉じ、全 CH の確保を解除します。ボタンとサーボ処理を続けながら再接続を開始し、未接続なら10秒ごとに再試行します。接続が戻ると固定 IP 設定を再適用し、TCP と UDP を開き直します。再接続中は3秒長押しで停止できます。復帰後は PC から手動で接続し直してください。
 
 **EN:** While the TCP server runs, it checks the Wi-Fi connection every two seconds. On loss it closes TCP and discovery UDP sockets and clears all channel leases. Buttons and servo updates continue while Wi-Fi reconnects, with a new attempt every ten seconds until connected. The Pico reapplies any static IP configuration and reopens both sockets on recovery. A three-second button hold cancels reconnection. Reconnect the desktop manually after recovery.

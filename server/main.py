@@ -211,13 +211,25 @@ class WifiServer:
     def start(self):
         if self.running or self.reconnecting:
             return True
-        self.leds.set_mode(LedDeck.FAST)
-        if not self._connect_ap():
-            print("Wi-Fi start failed")
-            self.leds.set_mode(LedDeck.NORMAL)
+        if not SSID or not PASSWORD:
+            print("Wi-Fi config missing. Upload wifi_config.py with SSID and PASSWORD.")
+            return False
+        try:
+            self.wlan = network.WLAN(network.STA_IF)
+            self.wlan.active(True)
+            if self.wlan.isconnected():
+                self._configure_ip()
+                return self._open_sockets()
+        except OSError as exc:
+            print("Wi-Fi start failed:", exc)
             return False
 
-        return self._open_sockets()
+        now = time.ticks_ms()
+        self.reconnecting = True
+        self._last_wifi_check = now
+        self.leds.set_mode(LedDeck.RECONNECTING)
+        self._retry_connect(now)
+        return True
 
     def _open_sockets(self):
         try:
@@ -299,7 +311,7 @@ class WifiServer:
         elif time.ticks_diff(now, self._last_connect) >= 10_000:
             self._retry_connect(now)
 
-    def poll(self):
+    def poll(self, service_local=None):
         if self.running or self.reconnecting:
             self._poll_wifi()
         if not self.running:
@@ -317,7 +329,9 @@ class WifiServer:
                 break
 
             try:
-                command = self._readline(conn)
+                command = self._readline(conn, service_local=service_local)
+                if not self.running:
+                    break
                 self._handle(command, conn)
             except Exception as exc:
                 print("Server error:", exc)
@@ -331,53 +345,38 @@ class WifiServer:
                 except Exception:
                     pass
 
-    def _readline(self, conn, max_length=8192):
-        conn.settimeout(0.05)
-        started = time.ticks_ms()
+    def _readline(self, conn, max_length=8192, service_local=None):
+        conn.settimeout(0.02)
+        started = last_service = time.ticks_ms()
         buffer = bytearray()
         while len(buffer) < max_length:
-            if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
+            now = time.ticks_ms()
+            if time.ticks_diff(now, started) >= COMMAND_READ_TIMEOUT_MS:
                 return ""
+            if time.ticks_diff(now, last_service) >= 20:
+                last_service = now
+                if service_local is None:
+                    self.servos.tick()
+                    self.leds.tick()
+                else:
+                    service_local()
+                    if not self.running:
+                        return ""
             try:
-                chunk = conn.recv(1)
+                chunk = conn.recv(min(256, max_length - len(buffer)))
             except OSError:
-                self.servos.tick()
-                self.leds.tick()
                 continue
             if not chunk:
                 return ""
-            if chunk == b"\n":
+            newline = chunk.find(b"\n")
+            if newline >= 0:
                 if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
                     return ""
+                buffer += chunk[:newline]
                 return bytes(buffer).decode().strip()
             buffer += chunk
         # Commands are line framed. Never operate on a truncated request.
         return ""
-
-    def _connect_ap(self):
-        if not SSID or not PASSWORD:
-            print("Wi-Fi config missing. Upload wifi_config.py with SSID and PASSWORD.")
-            return False
-
-        wlan = network.WLAN(network.STA_IF)
-        self.wlan = wlan
-        wlan.active(True)
-
-        if not wlan.isconnected():
-            print("Connecting Wi-Fi...")
-            wlan.connect(SSID, PASSWORD)
-            started = time.ticks_ms()
-            while not wlan.isconnected():
-                if time.ticks_diff(time.ticks_ms(), started) > 10_000:
-                    print("Wi-Fi timeout")
-                    return False
-                self.servos.tick()
-                self.leds.tick()
-                time.sleep(0.3)
-
-        self._configure_ip()
-        print("Wi-Fi", wlan.ifconfig())
-        return True
 
     def _configure_ip(self):
         if USE_STATIC_IP:
@@ -389,7 +388,16 @@ class WifiServer:
                 body = json.loads(command[8:])
             except Exception:
                 body = None
-            result = self.sessions.request(body, self._session_operate)
+            operation = body.get("op") if isinstance(body, dict) else None
+            if operation == "poll":
+                result = self.sessions.renew(body.get("token"))
+                if result["ok"]:
+                    result["state"] = self.servos.state_text()
+                    result["info"] = self.sessions.info()
+            else:
+                result = self.sessions.request(body, self._session_operate)
+                if operation == "claim" and result["ok"]:
+                    result["poll_supported"] = True
             self.leds.set_claimed(self.sessions.locked_channels())
             conn.write(json.dumps(result).encode() + b"\n")
             return
@@ -516,13 +524,17 @@ def sync_led_mode():
         leds.set_mode(LedDeck.NORMAL)
 
 
-def poll_controller():
+def service_local():
     buttons.poll()
     servos.tick()
     leds.reflect()
     sync_led_mode()
     leds.tick()
-    server.poll()
+
+
+def poll_controller():
+    service_local()
+    server.poll(service_local)
 
 
 if AUTO_START_SERVER:
