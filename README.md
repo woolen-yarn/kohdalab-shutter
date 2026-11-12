@@ -95,6 +95,22 @@ Pico W側も同時駆動数の更新が必要です。実機の既存`settings.p
 | Servo PWM / サーボPWM | PCA9685, one board, up to 16 outputs / PCA9685 1枚、最大16出力 |
 | Desktop / PC | Rust GUI and CLI on Windows, macOS, or Linux / Windows・macOS・Linux向けRust GUI・CLI |
 
+### 4-channel build / 4CH構成の主要部品
+
+| Part / 部品 | Quantity / 数量 |
+| --- | ---: |
+| Raspberry Pi Pico W or Pico 2 W / Raspberry Pi Pico W または Pico 2 W | 1 |
+| PCA9685 PWM driver board / PCA9685 PWMドライバ基板 | 1 |
+| Servo, mounting bracket, and horn / サーボ・取付ブラケット・ホーン | 4 each / 各4 |
+| Push button, red LED, and green LED / 押しボタン・赤LED・緑LED | 4 each / 各4 |
+| LED current-limiting resistors / LED電流制限抵抗 | 8 |
+| Mini breadboard for channel controls / CH操作用ミニブレッドボード | 4 |
+| External servo power supply / サーボ用外部電源 | 1 |
+| Wiring and servo extension cables / 配線材・サーボ延長ケーブル | As needed / 必要数 |
+| Beam block / ビームブロック | 1 per beam path / 光路ごとに1 |
+
+See the [4-channel purchase list](docs/purchase-list.md) for part numbers and suppliers. / 詳しい型番と購入先は [4CH購入品リスト](docs/purchase-list.md) を参照してください。
+
 ## Quick start / はじめに
 
 Explore the interface without connecting hardware / 実機に接続せず画面を試す:
