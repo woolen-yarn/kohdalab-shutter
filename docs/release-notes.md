@@ -1,3 +1,17 @@
+# KohdaLab Shutter 0.6.13
+
+- After a temporary failure to read status, Shutter retries with the same Pico lease while that lease may still be valid. During recovery, channel states display `Unknown` and the GUI rejects shutter commands without sending them. The operation journal records interruption and recovery.
+- A refused TCP connection, a reported lease loss, or the end of the retry window still ends the connection. Existing Pico firmware, including the firmware from Pico Setup 1.2.2, can be used with this release.
+- The release includes the source ZIP, build manifests, SHA-256 checksums and Linux GUI API simulation evidence. Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. Recovery was tested with a simulated Pico. Physical-device Wi-Fi recovery was not tested.
+
+## 日本語
+
+- 状態取得が一時的に失敗したときは、Pico のチャンネル確保が有効な間、同じトークンで再試行します。復旧待ちの間は状態を `Unknown` と表示し、開閉指令の送信を止めます。中断と復旧は操作ジャーナルに記録します。
+- 接続拒否、確保喪失の通知、再試行期限切れでは切断します。Pico Setup 1.2.2 を含む既存の Pico ファームウェアを利用できます。
+- ソース ZIP、ビルド記録、SHA-256、Linux GUI API の模擬検証結果を同梱します。Windows 版は未署名、macOS 版はアドホック署名で未公証です。通信復帰は模擬 Pico で検証し、実機の Wi-Fi 復帰は未検証です。
+
+---
+
 # KohdaLab Shutter 0.6.12
 
 - Device replies wake the GUI as soon as the background task completes. This reduces the time between receiving a reply and processing it on the GUI thread.
