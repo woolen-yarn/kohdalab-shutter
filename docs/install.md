@@ -8,7 +8,7 @@ The Windows ZIP remains a portable alternative: extract it entirely and open `ko
 
 WindowsのZIP版も引き続き利用できます。Setup版は管理者の許可を得て全ユーザー向けに `%ProgramFiles%\Kohdalab\KohdaLab Shutter` へ導入します。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
 
-On macOS, open the DMG and drag the app to Applications, or extract the universal ZIP and launch the app. On Ubuntu 24.04 x86_64, run `sudo apt install ./kohdalab-shutter_1.0.0_amd64.deb` or extract the portable tar.gz. Physical-device operation on macOS and Linux is unverified.
+On macOS, open the DMG and drag the app to Applications, or extract the universal ZIP and launch the app. On Ubuntu 24.04 x86_64, run `sudo apt install ./kohdalab-shutter_1.0.1_amd64.deb` or extract the portable tar.gz. Physical-device operation on macOS and Linux is unverified.
 
 macOS は DMG を開いてアプリを Applications へコピーするか、Universal ZIP を展開して起動します。Ubuntu 24.04 x86_64 は DEB を導入するか、ポータブル版の tar.gz を展開します。macOS と Linux での実機操作は未検証です。
 
@@ -35,13 +35,13 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 1. Update/start the Pico firmware as below, then choose **Find Pico W**.
 2. Select a controller by its label. Names are shown on both connection and control screens.
 3. Select the available channels and **Connect**. In-use channels are disabled; acquisition is atomic if another PC connects at the same time.
-4. Click a light window to toggle its shutter. Edit its name below the CH number and press **Enter** to apply; Escape or clicking elsewhere cancels unconfirmed text. **··· → Settings** contains Pico name, layout, order and local API. Confirmed names and settings save automatically.
+4. Click a light window to toggle its shutter. Edit its name below the CH number and press **Enter** to apply; Escape or clicking elsewhere cancels unconfirmed text. The CH name is saved on this PC only. **··· → Settings** contains Pico name, layout, order and local API. Confirmed names and settings save automatically.
 5. Choose **controller name ▾ → Disconnect**, or close the window, to release your channels. After a crash/network loss, the Pico releases them after 15 seconds; position is held.
 
 1. 下記手順でPicoを更新・起動し、**Find Pico W**で検索します。
 2. ラベルで機器を選びます。名前は接続後のSettingsで変更できます。
 3. 空いているCHを選んで **Connect**。使用中CHは選べず、複数人が同時に取得しても重複使用しません。
-4. 光の窓を押すと開閉を切り替えます。CH番号の下の名前欄を編集し、**Enter**で確定します。Escapeや欄外クリックは未確定の編集を戻します。**··· → Settings**にPico名・配置・順序・外部APIをまとめ、確定した名前と設定を自動保存します。
+4. 光の窓を押すと開閉を切り替えます。CH番号の下の名前欄を編集し、**Enter**で確定します。CH名はこのPCだけに保存します。Escapeや欄外クリックは未確定の編集を戻します。**··· → Settings**にPico名・配置・順序・外部APIをまとめ、確定した名前と設定を自動保存します。
 5. **接続名 ▾ → Disconnect**または画面を閉じて解放します。通信断・異常終了時は15秒で解放し、位置は維持します。
 
 ## Pico firmware update / Pico側の更新
@@ -83,15 +83,15 @@ The GUI's **Local control API** supports Python/Jupyter through the [Python clie
 Windows Setup uses `C:\Program Files\Kohdalab\KohdaLab Shutter`;
 macOS uses `/Applications/KohdaLab Shutter.app`. Local desktop preferences use
 `~/.kohdalab/shutter/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config\config.json`).
-Pico calibration, network settings, and shared device/channel names remain on the
-controller. The application-owned `.kohdalab/shutter/run` directory is API discovery, not the
+Pico calibration, network settings, the shared Pico name, and shared channel names set on the
+Pico remain on the controller. CH display names edited in the GUI stay in the PC settings. The application-owned `.kohdalab/shutter/run` directory is API discovery, not the
 application settings file. Updating or uninstalling the desktop app preserves
 these user settings and never resets the Pico.
 
 ## Automatic settings / 設定の自動保存
 
-Edit a channel name directly below its CH number and press **Enter** to apply; Escape or clicking elsewhere discards unconfirmed text. Edit the Pico name in **··· → Settings**. Confirmed channel names save automatically, and valid Pico names save after a short pause; other connected PCs receive the new names on refresh. Only your acquired CHs can be renamed. Changes patch only edited fields, preserving other users' channel names, calibration, network and unknown config fields. Saving failures keep the control window open and display an error/Retry.
+Edit a channel name directly below its CH number and press **Enter** to apply; Escape or clicking elsewhere discards unconfirmed text. Edit the Pico name in **··· → Settings**. Confirmed channel names are saved only in this PC's settings, per Pico device ID and CH number; they are not sent to the Pico, and other Picos and PCs keep their own names. A CH without a PC name shows the Pico's shared name, or `CHnn`; entering the shared name again removes the PC name. Valid Pico names save to the Pico after a short pause; other connected PCs receive the new Pico name on refresh. The Pico-name change patches only that field, preserving channel names, calibration, network and unknown config fields. Saving failures keep the control window open and display an error/Retry.
 
-PC settings auto-save to the application-owned config file listed above. It includes layout/order, CH selection, broadcast/manual endpoint and API opt-in, plus a cache of confirmed names. It excludes session tokens and never automatically re-acquires channels. Unknown JSON fields survive; corrupt, unsupported and foreign application files remain untouched. Old settings/installations are not automatically migrated or deleted. If an older per-user shortcut launches v0.5.0, start the new Program Files application; remove the old installation manually only when you no longer need it.
+PC settings auto-save to the application-owned config file listed above. It includes layout/order, CH selection, CH display names (`local_channel_labels`), broadcast/manual endpoint and API opt-in, plus a cache of confirmed Pico names (`label`, `channel_labels`). Settings from earlier versions load unchanged with no CH display names. It excludes session tokens and never automatically re-acquires channels. Unknown JSON fields survive; corrupt, unsupported and foreign application files remain untouched. Old settings/installations are not automatically migrated or deleted. If an older per-user shortcut launches v0.5.0, start the new Program Files application; remove the old installation manually only when you no longer need it.
 
-CH名は操作画面の入力欄でEnterを押すと確定し、自動保存します。Pico名はSettings内で入力後、短く待つと自動保存します。名前はPicoへ、表示・接続・APIの設定はPCへ保存します。保存失敗時はエラーを表示し、開閉操作の接続は維持します。古いファイルやインストールは自動削除しません。旧ショートカットから旧版が起動する場合はProgram Files内の新版を使用してください。
+CH名は操作画面の入力欄でEnterを押すと確定し、このPCの設定にPicoのデバイスIDとCH番号ごとに自動保存します。Picoへは送らず、別のPicoや別のPCには反映しません。PC側の名前がないCHはPicoの共有名（なければ`CHnn`）を表示し、共有名を入力し直すとPC側の名前を削除します。Pico名はSettings内で入力後、短く待つとPicoへ自動保存します。CH名・表示・接続・APIの設定はPCへ保存します。旧版の設定はそのまま読み込み、CH表示名は空の状態から始まります。保存失敗時はエラーを表示し、開閉操作の接続は維持します。古いファイルやインストールは自動削除しません。旧ショートカットから旧版が起動する場合はProgram Files内の新版を使用してください。

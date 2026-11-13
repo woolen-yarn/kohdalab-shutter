@@ -61,8 +61,14 @@ pub struct DevicePreferences {
     /// Cached Pico label. An empty value means that no label is known yet.
     #[serde(default)]
     pub label: String,
+    /// Cached Pico (shared) CH labels, as last reported by the Pico.
     #[serde(default)]
     pub channel_labels: BTreeMap<u8, String>,
+    /// CH display names kept only on this PC for this device ID. They are
+    /// never written to the Pico; a missing entry falls back to the shared
+    /// Pico label. Older files without this field load as empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub local_channel_labels: BTreeMap<u8, String>,
     /// Future fields are retained so an older GUI does not erase them.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -200,7 +206,7 @@ impl DevicePreferences {
         if !self.label.is_empty() {
             validate_label(&self.label)?;
         }
-        for (&channel, label) in &self.channel_labels {
+        for (&channel, label) in self.channel_labels.iter().chain(&self.local_channel_labels) {
             validate_channel(channel)?;
             validate_label(label)?;
         }
@@ -432,6 +438,56 @@ mod tests {
         let parent = directory.path().join("file");
         fs::write(&parent, b"file").unwrap();
         assert!(Preferences::ensure_default(&parent.join("child/config.json")).is_err());
+    }
+
+    #[test]
+    fn local_channel_labels_are_separate_from_the_shared_cache() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        // A file written before local CH names existed loads with none, and
+        // keeps its shared-name cache untouched.
+        let legacy = r#"{
+            "application":"kohdalab-shutter",
+            "schema_version": 1,
+            "devices": {"a1": {"selected_channels": [0], "label": "Main",
+                               "channel_labels": {"0": "Probe"}}}
+        }"#;
+        fs::write(&path, legacy).unwrap();
+        let mut preferences = Preferences::load(&path).unwrap();
+        let device = &preferences.devices["a1"];
+        assert!(device.local_channel_labels.is_empty());
+        assert_eq!(device.channel_labels[&0], "Probe");
+        assert!(device.extra.is_empty());
+
+        preferences.save(&path).unwrap();
+        let written: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            written["devices"]["a1"]
+                .get("local_channel_labels")
+                .is_none()
+        );
+
+        preferences
+            .devices
+            .get_mut("a1")
+            .unwrap()
+            .local_channel_labels
+            .insert(0, "励起光".into());
+        preferences.save(&path).unwrap();
+        let loaded = Preferences::load(&path).unwrap();
+        assert_eq!(loaded.devices["a1"].local_channel_labels[&0], "励起光");
+        assert_eq!(loaded.devices["a1"].channel_labels[&0], "Probe");
+
+        for bad in [(16, "Name"), (0, ""), (0, "bad\nname")] {
+            let mut invalid = loaded.clone();
+            invalid
+                .devices
+                .get_mut("a1")
+                .unwrap()
+                .local_channel_labels
+                .insert(bad.0, bad.1.into());
+            assert!(invalid.validate().is_err(), "{bad:?}");
+        }
     }
 
     #[test]

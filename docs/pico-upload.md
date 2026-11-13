@@ -1,8 +1,8 @@
 # Pico W USB setup / Pico Wへの初回転送・更新
 
-Extract the [Shutter 1.0.0 source ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-source.zip). It contains the MicroPython firmware in `server/` and the USB updater. The USB updater requires uv on the PC.
+Extract the [Shutter 1.0.1 source ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-source.zip). It contains the MicroPython firmware in `server/` and the USB updater. The USB updater requires uv on the PC.
 
-[Shutter 1.0.0 のソース ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-source.zip) を展開してください。`server/` にファームウェア、ソース一式に USB 更新ツールが入っています。転送には PC 側で uv が必要です。
+[Shutter 1.0.1 のソース ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-source.zip) を展開してください。`server/` にファームウェア、ソース一式に USB 更新ツールが入っています。転送には PC 側で uv が必要です。
 
 ## Existing device: normal USB / 既存装置の更新は通常USB接続
 

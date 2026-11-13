@@ -1,3 +1,11 @@
+# KohdaLab Shutter 1.0.1
+
+CH names edited in the desktop GUI are saved on that PC for the selected Pico and channel. Channels without a local name display the name reported by the Pico. The GUI API returns the Pico name in `label` and the local display name in `display_label`. The change was tested with a simulated Pico.
+
+デスクトップ GUI で編集した CH 名は、Pico とチャンネルごとにその PC に保存します。PC 側の名前がない場合は Pico の共有名を表示します。GUI API の `label` は共有名、`display_label` は表示名です。この変更は模擬 Pico で検証しました。
+
+---
+
 # KohdaLab Shutter 1.0.0
 
 The GUI shows **Disconnecting…** while it releases the selected Pico channels, and **Disconnected** after completion. The common GUI control API exposes Shutter discovery, connection, status and channel commands. Disconnecting leaves the shutters in their last commanded state.
