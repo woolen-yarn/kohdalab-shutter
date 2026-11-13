@@ -1,3 +1,9 @@
+# KohdaLab Shutter 1.0.2
+
+Discover the active GUI from the current and legacy Python endpoint paths. / Pythonで現行と旧版のGUI接続先を探索できるようにしました。
+
+---
+
 # KohdaLab Shutter 1.0.1
 
 CH names edited in the desktop GUI are saved on that PC for the selected Pico and channel. Channels without a local name display the name reported by the Pico. The GUI API returns the Pico name in `label` and the local display name in `display_label`. The change was tested with a simulated Pico.
