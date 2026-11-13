@@ -169,6 +169,8 @@ struct App {
     order: Order,
     control: Control,
     api: Option<remote::Server>,
+    /// API requests that arrived during a refresh, kept in arrival order.
+    api_backlog: VecDeque<remote::Request>,
     wake_gui: Arc<dyn Fn() + Send + Sync>,
     api_enabled: bool,
     api_error: String,
@@ -237,6 +239,7 @@ impl Default for App {
             order: Order::Ascending,
             control: Control::default(),
             api: None,
+            api_backlog: VecDeque::new(),
             wake_gui: Arc::new(|| {}),
             api_directory: None,
             api_enabled: false,
@@ -839,6 +842,7 @@ impl App {
         self.message.clear();
         if let Some(client) = client {
             self.pending_release = true;
+            self.error = false;
             self.task(move || {
                 let save_error = match patch {
                     Ok(patch) if patch.device.is_some() || !patch.channels.is_empty() => client
@@ -1003,6 +1007,12 @@ impl App {
                 Err("Background task stopped unexpectedly".into())
             }
         };
+        // Requests already queued when the poll completion is observed were
+        // accepted during the refresh, whichever of receive/process_api the
+        // frame runs first.
+        if self.refreshing {
+            self.admit_api();
+        }
         self.pending = None;
         self.refreshing = false;
         let api_error = result.as_ref().err().cloned();
@@ -1076,6 +1086,7 @@ impl App {
             }
             Ok(Reply::Released(info, error)) => {
                 self.pending_release = false;
+                self.message = "Disconnected".into();
                 if let Some(error) = error {
                     self.config_error = error;
                 } else {
@@ -1254,17 +1265,62 @@ impl App {
         if self.control.expire() {
             self.record("External control expired; holding last requested state");
         }
-        // Keep requests in the bounded transport queue until polling finishes.
-        // The original request deadlines still apply before dispatch.
-        if self.refreshing {
+        if self.api.is_none() {
+            self.api_backlog.clear();
             return;
         }
-        let requests: Vec<_> = self
-            .api
-            .as_ref()
-            .map(|api| api.requests.try_iter().take(8).collect())
-            .unwrap_or_default();
+        if self.refreshing {
+            self.admit_api();
+            return;
+        }
+        let held = self.api_backlog.len().min(8);
+        let mut requests: Vec<_> = self.api_backlog.drain(..held).collect();
+        if let Some(api) = self.api.as_ref() {
+            requests.extend(api.requests.try_iter().take(8 - held));
+        }
         for request in requests {
+            self.answer_api(request);
+        }
+    }
+
+    /// Accept every queued API request while a refresh is in flight.
+    ///
+    /// Acceptance is the moment the GUI takes a request off the transport.
+    /// The transport is always drained completely, so a `close_all` can never
+    /// stay behind a full backlog and run after the refresh has finished: it
+    /// is answered here (busy, through the normal auth/lease/cache path), as
+    /// are expired requests. Everything else keeps arrival order and its
+    /// original deadline; beyond [`API_BACKLOG`] it gets the transport's
+    /// queue-full busy, exactly as if the transport had refused it.
+    fn admit_api(&mut self) {
+        let Some(api) = self.api.as_ref() else {
+            self.api_backlog.clear();
+            return;
+        };
+        let arrived: Vec<_> = api.requests.try_iter().collect();
+        // Held requests that ran out of time no longer occupy a slot; they get
+        // the same timeout they would have received at dispatch.
+        let now = Instant::now();
+        let (expired, held): (VecDeque<_>, VecDeque<_>) = std::mem::take(&mut self.api_backlog)
+            .into_iter()
+            .partition(|request| request.deadline < now);
+        self.api_backlog = held;
+        for request in expired {
+            self.answer_api(request);
+        }
+        for request in arrived {
+            if request.deadline < Instant::now() || is_close_all(&request.body) {
+                self.answer_api(request);
+            } else if self.api_backlog.len() < API_BACKLOG {
+                self.api_backlog.push_back(request);
+            } else {
+                reply_error(request, "busy", "GUI request queue is full");
+            }
+        }
+    }
+
+    fn answer_api(&mut self, request: remote::Request) {
+        {
             let original = request.body.clone();
             let value = if request.deadline < Instant::now() {
                 let native = response(Err(ApiError::new(
@@ -1614,6 +1670,12 @@ impl App {
         let manual = self.pending.is_none() && !self.control.owned();
         ui.horizontal(|ui| {
             ui.label(RichText::new("Connect").size(20.0).strong());
+            if self.pending_release {
+                ui.spinner();
+                ui.label(RichText::new("Disconnecting…").small().color(MUTED));
+            } else if self.message == "Disconnected" {
+                ui.label(RichText::new(&self.message).small().color(MUTED));
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_enabled(
@@ -1847,6 +1909,7 @@ impl App {
                 }
             } else {
                 self.api = None;
+                self.api_backlog.clear();
                 self.control.revoke();
             }
         }
@@ -2519,6 +2582,32 @@ impl eframe::App for App {
         self.capture(&ctx);
         ctx.request_repaint_after(self.repaint_interval());
     }
+}
+
+/// Matches the remote transport queue, so holding requests during a refresh
+/// never accepts more than the transport would have buffered.
+const API_BACKLOG: usize = 16;
+
+/// Answer a request without running it, in the envelope it was sent in.
+fn reply_error(request: remote::Request, code: &'static str, message: &str) {
+    let native = response(Err(ApiError::new(code, message)));
+    let value = if is_common(&request.body) {
+        common_response(&request.body, native)
+    } else {
+        native
+    };
+    let _ = request.reply.send(value);
+}
+
+/// Native `close_all` or common `control.close_all`, after normalization.
+fn is_close_all(body: &Value) -> bool {
+    prepare_common(body).is_ok_and(|native| {
+        native
+            .get("method")
+            .or_else(|| native.get("action"))
+            .and_then(Value::as_str)
+            == Some("close_all")
+    })
 }
 
 /// Poll failures that may clear up on their own while the Pico keeps the lease.
@@ -3363,6 +3452,526 @@ mod tests {
         let mut request = json!({"client":uuid::Uuid::new_v4().to_string(),"method":"acquire"});
         request["lease"] = app.api_request(&request).unwrap()["lease"].clone();
         request
+    }
+
+    const FAKE_OPEN_STATE: &str = "CH0=90/90/0/90/0";
+    const FAKE_POLL_OPEN: &str = r#"{"ok":true,"state":"CH0=90/90/0/90/0","info":{"protocol":2,"device_id":"a0ff","label":"Bay","lease_ms":15000,"channels":[{"id":0,"label":"CH00","locked":true}]}}"#;
+
+    /// Loopback stand-in for a Pico W that records every SESSION request.
+    /// When `poll_gate` is given, the first poll is answered only after the
+    /// gate fires, which holds the GUI in a genuine in-flight refresh.
+    struct FakePico {
+        port: u16,
+        stop: Arc<AtomicBool>,
+        worker: std::thread::JoinHandle<Vec<Value>>,
+    }
+
+    impl FakePico {
+        fn start(poll_gate: Option<mpsc::Receiver<()>>) -> Self {
+            use std::io::{BufRead, BufReader, Write};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let stop = Arc::new(AtomicBool::new(false));
+            let stopping = stop.clone();
+            let worker = std::thread::spawn(move || {
+                let mut gate = poll_gate;
+                let mut requests = Vec::new();
+                while !stopping.load(Ordering::Acquire) {
+                    let mut socket = match listener.accept() {
+                        Ok((socket, _)) => socket,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(2));
+                            continue;
+                        }
+                        Err(error) => panic!("fake Pico accept failed: {error}"),
+                    };
+                    socket.set_nonblocking(false).unwrap();
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut line = String::new();
+                    if BufReader::new(&socket).read_line(&mut line).is_err() {
+                        continue;
+                    }
+                    let request: Value =
+                        serde_json::from_str(line.trim().strip_prefix("SESSION ").unwrap())
+                            .unwrap();
+                    let reply = match request["op"].as_str() {
+                        Some("claim") => r#"{"ok":true,"poll_supported":true}"#,
+                        Some("poll") => {
+                            if let Some(gate) = gate.take() {
+                                gate.recv_timeout(Duration::from_secs(10))
+                                    .expect("test never released the held poll");
+                            }
+                            FAKE_POLL_OPEN
+                        }
+                        _ => r#"{"ok":true}"#,
+                    };
+                    requests.push(request);
+                    let _ = writeln!(socket, "{reply}");
+                }
+                requests
+            });
+            Self { port, stop, worker }
+        }
+
+        /// Stop listening and return every request the GUI sent.
+        fn finish(self) -> Vec<Value> {
+            self.stop.store(true, Ordering::Release);
+            self.worker.join().unwrap()
+        }
+    }
+
+    fn connected_to(pico: &FakePico) -> App {
+        let client = Client::new("127.0.0.1".into(), pico.port, Duration::from_secs(1), 1)
+            .unwrap()
+            .claim(&[0])
+            .unwrap();
+        let mut app = App {
+            client: Some(client),
+            selected: [0].into(),
+            ..App::default()
+        };
+        app.apply_snapshot(kohdalab_shutter::protocol::parse_state(FAKE_OPEN_STATE).unwrap());
+        app
+    }
+
+    fn ops(requests: &[Value]) -> Vec<&str> {
+        requests
+            .iter()
+            .map(|request| request["op"].as_str().unwrap_or("?"))
+            .collect()
+    }
+
+    #[test]
+    fn api_lease_expiry_keeps_pico_lease_and_sends_no_close() {
+        let pico = FakePico::start(None);
+        let mut app = connected_to(&pico);
+        let mut owner = api_owner(&mut app);
+        assert!(app.control.owned());
+
+        // The GUI lease can only age through real time from the binary crate.
+        std::thread::sleep(kohdalab_shutter::control::LEASE_TIMEOUT + Duration::from_millis(250));
+        app.process_api();
+        assert!(!app.control.owned(), "the API lease must expire");
+        assert!(app.connected(), "API expiry must not drop the Pico client");
+        owner["method"] = json!("heartbeat");
+        assert_eq!(app.api_request(&owner).unwrap_err().code, "ownership_lost");
+
+        app.refresh();
+        wait_for_reply(&mut app);
+        assert!(app.connected());
+        assert_eq!(app.displayed_channel_state(0), "Open");
+
+        // Give any late background send a chance to reach the fake Pico.
+        std::thread::sleep(Duration::from_millis(200));
+        let requests = pico.finish();
+        assert_eq!(
+            ops(&requests),
+            ["claim", "poll"],
+            "API expiry must hold the last state: no close, operate, or release"
+        );
+        assert_eq!(requests[0]["token"], requests[1]["token"]);
+    }
+
+    #[test]
+    fn close_all_during_refresh_returns_busy_and_is_never_sent_later() {
+        use std::io::{BufRead, BufReader, Write};
+
+        let (release_poll, poll_gate) = mpsc::channel();
+        let pico = FakePico::start(Some(poll_gate));
+        let mut app = connected_to(&pico);
+        let directory = tempfile::tempdir().unwrap();
+        let server = remote::Server::start(Some(directory.path().into())).unwrap();
+        let descriptor: Value =
+            serde_json::from_slice(&std::fs::read(&server.descriptor).unwrap()).unwrap();
+        let api_port = descriptor["port"].as_u64().unwrap() as u16;
+        app.api = Some(server);
+
+        let mut request = api_owner(&mut app);
+        request["token"] = descriptor["token"].clone();
+        request["method"] = json!("close_all");
+        let id = uuid::Uuid::new_v4().to_string();
+        request["request_id"] = json!(id);
+
+        // A real poll is in flight: the fake Pico holds its reply.
+        app.refresh();
+        assert!(app.refreshing && app.pending.is_some());
+
+        // Send close_all through the real loopback API and its bounded queue.
+        let (replied, reply) = mpsc::channel();
+        let caller = std::thread::spawn(move || {
+            let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, api_port)).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            writeln!(stream, "{request}").unwrap();
+            let mut line = String::new();
+            BufReader::new(stream).read_line(&mut line).unwrap();
+            let _ = replied.send(serde_json::from_str::<Value>(&line).unwrap());
+        });
+
+        // Run the GUI loop while the refresh is still pending. "Immediate"
+        // means answered here, well inside the 2 s API deadline.
+        let window = Instant::now() + Duration::from_millis(500);
+        let mut immediate = None;
+        while immediate.is_none() && Instant::now() < window {
+            app.process_api();
+            app.receive();
+            immediate = reply.try_recv().ok();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let still_refreshing = app.refreshing && app.pending.is_some();
+
+        // Let the refresh finish, then keep running the GUI loop past the API
+        // deadline so a request left in the queue would be dispatched now.
+        release_poll.send(()).unwrap();
+        let settle = Instant::now() + Duration::from_millis(2500);
+        while Instant::now() < settle {
+            app.process_api();
+            app.receive();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        wait_for_reply(&mut app);
+        let later = reply.recv_timeout(Duration::from_secs(1)).ok();
+        caller.join().unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        let requests = pico.finish();
+
+        let code = |reply: &Option<Value>| {
+            reply
+                .as_ref()
+                .and_then(|reply| reply["error_code"].as_str().map(str::to_owned))
+        };
+        assert_eq!(
+            (
+                still_refreshing,
+                code(&immediate),
+                later.is_none(),
+                ops(&requests),
+                app.control.result(&id).is_err(),
+                app.displayed_channel_state(0),
+            ),
+            (
+                true,
+                Some("busy".to_owned()),
+                true,
+                vec!["claim", "poll"],
+                true,
+                "Open"
+            ),
+            "close_all during a refresh must be refused at once with busy and never sent \
+             to the Pico afterwards (immediate={immediate:?}, later={later:?}, \
+             requests={requests:?})"
+        );
+    }
+
+    #[test]
+    fn refresh_answers_common_close_all_at_once_and_keeps_earlier_open_queued() {
+        use std::io::{BufRead, BufReader, Write};
+
+        let (release_poll, poll_gate) = mpsc::channel();
+        let pico = FakePico::start(Some(poll_gate));
+        let mut app = connected_to(&pico);
+        let directory = tempfile::tempdir().unwrap();
+        let server = remote::Server::start(Some(directory.path().into())).unwrap();
+        let descriptor: Value =
+            serde_json::from_slice(&std::fs::read(&server.descriptor).unwrap()).unwrap();
+        let api_port = descriptor["port"].as_u64().unwrap() as u16;
+        app.api = Some(server);
+        let mut owner = api_owner(&mut app);
+        owner["token"] = descriptor["token"].clone();
+
+        let send = |request: Value| {
+            let (replied, reply) = mpsc::channel();
+            let caller = std::thread::spawn(move || {
+                let mut stream =
+                    std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, api_port)).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                writeln!(stream, "{request}").unwrap();
+                let mut line = String::new();
+                BufReader::new(stream).read_line(&mut line).unwrap();
+                let _ = replied.send(serde_json::from_str::<Value>(&line).unwrap());
+            });
+            (caller, reply)
+        };
+        let pump_until = |app: &mut App, reply: &mpsc::Receiver<Value>| {
+            let deadline = Instant::now() + Duration::from_millis(1500);
+            while Instant::now() < deadline {
+                app.process_api();
+                app.receive();
+                if let Ok(value) = reply.try_recv() {
+                    return Some(value);
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            None
+        };
+
+        app.refresh();
+        assert!(app.refreshing && app.pending.is_some());
+
+        // A native open arrives first and must stay queued for after the poll.
+        let mut open = owner.clone();
+        open["method"] = json!("open");
+        open["channel"] = json!(0);
+        open["request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        let (open_caller, open_reply) = send(open);
+        let wait = Instant::now() + Duration::from_millis(200);
+        while Instant::now() < wait {
+            app.process_api();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(app.api_backlog.len(), 1);
+
+        // A common close_all behind it is answered at once in its own envelope.
+        let close_id = uuid::Uuid::new_v4().to_string();
+        let mut close = owner.clone();
+        close["control_protocol"] = json!(1);
+        close["method"] = json!("control.close_all");
+        close["request_id"] = json!(close_id);
+        let (close_caller, close_reply) = send(close);
+        let busy = pump_until(&mut app, &close_reply).expect("close_all must be answered");
+        close_caller.join().unwrap();
+        assert!(
+            app.refreshing,
+            "busy must arrive while the poll is in flight"
+        );
+        assert_eq!(busy["control_protocol"], 1);
+        assert_eq!(busy["ok"], false);
+        assert_eq!(busy["request_id"], json!(close_id));
+        assert_eq!(busy["error"]["application_code"], "busy");
+        assert!(open_reply.try_recv().is_err(), "open must still be queued");
+
+        release_poll.send(()).unwrap();
+        let opened = pump_until(&mut app, &open_reply).expect("queued open must run");
+        open_caller.join().unwrap();
+        assert_eq!(opened["ok"], true, "{opened:?}");
+        wait_for_reply(&mut app);
+        std::thread::sleep(Duration::from_millis(200));
+        let requests = pico.finish();
+        let sent: Vec<_> = requests
+            .iter()
+            .map(|request| (request["op"].clone(), request["action"].clone()))
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                (json!("claim"), Value::Null),
+                (json!("poll"), Value::Null),
+                (json!("operate"), json!("open")),
+            ],
+            "only the queued open may reach the Pico after the poll: {requests:?}"
+        );
+        assert!(
+            app.control.result(&close_id).is_err(),
+            "busy leaves no receipt"
+        );
+    }
+
+    /// Attach a real loopback API to `app` and return an authenticated owner
+    /// request plus the port it listens on.
+    fn attach_api(app: &mut App, directory: &std::path::Path) -> (Value, u16) {
+        let server = remote::Server::start(Some(directory.into())).unwrap();
+        let descriptor: Value =
+            serde_json::from_slice(&std::fs::read(&server.descriptor).unwrap()).unwrap();
+        app.api = Some(server);
+        let mut owner = api_owner(app);
+        owner["token"] = descriptor["token"].clone();
+        (owner, descriptor["port"].as_u64().unwrap() as u16)
+    }
+
+    /// Send one request over the loopback API from a caller thread.
+    fn send_api(port: u16, request: Value) -> (std::thread::JoinHandle<()>, mpsc::Receiver<Value>) {
+        use std::io::{BufRead, BufReader, Write};
+        let (replied, reply) = mpsc::channel();
+        let caller = std::thread::spawn(move || {
+            let mut stream = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            writeln!(stream, "{request}").unwrap();
+            let mut line = String::new();
+            BufReader::new(stream).read_line(&mut line).unwrap();
+            let _ = replied.send(serde_json::from_str::<Value>(&line).unwrap());
+        });
+        (caller, reply)
+    }
+
+    /// A held request that was never sent over TCP, with its reply receiver.
+    fn held_request(body: Value, deadline: Instant) -> (remote::Request, mpsc::Receiver<Value>) {
+        let (reply, receive) = mpsc::sync_channel(1);
+        (
+            remote::Request {
+                body,
+                deadline,
+                reply,
+            },
+            receive,
+        )
+    }
+
+    #[test]
+    fn close_all_arriving_with_the_poll_reply_in_one_frame_is_busy() {
+        let (release_poll, poll_gate) = mpsc::channel();
+        let pico = FakePico::start(Some(poll_gate));
+        let mut app = connected_to(&pico);
+        let directory = tempfile::tempdir().unwrap();
+        let (owner, port) = attach_api(&mut app, directory.path());
+        app.refresh();
+        assert!(app.refreshing && app.pending.is_some());
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut close = owner;
+        close["method"] = json!("close_all");
+        close["request_id"] = json!(id);
+        let (caller, reply) = send_api(port, close);
+        // Without running a frame, let close_all reach the transport queue and
+        // the poll reply reach the worker channel, so both land in one frame.
+        release_poll.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(app.refreshing, "no frame has observed the poll yet");
+
+        // One frame in the exact order eframe's logic() uses.
+        app.receive();
+        app.process_api();
+        let answered = reply
+            .recv_timeout(Duration::from_millis(500))
+            .expect("close_all must be answered in the same frame");
+        caller.join().unwrap();
+        assert!(!app.refreshing && app.pending.is_none(), "{answered:?}");
+        assert_eq!(answered["error_code"], "busy", "{answered:?}");
+        assert!(app.control.result(&id).is_err(), "busy leaves no receipt");
+        assert_eq!(app.displayed_channel_state(0), "Open");
+
+        // Later frames must not send anything either.
+        for _ in 0..20 {
+            app.receive();
+            app.process_api();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(ops(&pico.finish()), ["claim", "poll"]);
+    }
+
+    #[test]
+    fn full_backlog_never_leaves_close_all_in_the_transport() {
+        let (release_poll, poll_gate) = mpsc::channel();
+        let pico = FakePico::start(Some(poll_gate));
+        let mut app = connected_to(&pico);
+        let directory = tempfile::tempdir().unwrap();
+        let (owner, port) = attach_api(&mut app, directory.path());
+        app.refresh();
+        assert!(app.refreshing && app.pending.is_some());
+
+        // Fill every backlog slot with live status requests.
+        let live = Instant::now() + Duration::from_secs(30);
+        let mut status = owner.clone();
+        status["method"] = json!("status");
+        let held: Vec<_> = (0..API_BACKLOG)
+            .map(|_| {
+                let (request, reply) = held_request(status.clone(), live);
+                app.api_backlog.push_back(request);
+                reply
+            })
+            .collect();
+
+        let close_id = uuid::Uuid::new_v4().to_string();
+        let mut close = owner.clone();
+        close["method"] = json!("close_all");
+        close["request_id"] = json!(close_id);
+        let (close_caller, close_reply) = send_api(port, close);
+        std::thread::sleep(Duration::from_millis(200));
+        let mut open = owner;
+        open["method"] = json!("open");
+        open["channel"] = json!(0);
+        open["request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        let (open_caller, open_reply) = send_api(port, open);
+        std::thread::sleep(Duration::from_millis(200));
+
+        app.process_api();
+        let busy = close_reply
+            .recv_timeout(Duration::from_millis(500))
+            .expect("close_all must be answered despite a full backlog");
+        let overflow = open_reply
+            .recv_timeout(Duration::from_millis(500))
+            .expect("overflow must be refused like a full transport");
+        close_caller.join().unwrap();
+        open_caller.join().unwrap();
+        assert_eq!(busy["error_code"], "busy", "{busy:?}");
+        assert!(app.control.result(&close_id).is_err());
+        assert_eq!(overflow["error_code"], "busy", "{overflow:?}");
+        assert_eq!(overflow["error"], "GUI request queue is full");
+        assert_eq!(app.api_backlog.len(), API_BACKLOG);
+
+        // The held requests still run, in order, once the poll completes.
+        release_poll.send(()).unwrap();
+        wait_for_reply(&mut app);
+        while !app.api_backlog.is_empty() {
+            app.process_api();
+        }
+        for reply in held {
+            assert_eq!(reply.try_recv().unwrap()["ok"], true);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(ops(&pico.finish()), ["claim", "poll"]);
+    }
+
+    #[test]
+    fn expired_backlog_entries_are_answered_and_free_their_slots() {
+        let mut app = App::demo();
+        let directory = tempfile::tempdir().unwrap();
+        attach_api(&mut app, directory.path());
+        let (_sender, receiver) = mpsc::channel();
+        app.pending = Some(receiver);
+        app.refreshing = true;
+
+        let body = json!({"method":"status","control_protocol":1,"request_id":"r-1"});
+        let past = Instant::now() - Duration::from_millis(1);
+        let live = Instant::now() + Duration::from_secs(30);
+        let (expired, expired_reply) = held_request(body.clone(), past);
+        let (kept, kept_reply) = held_request(json!({"method":"status"}), live);
+        app.api_backlog.push_back(expired);
+        app.api_backlog.push_back(kept);
+
+        app.process_api();
+        let timeout = expired_reply.try_recv().unwrap();
+        assert_eq!(timeout["control_protocol"], 1, "{timeout:?}");
+        assert_eq!(timeout["request_id"], "r-1");
+        assert_eq!(timeout["error"]["application_code"], "timeout");
+        assert!(kept_reply.try_recv().is_err(), "live request stays held");
+        assert_eq!(app.api_backlog.len(), 1);
+    }
+
+    #[test]
+    fn gui_and_api_get_same_rejection() {
+        // Channel 15 is neither selected nor reported by the simulated Pico.
+        // The GUI path has no rejection code: request_toggle returns silently,
+        // so only the absence of any effect can be compared with the API.
+        let mut app = App::demo();
+        app.operate(Operation::Open, vec![0]);
+        let before = app.demo_status.clone();
+        app.request_toggle(15);
+        assert!(app.pending.is_none() && app.queued_toggle.is_none());
+        assert_eq!(app.demo_status, before);
+        assert_eq!(app.displayed_channel_state(0), "Open");
+
+        let mut request = api_owner(&mut app);
+        request["method"] = json!("toggle");
+        request["channel"] = json!(15);
+        let id = uuid::Uuid::new_v4().to_string();
+        request["request_id"] = json!(id);
+        assert_eq!(
+            app.api_request(&request).unwrap_err().code,
+            "invalid_request"
+        );
+        assert!(app.control.result(&id).is_err());
+        assert!(app.pending.is_none() && app.queued_toggle.is_none());
+        assert_eq!(app.demo_status, before);
+        assert_eq!(app.displayed_channel_state(0), "Open");
     }
 
     #[test]

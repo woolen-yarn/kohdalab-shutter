@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.0
+
+- Show progress while disconnecting and confirm when the Pico releases the channels.
+- Add the common GUI control API on top of the existing Shutter controls.
+
 ## 0.6.13 — 2026-11-12
 
 - Keep the connection and Pico lease through a transient status-poll failure instead of disconnecting at once. Until a poll succeeds, channels show `Unknown`, the header dot turns orange, Toggle and API actions are refused without sending anything, and polling retries until the Pico lease would expire. Refused connections and `lease_lost` still disconnect immediately. Shutter commands, retry rules and firmware are unchanged. / 状態取得の一時的な失敗ではすぐに切断せず、Picoのleaseを保ったまま再試行します。復旧までは全CHを`Unknown`、ヘッダーの点を橙で表示し、Toggle・API操作は何も送らずに拒否します。lease期限を過ぎた場合、接続拒否、`lease_lost`では従来どおり切断します。指令・再送規則・ファームウェアは変わりません。

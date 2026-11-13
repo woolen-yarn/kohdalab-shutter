@@ -1,3 +1,17 @@
+# KohdaLab Shutter 1.0.0
+
+The GUI shows **Disconnecting…** while it releases the selected Pico channels, and **Disconnected** after completion. The common GUI control API exposes Shutter discovery, connection, status and channel commands. Disconnecting leaves the shutters in their last commanded state.
+
+The pre-release candidate was exercised on a Pico 3900S at Nautilus. CH0 reported 0°, 90°, then 0° after the open and close commands. The GUI layout was reviewed on Nautilus. The final 1.0.0 packages require their own verification before publishing.
+
+## 日本語
+
+GUIは選択したPicoチャンネルを解放している間に **Disconnecting…**、完了後に **Disconnected** を表示します。共通GUI制御APIで機器の検出・接続、状態取得、チャンネル操作ができます。切断後は最後に指令した開閉状態を保持します。
+
+NautilusのPico 3900Sで公開前候補を試験し、CH0の開閉指令に対して0°、90°、0°の応答を確認しました。NautilusでGUIのレイアウトも確認しました。公開前に1.0.0の最終配布物を検証します。
+
+---
+
 # KohdaLab Shutter 0.6.13
 
 - After a temporary failure to read status, Shutter retries with the same Pico lease while that lease may still be valid. During recovery, channel states display `Unknown` and the GUI rejects shutter commands without sending them. The operation journal records interruption and recovery.
