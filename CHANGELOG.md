@@ -96,7 +96,7 @@
 - Added native Windows exe and Mac arm64/Intel app bundles containing Python, Qt and mpremote, with a compact dark Initial setup / Update GUI. No Python or uv installation is required on the user PC.
 - Reuse the staged/verified USB updater, preservation and private backups; isolate bundled backend processes and prevent closing the GUI during upload. Native packaging smoke tests never open a serial port. The main desktop version is unchanged.
 
-## Unreleased — Pico USB tools
+## 1.0.2 — Pico USB tools
 
 - Added Windows/Mac launchers for first-time Pico setup and settings-preserving updates, with explicit USB selection, private backups, staged transfer verification and rollback on ordinary replacement failure.
 - Defaulted fresh Pico configuration and updater migrations to automatic IP addressing (DHCP), preserving calibration, wiring, Wi-Fi credentials and shared labels. Desktop v0.6.4 and its existing downloads are unchanged.
