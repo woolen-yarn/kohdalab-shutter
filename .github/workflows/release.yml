@@ -174,10 +174,14 @@ jobs:
           "$app/Contents/MacOS/kohdalab-shutter" --version
           "$app/Contents/MacOS/kohdalab-shutter-gui" --help
 
+  linux:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/linux-packages.yml
+
   publish:
     name: Publish verified desktop release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, intel-smoke]
+    needs: [build, intel-smoke, linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -221,6 +225,17 @@ jobs:
           --test-run "$TEST_RUN"
           --release-run "$GITHUB_RUN_ID"
           --validation validation/gui-api-validation.json
+      - name: Download Linux packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: shutter-linux-x86_64
+          path: linux-assets
+      - name: Verify Linux packages
+        run: |
+          cd linux-assets
+          test "$(cat BUILD-COMMIT.txt)" = "$RELEASE_COMMIT"
+          sha256sum --strict --check SHA256SUMS-linux.txt
+          cp -- * ../release-assets/
       - name: Create draft and verify uploaded files before publishing
         run: |
           if existing=$(gh release view "$RELEASE_TAG" --json isDraft,targetCommitish,url); then
@@ -236,5 +251,5 @@ jobs:
           gh release download "$RELEASE_TAG" --dir downloaded
           cmp release-assets/SHA256SUMS.txt downloaded/SHA256SUMS.txt
           diff <(ls -1 release-assets) <(ls -1 downloaded)
-          (cd downloaded && sha256sum --check SHA256SUMS.txt)
+          (cd downloaded && sha256sum --check SHA256SUMS.txt && sha256sum --check SHA256SUMS-linux.txt && cmp ../release-assets/SHA256SUMS-linux.txt SHA256SUMS-linux.txt)
           gh release edit "$RELEASE_TAG" --draft=false --latest

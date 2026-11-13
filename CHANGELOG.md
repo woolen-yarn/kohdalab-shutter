@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Save CH display names per PC, Pico and channel. / CH の表示名を PC・Pico・CH ごとに保存します。
+
 ## 1.0.0
 
 - Show progress while disconnecting and confirm when the Pico releases the channels.

@@ -13,19 +13,19 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 ## Downloads / ダウンロード
 
-**KohdaLab Shutter 1.0.0**
+**KohdaLab Shutter 1.0.1**
 
 | Platform / OS | Install / インストール版 | Portable / ポータブル版 | Hardware validation / 実機検証 |
 | --- | --- | --- | --- |
-| Windows 10/11 (x64) | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-windows-x64.zip) | Windows and Pico on Nautilus / Nautilus で実機確認 |
-| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-macos-universal.zip) | Physical-device operation unverified / 実機操作未検証 |
-| Ubuntu 24.04 (x86_64) | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter_1.0.0_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-linux-x86_64.tar.gz) | Physical-device operation unverified / 実機操作未検証 |
+| Windows 10/11 (x64) | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-windows-x64.zip) | Simulated Pico / 模擬 Pico で検証 |
+| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-macos-universal.zip) | Physical-device operation unverified / 実機操作未検証 |
+| Ubuntu 24.04 (x86_64) | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter_1.0.1_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-linux-x86_64.tar.gz) | Physical-device operation unverified / 実機操作未検証 |
 
 Use Setup on Windows, drag the app from the DMG to Applications on macOS, or install the DEB on Ubuntu. For portable use, extract the archive before launching. / Windows は Setup、macOS は DMG からアプリを Applications へコピー、Ubuntu は DEB を使います。ポータブル版は展開して起動します。
 
 Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. / Windows 版は未署名、macOS 版はアドホック署名で未公証です。 [Installation guide / 導入手順](docs/install.md)
 
-[Release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.0) · [SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-source.zip)
+[Release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.1) · [SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-source.zip)
 
 ## Pico server / Pico 側の準備
 
@@ -47,7 +47,7 @@ For initial setup or an update, use the USB uploader in the release source ZIP. 
 
 ## Interface / 画面
 
-Click a channel name and press Enter to save it. The connection menu releases channels, and **··· → Settings** opens layout, display order and local API settings. / CH 名は Enter で確定します。接続名メニューでチャンネルを解放し、**··· → Settings** で配置・表示順・外部 API を設定します。
+Click a channel name and press Enter to save it on this PC. The connection menu releases channels, and **··· → Settings** opens layout, display order and local API settings. / CH 名は Enter で確定し、この PC に保存します。接続名メニューでチャンネルを解放し、**··· → Settings** で配置・表示順・外部 API を設定します。
 
 <details>
 <summary>Connection picker and layouts / 接続画面とレイアウト</summary>
@@ -62,11 +62,13 @@ Click a channel name and press Enter to save it. The connection menu releases ch
 
 ## Automatic settings / 設定の自動保存
 
-Pico/channel names are shared and retained on the Pico in `device_config.json`. Only the owning GUI may rename a channel. After a short typing pause, valid changes save automatically; Settings shows Saving / Saved or an error without disconnecting the shutters. Calibration and Wi-Fi are kept separately.
+The Pico name is shared and retained on the Pico in `device_config.json`. After a short typing pause, a valid change saves automatically; Settings shows Saving / Saved or an error without disconnecting the shutters. Calibration and Wi-Fi are kept separately.
 
-PC layout, order, selected channels, endpoint/broadcast and Local control API opt-in are retained in `~/.kohdalab/shutter/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config\config.json`). On the first normal launch, a safe default file is created automatically when absent. Existing valid, corrupt or foreign files are never overwritten; loading does not acquire channels or move shutters. Authentication tokens are regenerated, not saved. Startup remembers the last device/available CHs but does not acquire channels or move shutters automatically. No old files are migrated or deleted.
+Channel names edited in the GUI are display names for this PC only. They are stored per Pico device ID and CH number in the PC settings and are never written to the Pico, so other Picos and other PCs are unaffected. A CH without a PC name shows the shared name reported by the Pico (or `CH00`…). Entering the Pico's name again returns that CH to the shared name. Settings from earlier versions keep working and start with no PC names.
 
-Pico名・CH名はPico側に保存し、他のPCとも共有します。PC側の配置・昇降順・選択CH・接続設定・APIの有効無効も保存します。次回起動時に復元しますが、勝手に接続・駆動しません。API認証情報は保存せず、破損設定や他アプリの設定は上書きしません。
+PC layout, order, selected channels, CH display names, endpoint/broadcast and Local control API opt-in are retained in `~/.kohdalab/shutter/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\shutter\config\config.json`). On the first normal launch, a safe default file is created automatically when absent. Existing valid, corrupt or foreign files are never overwritten; loading does not acquire channels or move shutters. Authentication tokens are regenerated, not saved. Startup remembers the last device/available CHs but does not acquire channels or move shutters automatically. No old files are migrated or deleted.
+
+Pico名はPico側に保存し、他のPCとも共有します。GUIで編集したCH名はこのPCだけの表示名で、PicoのデバイスIDとCH番号ごとにPC設定へ保存します。Picoへは書き込まないため、別のPicoや別のPCには反映しません。PC側の名前がないCHはPicoの共有名（なければ`CH00`など）を表示し、Picoの名前を入力し直すと共有名に戻ります。旧版の設定はそのまま使え、PC側のCH名は空の状態から始まります。PC側の配置・昇降順・選択CH・接続設定・APIの有効無効も保存します。次回起動時に復元しますが、勝手に接続・駆動しません。API認証情報は保存せず、破損設定や他アプリの設定は上書きしません。
 
 ![Settings](docs/images/kohdalab-shutter-settings.png)
 

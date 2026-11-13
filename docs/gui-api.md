@@ -101,4 +101,8 @@ Hardware `connect` requires an explicit nonempty `channels` array, e.g. `connect
 
 実機の`connect`には使用CHを明示します。PicoがCH単位で操作権を管理し、別GUIは空きCHを利用できます。状態表示・一括開閉も取得CHに限定します。状態取得が一時的に失敗した場合はPicoのlease期限まで確保を保ったまま再試行し、その間は`connected: false`・全CH`Unknown`とし、操作は何も送らず`disconnected`で失敗します。復旧待ちの間に新たに`connect`すると`busy`が返ります。接続拒否と`lease_lost`は従来どおり直ちに切断します。Python側の`release()`はGUI内の操作権を返し、`disconnect()`がPicoのCHを解放します。
 
-Shared names appear as `status().device_label` and each `status().channels[CH].label`. These are confirmed Pico values. All API actions remain available for automation and are scoped to acquired CHs; the GUI omits All buttons. Local API opt-in auto-restores on restart with newly generated credentials. Descriptor files remain under `.kohdalab/shutter/run`, separate from `.kohdalab/shutter/config/config.json`.
+Shared names appear as `status().device_label` and each `status().channels[CH].label`. These are confirmed Pico values and are unchanged. Each `status().channels[CH]` and each discovered `devices[].channels[]` entry also has `display_label`: the name the GUI shows, i.e. this PC's name for that Pico and CH, otherwise the shared `label`, otherwise `CHnn`. PC names are never written to the Pico.
+
+共有名は`status().device_label`と各`status().channels[CH].label`で、Picoで確定した値です（従来どおり）。各`status().channels[CH]`と`devices[].channels[]`には`display_label`も加わります。GUIに表示する名前で、そのPicoとCHに対するこのPCの名前、なければ共有`label`、それもなければ`CHnn`です。PC側の名前はPicoへ書き込みません。
+
+All API actions remain available for automation and are scoped to acquired CHs; the GUI omits All buttons. Local API opt-in auto-restores on restart with newly generated credentials. Descriptor files remain under `.kohdalab/shutter/run`, separate from `.kohdalab/shutter/config/config.json`.

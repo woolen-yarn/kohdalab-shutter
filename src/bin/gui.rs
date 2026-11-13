@@ -113,10 +113,17 @@ struct PendingOperation {
     operation: Operation,
     channels: Vec<u8>,
 }
+/// A pending shared Pico name. CH names are PC-local and never part of it.
 #[derive(Clone, Default)]
 struct LabelPatch {
     device: Option<String>,
-    channels: BTreeMap<u8, String>,
+}
+
+impl LabelPatch {
+    /// Send only the shared Pico label; the GUI never writes CH names.
+    fn send(&self, client: &Client) -> std::io::Result<()> {
+        client.set_config(self.device.as_deref(), &BTreeMap::new())
+    }
 }
 
 struct App {
@@ -127,14 +134,15 @@ struct App {
     device_info: BTreeMap<String, ControllerInfo>,
     info: Option<ControllerInfo>,
     device_label: String,
-    channel_labels: BTreeMap<u8, String>,
+    /// PC-local CH display names keyed by Pico device ID, then CH number.
+    /// They are kept in PC settings only and never sent to a Pico.
+    local_channel_labels: BTreeMap<String, BTreeMap<u8, String>>,
     name_edits: BTreeMap<u8, String>,
     active_name: Option<(String, u8)>,
     refreshing: bool,
     queued_toggle: Option<u8>,
     dirty_device: bool,
     draft_device: Option<String>,
-    dirty_channels: BTreeSet<u8>,
     config_due: Option<Instant>,
     config_pending: Option<LabelPatch>,
     pending_release: bool,
@@ -197,14 +205,13 @@ impl Default for App {
             device_info: BTreeMap::new(),
             info: None,
             device_label: String::new(),
-            channel_labels: BTreeMap::new(),
+            local_channel_labels: BTreeMap::new(),
             name_edits: BTreeMap::new(),
             active_name: None,
             refreshing: false,
             queued_toggle: None,
             dirty_device: false,
             draft_device: None,
-            dirty_channels: BTreeSet::new(),
             config_due: None,
             config_pending: None,
             pending_release: false,
@@ -271,14 +278,6 @@ impl App {
         }
         app.info = app.device_info.get(&app.devices[0].id).cloned();
         app.device_label = app.info.as_ref().unwrap().label.clone();
-        app.channel_labels = app
-            .info
-            .as_ref()
-            .unwrap()
-            .channels
-            .iter()
-            .map(|ch| (ch.id, ch.label.clone()))
-            .collect();
         app.selected = (0..4).collect();
         app.connect();
         app.log
@@ -556,9 +555,7 @@ impl App {
         self.queued_toggle = None;
         self.dirty_device = false;
         self.draft_device = None;
-        self.dirty_channels.clear();
         self.config_due = None;
-        self.channel_labels.clear();
         self.config_error.clear();
         self.info = self.device_info.get(&device.id).cloned();
         self.device_label = self
@@ -589,7 +586,6 @@ impl App {
             .is_some_and(|id| id != &info.device_id)
         {
             self.dirty_device = false;
-            self.dirty_channels.clear();
             self.config_due = None;
             self.draft_device = None;
             self.config_error =
@@ -598,23 +594,43 @@ impl App {
         if !self.dirty_device {
             self.device_label = info.label.clone();
         }
-        for channel in &info.channels {
-            if !self.dirty_channels.contains(&channel.id) {
-                self.channel_labels
-                    .insert(channel.id, channel.label.clone());
-            }
-        }
+        // PC-local CH names are keyed by device ID, so a refreshed or
+        // different Pico never overwrites or inherits them.
         self.device_info
             .insert(info.device_id.clone(), info.clone());
         self.info = Some(info);
     }
 
-    fn channel_label(&self, channel: u8) -> String {
-        self.channel_labels
-            .get(&channel)
+    /// The name to display for a CH: this PC's name for that Pico and CH,
+    /// otherwise the shared Pico label, otherwise `CHnn`.
+    fn display_label_for(
+        &self,
+        device_id: Option<&str>,
+        channel: u8,
+        shared: Option<&str>,
+    ) -> String {
+        device_id
+            .and_then(|id| self.local_channel_labels.get(id))
+            .and_then(|labels| labels.get(&channel))
+            .map(String::as_str)
+            .or(shared)
             .filter(|label| !label.trim().is_empty())
-            .cloned()
-            .unwrap_or_else(|| format!("CH{channel:02}"))
+            .map_or_else(|| format!("CH{channel:02}"), str::to_owned)
+    }
+
+    fn shared_channel_label(&self, channel: u8) -> Option<&str> {
+        self.info
+            .as_ref()
+            .and_then(|info| info.channels.iter().find(|entry| entry.id == channel))
+            .map(|entry| entry.label.as_str())
+    }
+
+    fn channel_label(&self, channel: u8) -> String {
+        self.display_label_for(
+            self.info.as_ref().map(|info| info.device_id.as_str()),
+            channel,
+            self.shared_channel_label(channel),
+        )
     }
 
     fn channel_fault(&self, channel: u8) -> bool {
@@ -650,28 +666,11 @@ impl App {
         }
         let mut patch = LabelPatch::default();
         if self.dirty_device {
-            patch.device = Some(self.device_label.trim().to_owned());
-        }
-        for ch in &self.dirty_channels {
-            patch.channels.insert(
-                *ch,
-                self.channel_labels
-                    .get(ch)
-                    .map_or("", String::as_str)
-                    .trim()
-                    .to_owned(),
-            );
-        }
-        for label in patch.device.iter().chain(patch.channels.values()) {
-            if label.is_empty()
-                || label.chars().count() > 32
-                || label.len() > 96
-                || label
-                    .chars()
-                    .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
-            {
-                return Err("Name is empty or too long.".into());
+            let label = self.device_label.trim().to_owned();
+            if !valid_name(&label) {
+                return Err(INVALID_NAME.into());
             }
+            patch.device = Some(label);
         }
         Ok(patch)
     }
@@ -684,17 +683,8 @@ impl App {
         {
             self.dirty_device = false;
         }
-        for (ch, label) in &patch.channels {
-            if self
-                .channel_labels
-                .get(ch)
-                .is_some_and(|value| value.trim() == label)
-            {
-                self.dirty_channels.remove(ch);
-            }
-        }
         self.update_info(info);
-        if !self.dirty_device && self.dirty_channels.is_empty() {
+        if !self.dirty_device {
             self.draft_device = None;
         }
         self.config_error.clear();
@@ -717,27 +707,20 @@ impl App {
                 return;
             }
         };
-        if patch.device.is_none() && patch.channels.is_empty() {
+        let Some(label) = patch.device.clone() else {
             return;
-        }
+        };
         if self.demo {
             if let Some(mut info) = self.info.clone() {
-                if let Some(label) = &patch.device {
-                    info.label = label.clone();
-                }
-                for ch in &mut info.channels {
-                    if let Some(label) = patch.channels.get(&ch.id) {
-                        ch.label = label.clone();
-                    }
-                }
+                info.label = label;
                 self.acknowledge_config(&patch, info);
             }
         } else if let Some(client) = self.client.clone() {
             self.config_pending = Some(patch.clone());
             self.task(move || {
                 Ok(Reply::Config(
-                    client
-                        .set_config(patch.device.as_deref(), &patch.channels)
+                    patch
+                        .send(&client)
                         .and_then(|()| client.info())
                         .map_err(|error| format!("Names were not saved: {error}")),
                 ))
@@ -845,8 +828,8 @@ impl App {
             self.error = false;
             self.task(move || {
                 let save_error = match patch {
-                    Ok(patch) if patch.device.is_some() || !patch.channels.is_empty() => client
-                        .set_config(patch.device.as_deref(), &patch.channels)
+                    Ok(patch) if patch.device.is_some() => patch
+                        .send(&client)
                         .err()
                         .map(|error| format!("Names were not saved: {error}")),
                     Err(error) => Some(error),
@@ -1091,7 +1074,6 @@ impl App {
                     self.config_error = error;
                 } else {
                     self.dirty_device = false;
-                    self.dirty_channels.clear();
                     self.config_due = None;
                 }
                 self.update_info(info);
@@ -1220,7 +1202,26 @@ impl App {
         json!(
             self.devices
                 .iter()
-                .map(|device| json!({"id":device.id,"address":device.address.to_string(),"label":self.device_info.get(&device.id).map(|info| &info.label),"channels":self.device_info.get(&device.id).map(|info| &info.channels)}))
+                .map(|device| {
+                    let info = self.device_info.get(&device.id);
+                    // `label` stays the shared Pico name; `display_label`
+                    // adds this PC's name (or the same fallback the GUI shows).
+                    let channels = info.map(|info| {
+                        info.channels
+                            .iter()
+                            .map(|channel| {
+                                let mut value = json!(channel);
+                                value["display_label"] = json!(self.display_label_for(
+                                    Some(&info.device_id),
+                                    channel.id,
+                                    Some(&channel.label),
+                                ));
+                                value
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    json!({"id":device.id,"address":device.address.to_string(),"label":info.map(|info| &info.label),"channels":channels})
+                })
                 .collect::<Vec<_>>()
         )
     }
@@ -1242,12 +1243,8 @@ impl App {
                 let mut value = serde_json::to_value(state).expect("channel state is serializable");
                 value["state"] = json!(state.name());
                 value["fault"] = json!(self.channel_fault(channel));
-                value["label"] = json!(
-                    self.info
-                        .as_ref()
-                        .and_then(|info| info.channels.iter().find(|entry| entry.id == channel))
-                        .map(|entry| entry.label.as_str())
-                );
+                value["label"] = json!(self.shared_channel_label(channel));
+                value["display_label"] = json!(self.channel_label(channel));
                 (channel.to_string(), value)
             })
             .collect();
@@ -1760,6 +1757,11 @@ impl App {
                     ui.set_min_height(180.0);
                     if let Some(info) = self.info.clone() {
                         for channel in info.channels {
+                            let name = self.display_label_for(
+                                Some(&info.device_id),
+                                channel.id,
+                                Some(&channel.label),
+                            );
                             let mut selected = self.selected.contains(&channel.id);
                             ui.horizontal(|ui| {
                                 if ui
@@ -1780,7 +1782,7 @@ impl App {
                                 }
                                 ui.add(
                                     egui::Label::new(
-                                        RichText::new(&channel.label).color(if channel.locked {
+                                        RichText::new(&name).color(if channel.locked {
                                             MUTED
                                         } else {
                                             TEXT
@@ -1788,7 +1790,13 @@ impl App {
                                     )
                                     .truncate(),
                                 )
-                                .on_hover_text(&channel.label);
+                                .on_hover_text(
+                                    if name == channel.label {
+                                        name.clone()
+                                    } else {
+                                        format!("{name}\nPico: {}", channel.label)
+                                    },
+                                );
                             });
                             if channel.locked {
                                 ui.label(RichText::new("In use").small().color(ORANGE));
@@ -1852,8 +1860,6 @@ impl App {
                         .changed();
                     if host_changed || port_changed {
                         self.dirty_device = false;
-                        self.dirty_channels.clear();
-                        self.channel_labels.clear();
                         self.draft_device = None;
                         self.config_due = None;
                         self.info = None;
@@ -1956,6 +1962,12 @@ impl App {
                         }
                     }
                 }
+                self.local_channel_labels = preferences
+                    .devices
+                    .iter()
+                    .filter(|(_, device)| !device.local_channel_labels.is_empty())
+                    .map(|(id, device)| (id.clone(), device.local_channel_labels.clone()))
+                    .collect();
                 self.preferences_saved = preferences.clone();
                 self.preferences_candidate = preferences;
             }
@@ -1995,6 +2007,24 @@ impl App {
                 .iter()
                 .map(|ch| (ch.id, ch.label.clone()))
                 .collect();
+        }
+        // Each Pico keeps its own PC-local CH names; clearing them for one
+        // device leaves every other device's entry untouched.
+        for (id, device) in &mut value.devices {
+            device.local_channel_labels = self
+                .local_channel_labels
+                .get(id)
+                .cloned()
+                .unwrap_or_default();
+        }
+        for (id, labels) in &self.local_channel_labels {
+            if !labels.is_empty() {
+                value
+                    .devices
+                    .entry(id.clone())
+                    .or_default()
+                    .local_channel_labels = labels.clone();
+            }
         }
         value
     }
@@ -2116,7 +2146,6 @@ impl App {
                         }
                         if self.config_error.is_empty() && self.preferences_error.is_empty() {
                             let pending = self.dirty_device
-                                || !self.dirty_channels.is_empty()
                                 || self.config_pending.is_some()
                                 || self.preferences_due.is_some()
                                 || (self.preferences_path.is_some()
@@ -2132,26 +2161,42 @@ impl App {
         self.settings_open = open;
     }
 
+    /// Store a CH display name in PC settings for the current Pico only.
+    /// Nothing is sent to the Pico; typing the shared fallback name again
+    /// removes the local name so the CH follows the Pico label once more.
     fn commit_channel_name(&mut self, channel: u8, text: &str) -> bool {
         let value = text.trim();
-        if value.is_empty()
-            || value.chars().count() > 32
-            || value.len() > 96
-            || value
-                .chars()
-                .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
-        {
-            self.config_error = "Name is empty or too long.".into();
+        if !valid_name(value) {
+            self.config_error = INVALID_NAME.into();
             return false;
         }
         if !self.selected.contains(&channel) || !self.connected() || self.control.owned() {
             return false;
         }
+        let Some(device_id) = self.info.as_ref().map(|info| info.device_id.clone()) else {
+            return false;
+        };
+        // Clear only an earlier invalid-name notice; a Pico-name save error
+        // stays visible until that save succeeds.
+        if self.config_error == INVALID_NAME && !self.dirty_device {
+            self.config_error.clear();
+        }
         if value != self.channel_label(channel) {
-            self.channel_labels.insert(channel, value.into());
-            self.dirty_channels.insert(channel);
-            self.changed_label();
-            self.config_due = Some(Instant::now());
+            let fallback =
+                self.display_label_for(None, channel, self.shared_channel_label(channel));
+            let labels = self
+                .local_channel_labels
+                .entry(device_id.clone())
+                .or_default();
+            if value == fallback {
+                labels.remove(&channel);
+            } else {
+                labels.insert(channel, value.into());
+            }
+            if labels.is_empty() {
+                self.local_channel_labels.remove(&device_id);
+            }
+            self.persist_preferences(false);
         }
         true
     }
@@ -2179,7 +2224,7 @@ impl App {
                 .char_limit(32)
                 .horizontal_align(egui::Align::Center),
             )
-            .on_hover_text("Edit name · Enter to apply");
+            .on_hover_text("Edit name on this PC · Enter to apply");
         if response.gained_focus() {
             self.active_name = Some(key.clone());
         }
@@ -2412,10 +2457,7 @@ impl App {
                     if connected {
                         let (rect, _) =
                             ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
-                        if self.config_pending.is_some()
-                            || self.dirty_device
-                            || !self.dirty_channels.is_empty()
-                        {
+                        if self.config_pending.is_some() || self.dirty_device {
                             egui::Spinner::new().paint_at(ui, rect);
                         }
                         if (!self.config_error.is_empty()
@@ -2541,12 +2583,9 @@ impl eframe::App for App {
             && self.config_pending.is_none()
             && self.link_interrupted.is_none()
             && let Ok(patch) = self.label_patch()
-            && (patch.device.is_some() || !patch.channels.is_empty())
+            && patch.device.is_some()
         {
-            match client
-                .set_config(patch.device.as_deref(), &patch.channels)
-                .and_then(|()| client.info())
-            {
+            match patch.send(&client).and_then(|()| client.info()) {
                 Ok(info) => self.acknowledge_config(&patch, info),
                 Err(error) => self.config_error = error.to_string(),
             }
@@ -2587,6 +2626,18 @@ impl eframe::App for App {
 /// Matches the remote transport queue, so holding requests during a refresh
 /// never accepts more than the transport would have buffered.
 const API_BACKLOG: usize = 16;
+
+const INVALID_NAME: &str = "Name is empty or too long.";
+
+/// Same rule as the Pico and PC settings: 1-32 printable characters, ≤96 bytes.
+fn valid_name(label: &str) -> bool {
+    !label.is_empty()
+        && label.chars().count() <= 32
+        && label.len() <= 96
+        && !label
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}'))
+}
 
 /// Answer a request without running it, in the envelope it was sent in.
 fn reply_error(request: remote::Request, code: &'static str, message: &str) {
@@ -3456,6 +3507,7 @@ mod tests {
 
     const FAKE_OPEN_STATE: &str = "CH0=90/90/0/90/0";
     const FAKE_POLL_OPEN: &str = r#"{"ok":true,"state":"CH0=90/90/0/90/0","info":{"protocol":2,"device_id":"a0ff","label":"Bay","lease_ms":15000,"channels":[{"id":0,"label":"CH00","locked":true}]}}"#;
+    const FAKE_INFO: &str = r#"{"ok":true,"protocol":2,"device_id":"a0ff","label":"Bay","lease_ms":15000,"channels":[{"id":0,"label":"CH00","locked":false}]}"#;
 
     /// Loopback stand-in for a Pico W that records every SESSION request.
     /// When `poll_gate` is given, the first poll is answered only after the
@@ -3506,6 +3558,7 @@ mod tests {
                             }
                             FAKE_POLL_OPEN
                         }
+                        Some("info") => FAKE_INFO,
                         _ => r#"{"ok":true}"#,
                     };
                     requests.push(request);
@@ -4113,13 +4166,21 @@ mod tests {
         app.order = Order::Descending;
         app.device_label = "Bench A".into();
         app.dirty_device = true;
-        app.channel_labels.insert(1, "Probe beam".into());
-        app.dirty_channels.insert(1);
         app.config_due = Some(Instant::now());
+        assert!(app.commit_channel_name(1, "Probe beam"));
         app.autosave_labels();
         app.persist_preferences(true);
+        // The shared Pico name is saved to the Pico; the CH name is not.
         assert_eq!(app.info.as_ref().unwrap().label, "Bench A");
-        assert_eq!(app.info.as_ref().unwrap().channels[1].label, "Probe beam");
+        assert_eq!(app.info.as_ref().unwrap().channels[1].label, "Probe");
+        assert_eq!(app.channel_label(1), "Probe beam");
+        let saved = kohdalab_shutter::preferences::Preferences::load(&path).unwrap();
+        let device = &saved.devices["e6614104037b2a21"];
+        assert_eq!(device.channel_labels[&1], "Probe");
+        assert_eq!(
+            device.local_channel_labels,
+            BTreeMap::from([(1, "Probe beam".into())])
+        );
         let mut restored = App::default();
         restored.init_preferences(Some(path));
         assert!(restored.layout == Layout::Vertical && restored.order == Order::Descending);
@@ -4130,31 +4191,148 @@ mod tests {
         restored.update_info(info);
         assert_eq!(restored.selected, BTreeSet::from([1]));
         assert_eq!(restored.channel_label(1), "Probe beam");
+        assert_eq!(restored.channel_label(2), "Reference");
     }
 
     #[test]
     fn old_save_acknowledgement_cannot_overwrite_newer_name_edit() {
         let mut app = App::demo();
-        app.channel_labels.insert(1, "Newer name".into());
-        app.dirty_channels.insert(1);
+        app.device_label = "Newer name".into();
+        app.dirty_device = true;
         let patch = LabelPatch {
-            device: None,
-            channels: BTreeMap::from([(1, "Earlier name".into())]),
+            device: Some("Earlier name".into()),
         };
         let mut info = app.info.clone().unwrap();
-        info.channels[1].label = "Earlier name".into();
+        info.label = "Earlier name".into();
         app.acknowledge_config(&patch, info);
-        assert_eq!(app.channel_label(1), "Newer name");
-        assert!(app.dirty_channels.contains(&1));
+        assert_eq!(app.device_label, "Newer name");
+        assert!(app.dirty_device);
         assert_eq!(
             app.current_preferences()
                 .devices
                 .values()
                 .next()
                 .unwrap()
-                .channel_labels[&1],
+                .label,
             "Earlier name"
         );
+    }
+
+    #[test]
+    fn local_channel_names_never_reach_the_pico_and_survive_refresh_and_disconnect() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let pico = FakePico::start(None);
+        let mut app = connected_to(&pico);
+        app.init_preferences(Some(path.clone()));
+        app.update_info(
+            serde_json::from_str::<Value>(FAKE_INFO)
+                .ok()
+                .and_then(|value| serde_json::from_value(value).ok())
+                .unwrap(),
+        );
+        assert_eq!(app.channel_label(0), "CH00");
+        assert!(app.commit_channel_name(0, "Probe beam"));
+        app.config_due = Some(Instant::now());
+        app.autosave_labels();
+        assert!(
+            app.pending.is_none(),
+            "a CH name must not start a Pico save"
+        );
+
+        app.refresh();
+        wait_for_reply(&mut app);
+        assert_eq!(app.channel_label(0), "Probe beam");
+        let status = app.snapshot_json();
+        assert_eq!(status["channels"]["0"]["label"], "CH00");
+        assert_eq!(status["channels"]["0"]["display_label"], "Probe beam");
+
+        // Re-reading the Pico configuration keeps the PC-local name.
+        app.update_info(app.info.clone().unwrap());
+        assert_eq!(app.channel_label(0), "Probe beam");
+
+        app.disconnect();
+        wait_for_reply(&mut app);
+        assert!(!app.connected());
+        assert_eq!(app.channel_label(0), "Probe beam");
+        assert_eq!(app.info.as_ref().unwrap().channels[0].label, "CH00");
+
+        std::thread::sleep(Duration::from_millis(200));
+        let requests = pico.finish();
+        assert_eq!(ops(&requests), ["claim", "poll", "release", "info"]);
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.get("channel_labels").is_none()),
+            "the GUI must never send CH names to the Pico"
+        );
+        let saved = kohdalab_shutter::preferences::Preferences::load(&path).unwrap();
+        assert_eq!(saved.devices["a0ff"].local_channel_labels[&0], "Probe beam");
+        assert_eq!(saved.devices["a0ff"].channel_labels[&0], "CH00");
+    }
+
+    #[test]
+    fn local_channel_names_stay_with_one_pico() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut app = App::demo();
+        app.init_preferences(Some(path.clone()));
+        assert!(!app.commit_channel_name(1, " "));
+        assert_eq!(app.config_error, INVALID_NAME);
+        assert!(app.commit_channel_name(1, "Only on A"));
+        assert!(app.config_error.is_empty());
+        let devices = app.devices.clone();
+        app.select_device(&devices[1]);
+        // Device B has the same shared Pico names but no local name.
+        assert_eq!(app.channel_label(1), "Probe");
+        let listed = app.devices_json();
+        assert_eq!(listed[0]["channels"][1]["label"], "Probe");
+        assert_eq!(listed[0]["channels"][1]["display_label"], "Only on A");
+        assert_eq!(listed[1]["channels"][1]["display_label"], "Probe");
+        app.select_device(&devices[0]);
+        assert_eq!(app.channel_label(1), "Only on A");
+        // Typing the shared name again removes the local override.
+        app.selected = [1].into();
+        assert!(app.commit_channel_name(1, "Probe"));
+        assert!(app.local_channel_labels.is_empty());
+        app.persist_preferences(true);
+        let saved = kohdalab_shutter::preferences::Preferences::load(&path).unwrap();
+        assert!(
+            saved
+                .devices
+                .values()
+                .all(|device| device.local_channel_labels.is_empty())
+        );
+    }
+
+    #[test]
+    fn legacy_preferences_use_shared_names_and_another_pc_sees_none() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        // Written by an earlier GUI: `channel_labels` is only the shared cache.
+        std::fs::write(
+            &path,
+            r#"{"application":"kohdalab-shutter","schema_version":1,
+                "devices":{"e6614104037b2a21":{"selected_channels":[0],"label":"Old",
+                "channel_labels":{"0":"Cached old name"}}}}"#,
+        )
+        .unwrap();
+        let mut app = App::demo();
+        app.init_preferences(Some(path));
+        assert!(app.local_channel_labels.is_empty());
+        assert_eq!(app.channel_label(0), "Pump");
+
+        // A second PC with its own (empty) settings sees only Pico names.
+        let mut named = App::demo();
+        assert!(named.commit_channel_name(0, "This PC only"));
+        let other_pc = App::demo();
+        assert_eq!(other_pc.channel_label(0), "Pump");
+
+        // An empty shared label still falls back to the CH number.
+        let mut info = app.info.clone().unwrap();
+        info.channels[3].label = " ".into();
+        app.update_info(info);
+        assert_eq!(app.channel_label(3), "CH03");
     }
 
     #[test]
@@ -4165,7 +4343,6 @@ mod tests {
         let positions = app.status.clone();
         app.config_pending = Some(LabelPatch {
             device: Some("Unsaved name".into()),
-            channels: BTreeMap::new(),
         });
         deliver(
             &mut app,
@@ -4215,11 +4392,10 @@ mod tests {
         app.device_label = "Only for A".into();
         app.dirty_device = true;
         app.changed_label();
-        app.channel_labels.insert(0, "Only A channel".into());
-        app.dirty_channels.insert(0);
+        assert!(app.commit_channel_name(0, "Only A channel"));
         let other = demo_info("bb", 0);
         app.update_info(other);
-        assert!(!app.dirty_device && app.dirty_channels.is_empty());
+        assert!(!app.dirty_device);
         assert_eq!(app.channel_label(0), "Pump");
         assert_ne!(app.device_label, "Only for A");
         assert!(app.config_due.is_none());
