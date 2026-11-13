@@ -46,9 +46,7 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 
 ## Pico firmware update / Pico側の更新
 
-Use the standalone [Pico Setup app](pico-upload.md) for initial USB transfer or updates. Download the native Windows/Mac ZIP and open the app; Python and uv are bundled. Initial setup and Update both use DHCP. Updates back up and preserve existing calibration, pins, Wi-Fi and labels. A fresh Pico still needs the one-time MicroPython UF2 installation.
-
-初回転送・更新には専用の[Pico Setupアプリ](pico-upload.md)を使えます。Windows／Mac用ZIPを展開してアプリを開くだけで、Python・uvの導入は不要です。初回／更新ともDHCPで、更新は既存の校正・配線・Wi-Fi・ラベルをバックアップして保持します。新品PicoだけMicroPython本体の導入が一度必要です。
+Use the USB uploader and firmware in the release source ZIP. / 配布ソース ZIP に含まれる USB 更新ツールとファームウェアを使います。 [Pico setup / Pico 側の準備](pico-upload.md)
 
 A connected CH repeats two short LED flashes with a pause, using green for Open and red for Close. An unclaimed CH keeps the waiting blink. Physical short presses toggle the corresponding CH even while a PC holds its lease. The connected GUI follows the commanded state on its next refresh (normally about one second). The lease stays active and still rejects other network clients, including raw commands from old clients. Long-press server stop remains available.
 

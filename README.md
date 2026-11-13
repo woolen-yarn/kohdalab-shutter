@@ -25,9 +25,15 @@ Use Setup on Windows, drag the app from the DMG to Applications on macOS, or ins
 
 Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. / Windows 版は未署名、macOS 版はアドホック署名で未公証です。 [Installation guide / 導入手順](docs/install.md)
 
-[Release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.0) · [SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-source.zip) · [Previous releases / 旧版](https://github.com/woolen-yarn/kohdalab-shutter-old/releases)
+[Release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.0) · [SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-source.zip)
 
-For initial firmware transfer or USB updates, use the separate Pico Setup app. / Pico の初回書き込みと USB 更新には専用アプリを使います。 [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2) · [Pico setup guide / 手順](docs/pico-upload.md)
+## Pico server / Pico 側の準備
+
+The MicroPython firmware in [`server/`](server/) runs on the Pico W or Pico 2 W. It controls the PCA9685 servo driver, handles local buttons and manages channel ownership. The desktop connects to it over the lab network.
+
+[`server/`](server/) の MicroPython ファームウェアは Pico W または Pico 2 W で動作し、PCA9685、物理ボタン、チャンネルの確保を管理します。PC アプリは研究室のネットワーク経由で接続します。
+
+For initial setup or an update, use the USB uploader in the release source ZIP. / 初回書き込み・更新は配布ソース ZIP に含まれる USB 転送ツールを使います。 [Pico setup guide / Pico の準備と更新](docs/pico-upload.md)
 
 ![Simulated Shutter control window with named channels](docs/images/kohdalab-shutter.png)
 
@@ -41,35 +47,18 @@ For initial firmware transfer or USB updates, use the separate Pico Setup app. /
 
 ## Interface / 画面
 
-Choose a named controller on the left and channels in the vertical list on the right, then Connect. In the compact control window, each CH number sits above its name box. Click the name to edit and press Enter to apply; Escape or clicking elsewhere discards unconfirmed text. Click the light window to toggle the shutter. The connection-name menu contains Disconnect; ··· opens Settings for the Pico name, layout, order and local API. Confirmed names and settings save automatically. Labels are shared through the Pico. The dark palette follows kohdalab-trkr; images use simulated hardware.
+Click a channel name and press Enter to save it. The connection menu releases channels, and **··· → Settings** opens layout, display order and local API settings. / CH 名は Enter で確定します。接続名メニューでチャンネルを解放し、**··· → Settings** で配置・表示順・外部 API を設定します。
 
-接続画面は左で機器、右の縦並びで使用CHを選び、Connectします。操作画面はCH番号の下に名前の入力欄を置き、クリックで編集・Enterで確定します。Escapeや欄外のクリックでは未確定の編集を戻します。光の窓を押すと開閉を切り替えます。上部の接続名メニューにDisconnect、「···」のSettingsにPico名・配置・並び順・外部APIをまとめました。確定した名前と設定は自動保存し、名前はPicoを通じて他のPCにも共有します。黒テーマはkohdalab-trkrと統一しています。画像は模擬接続です。
+<details>
+<summary>Connection picker and layouts / 接続画面とレイアウト</summary>
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-<details>
-<summary>Vertical layout / 縦並び</summary>
+![Vertical layout](docs/images/kohdalab-shutter-vertical.png)
 
-![KohdaLab Shutter vertical interface](docs/images/kohdalab-shutter-vertical.png)
-
-</details>
-
-<details>
-<summary>Descending order / 降順</summary>
-
-![KohdaLab Shutter descending channel order](docs/images/kohdalab-shutter-descending.png)
-
-Ordering changes the display only; hardware channel identifiers stay fixed.
-
-表示順だけが変わり、実機のCH番号は変わりません。
+![Descending channel order](docs/images/kohdalab-shutter-descending.png)
 
 </details>
-
-## Code signing / 署名・公証
-
-Current desktop files retain their unsigned/ad-hoc status. Windows follows the same SignPath Foundation preparation/approval policy as TRKR/IV, with an exact two-executable scope. A protected manual Developer ID/notarization workflow is prepared for Mac and requires owner enrollment/certificate setup before activation. See [signing setup](docs/code-signing.md), [policy](CODE_SIGNING_POLICY.md) and [privacy](PRIVACY.md).
-
-現行デスクトップ版の署名状態は変わりません。WindowsはTRKR・IVと同じSignPath申請準備・承認方針に統一し、Macは登録後に使用するDeveloper ID署名・公証ワークフローを用意しています。まだ本番の署名・公証は実行していません。[設定手順](docs/code-signing.md)を参照してください。
 
 ## Automatic settings / 設定の自動保存
 
@@ -80,12 +69,6 @@ PC layout, order, selected channels, endpoint/broadcast and Local control API op
 Pico名・CH名はPico側に保存し、他のPCとも共有します。PC側の配置・昇降順・選択CH・接続設定・APIの有効無効も保存します。次回起動時に復元しますが、勝手に接続・駆動しません。API認証情報は保存せず、破損設定や他アプリの設定は上書きしません。
 
 ![Settings](docs/images/kohdalab-shutter-settings.png)
-
-## Parallel motion / 並列動作
-
-The updated Pico firmware defaults to moving all configured channels concurrently. Existing devices must also update `SERVO_MAX_ACTIVE` in their own `settings.py` (for example `4` for four channels) and restart; a desktop update alone cannot change the device's current concurrency limit. Preserve your calibrated angles, pins and network settings.
-
-Pico W側も同時駆動数の更新が必要です。実機の既存`settings.py`で`SERVO_MAX_ACTIVE`をCH数（4台なら`4`）に変更し、再起動してください。校正角度・ピン・Wi-Fi/IP設定はそのまま保持します。配布ソースでは`CHANNELS`定義後に`SERVO_MAX_ACTIVE = len(CHANNELS)`としています。
 
 ## Supported hardware / 対応ハードウェア
 
@@ -111,23 +94,6 @@ Pico W側も同時駆動数の更新が必要です。実機の既存`settings.p
 
 See the [4-channel purchase list](docs/purchase-list.md) for part numbers and suppliers. / 詳しい型番と購入先は [4CH購入品リスト](docs/purchase-list.md) を参照してください。
 
-## Quick start / はじめに
-
-Explore the interface without connecting hardware / 実機に接続せず画面を試す:
-
-```sh
-cargo run --locked --bin kohdalab-shutter-gui -- --demo
-```
-
-1. Download and open the app from [Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest), or build from source. / Releasesからアプリを取得するか、ソースからビルドします。
-2. Prepare `server/wifi_config.py`, connect the Pico W by USB, and upload the server once. / Wi-Fi設定を用意し、Pico WをUSB接続してサーバーを一度転送します。
-3. Start the Pico W server by holding a channel switch for three seconds, unless `AUTO_START_SERVER` is enabled. / `AUTO_START_SERVER`が無効なら、チャンネルスイッチを3秒長押ししてサーバーを開始します。
-4. Open KohdaLab Shutter, choose **Find Pico W**, select the intended device, then connect. / GUIを起動し、**Find Pico W**から対象機器を選んで接続します。
-
-The first firmware upload and DHCP/fixed-IP choice are described in [Pico W setup and discovery / Pico Wの設定と検索](docs/rust-client.md). Discovery requires that the PC and Pico W can exchange local UDP traffic; use the USB fallback if the laboratory network blocks it.
-
-初回転送とDHCP・固定IPの選択は[Pico Wの設定と検索](docs/rust-client.md)を参照してください。検索にはPCとPico WのローカルUDP通信が必要です。研究室ネットワークで遮断される場合はUSB確認を使用します。
-
 ## External control / 外部制御
 
 Python/Jupyter can attach to the running GUI using an opt-in local API. The GUI owns the Pico connection, and GUI/API actions share the same serialized path and calibrated Open/Close states.
@@ -145,6 +111,11 @@ See the [Python client guide](bindings/python/README.md) and [GUI API reference]
 
 ## Operation journal / 操作ジャーナル
 
+The GUI records requested operations, outcomes and reported state changes in JSONL under `~/.kohdalab/shutter/logs/`. Keep the journal with the corresponding experiment data. / GUI は操作要求・結果・報告状態の変化を JSONL で記録します。実験データと一緒に保管してください。 [Journal details / 記録仕様](docs/gui-api.md)
+
+<details>
+<summary>Journal behavior / 操作ジャーナルの詳細</summary>
+
 Each normal GUI session appends JSON Lines under `~/.kohdalab/shutter/logs/` (Windows: `%USERPROFILE%\\.kohdalab\\shutter\\logs\\`). One file is created per session as `shutter-session-<UUID>.jsonl`, beginning with `session_started`. Each record includes a UTC Unix-millisecond timestamp (or explicit clock error), monotonic elapsed milliseconds, session UUID, app version, Pico device ID, endpoint and label. An operation has a UUID-linked `operation_requested` record followed by `operation_outcome` (`accepted` or `unresolved`); both carry the actual numeric CH IDs. Reported state is appended only when it changes, including reported servo position, target, busy flag and Open/Close calibration. A transient polling failure that keeps the Pico lease is recorded as `link_interrupted`, and its recovery as `link_restored`. The journal contains no control tokens or Wi-Fi credentials. A bounded background writer performs disk synchronization; queue/disk failures make provenance explicitly incomplete in the GUI and API status, but never delay or prevent Close/Stop safety actions.
 
 On normal exit, after device release, the app records an unresolved in-flight operation if needed and requests an ordered `session_finished` marker. It waits at most 250 ms for writer acknowledgement; a timeout is reported as incomplete, never as a confirmed drain. The terminal record describes known record loss and writer ordering, not whether the GUI received the acknowledgement; a delayed writer may finish after the GUI timed out.
@@ -156,6 +127,8 @@ The records distinguish Pico-reported/commanded servo position from optical veri
 通常終了では、機器のrelease後に未完了操作を必要に応じてunresolvedとして記録し、順序保証された `session_finished` マーカーを要求します。書込み側の確認待ちは最大250 msであり、タイムアウトは完了済みとは扱わず来歴不完全として扱います。終了レコードは既知の記録欠落と書込み順序を示し、GUI側の確認受信を保証しません。書込みがGUIのタイムアウト後に完了する場合もあります。
 
 Pico報告/指令のサーボ位置と光学的な透過確認は明確に区別します。本コントローラーには光センサーがないため、Open/Close記録は透過光の確認ではありません。来歴が必要な測定では対応する測定記録とJSONLを一緒に保管してください。
+
+</details>
 
 ## Development / 開発
 
