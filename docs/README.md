@@ -1,5 +1,11 @@
 # Documentation / ドキュメント
 
+
+- [Download for your OS / OS別ダウンロード](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)
+- [Install and try Simulation / インストールと模擬操作](install.md)
+- [Hardware and connections / 対応機器と接続](usage.md)
+- [Python and external API / Pythonと外部API](gui-api.md)
+
 | Guide / ガイド | Purpose / 内容 |
 | --- | --- |
 | [Pico USB installer/updater](pico-upload.md) | Initial/update launchers, backups and automatic DHCP / 初回転送・更新・バックアップ・IP自動取得 |

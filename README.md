@@ -11,6 +11,8 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
 
+[Try without hardware / 機器なしで試す](docs/install.md) · [Hardware and connections / 機器と接続](docs/usage.md) · [Python and API / PythonとAPI](docs/gui-api.md)
+
 ## Downloads / ダウンロード
 
 **KohdaLab Shutter 1.0.1**
