@@ -17,14 +17,15 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 ## Downloads / ダウンロード
 
-Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). No Rust or Python installation is needed to run the GUI.
+Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). The release also includes portable builds for Windows, macOS and Linux. No Rust or Python installation is needed to run the GUI.
 
-[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)から配布アプリをダウンロードできます。PCでGUIを使うためにRust・Pythonは不要です。
+[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)から配布アプリをダウンロードできます。Windows・macOS・Linuxのポータブル版もあります。PCでGUIを使うためにRust・Pythonは不要です。
 
 | Platform / OS | Download / ファイル |
 | --- | --- |
 | Windows 10/11 (x64) | `kohdalab-shutter-<version>-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
 | macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-<version>-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+| Ubuntu 24.04 (x86_64) | [Install .deb](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter_1.0.0_amd64.deb) · [Portable tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-linux-x86_64.tar.gz) |
 
 Windows packages are not publisher-signed; Mac packages are ad hoc signed and not Apple-notarized. See the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware is installed and updated with the separate Pico Setup app above.
 

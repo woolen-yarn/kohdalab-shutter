@@ -8,6 +8,7 @@ Download the current version from [GitHub Releases](https://github.com/woolen-ya
 | --- | --- | --- |
 | Windows 10/11, x64 | `kohdalab-shutter-<version>-windows-x64-Setup.exe` | Run Setup, then open KohdaLab Shutter from Start or the desktop. / Setupを実行後、スタートメニューまたはデスクトップから起動 |
 | macOS 13+, Apple Silicon / Intel | `kohdalab-shutter-<version>-macos-universal.dmg` | Open the DMG, drag `KohdaLab Shutter.app` to Applications, then open the app. / DMGを開き、アプリをApplicationsへドラッグして起動 |
+| Ubuntu 24.04 x86_64 | `kohdalab-shutter_1.0.0_amd64.deb` | Run `sudo apt install ./kohdalab-shutter_1.0.0_amd64.deb`, then open KohdaLab Shutter from the application menu. / インストール後、アプリ一覧から起動 |
 
 The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for all users under `%ProgramFiles%\Kohdalab\KohdaLab Shutter` and requires administrator approval. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
 
