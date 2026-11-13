@@ -30,6 +30,8 @@ Windows packages are not publisher-signed; Mac packages are ad hoc signed and no
 
 Windows版は発行元の署名がなく、Mac版はアドホック署名でAppleの公証を受けていないため、初回起動で確認が出ることがあります。[導入手順](docs/install.md)をご覧ください。Pico Wのファームウェアの転送・更新には、上記のPico Setupアプリを使います。
 
+[Previous releases / 旧版の配布](https://github.com/woolen-yarn/kohdalab-shutter-old/releases)
+
 ## Quick start / クイックスタート
 
 1. Start the Pico W controller on the lab network. / 実験室ネットワーク上のPico Wを起動します。
@@ -44,9 +46,9 @@ Choose a named controller on the left and channels in the vertical list on the r
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
 
-**Pico USB setup/update:** download the standalone [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.2). Extract the ZIP and double-click the Windows exe or Mac app; no Python or uv installation is needed. Choose Initial setup or Update. Channel tuning offers per-CH endpoints and opt-in gentle approach. Both use DHCP; Update backs up and preserves calibration, pins, Wi-Fi and labels. [Instructions](docs/pico-upload.md)
+**Pico USB setup/update:** download the standalone [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2). Extract the ZIP and double-click the Windows exe or Mac app; no Python or uv installation is needed. Choose Initial setup or Update. Channel tuning offers per-CH endpoints and opt-in gentle approach. Both use DHCP; Update backs up and preserves calibration, pins, Wi-Fi and labels. [Instructions](docs/pico-upload.md)
 
-**Picoへの初回転送・更新：** 専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.2)を配布しています。ZIPを展開し、Windowsのexe／Macのappを開くだけで、Python・uvの別途インストールは不要です。初回／更新と、CH別の角度・終端減速の調整に対応し、どちらもDHCPです。更新はバックアップを取り、校正・配線・Wi-Fi・ラベルを保持します。[手順](docs/pico-upload.md)
+**Picoへの初回転送・更新：** 専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2)を配布しています。ZIPを展開し、Windowsのexe／Macのappを開くだけで、Python・uvの別途インストールは不要です。初回／更新と、CH別の角度・終端減速の調整に対応し、どちらもDHCPです。更新はバックアップを取り、校正・配線・Wi-Fi・ラベルを保持します。[手順](docs/pico-upload.md)
 
 <details>
 <summary>Vertical layout / 縦並び</summary>

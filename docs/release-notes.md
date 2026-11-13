@@ -2,13 +2,13 @@
 
 The GUI shows **Disconnecting…** while it releases the selected Pico channels, and **Disconnected** after completion. The common GUI control API exposes Shutter discovery, connection, status and channel commands. Disconnecting leaves the shutters in their last commanded state.
 
-The pre-release candidate was exercised on a Pico 3900S at Nautilus. CH0 reported 0°, 90°, then 0° after the open and close commands. The GUI layout was reviewed on Nautilus. The final 1.0.0 packages require their own verification before publishing.
+The pre-release candidate was exercised on a Pico 3900S at Nautilus. CH0 reported 0°, 90°, then 0° after the open and close commands. The GUI layout was reviewed on Nautilus. Windows Setup passed installation, reinstallation and uninstallation on Windows, including preservation of user settings.
 
 ## 日本語
 
 GUIは選択したPicoチャンネルを解放している間に **Disconnecting…**、完了後に **Disconnected** を表示します。共通GUI制御APIで機器の検出・接続、状態取得、チャンネル操作ができます。切断後は最後に指令した開閉状態を保持します。
 
-NautilusのPico 3900Sで公開前候補を試験し、CH0の開閉指令に対して0°、90°、0°の応答を確認しました。NautilusでGUIのレイアウトも確認しました。公開前に1.0.0の最終配布物を検証します。
+NautilusのPico 3900Sで公開前候補を試験し、CH0の開閉指令に対して0°、90°、0°の応答を確認しました。NautilusでGUIのレイアウトも確認しました。Windows Setupは実機でインストール・再インストール・アンインストールとユーザー設定の保持を確認しました。
 
 ---
 
@@ -29,13 +29,13 @@ NautilusのPico 3900Sで公開前候補を試験し、CH0の開閉指令に対�
 # KohdaLab Shutter 0.6.12
 
 - Device replies wake the GUI as soon as the background task completes. This reduces the time between receiving a reply and processing it on the GUI thread.
-- [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.2) fixes USB updates for Pico 2 W and verifies backups before writing. A controller already running the 1.2.1 firmware can continue to use it.
+- [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2) fixes USB updates for Pico 2 W and verifies backups before writing. A controller already running the 1.2.1 firmware can continue to use it.
 - The release includes the source ZIP, build manifests, SHA-256 checksums and Linux GUI API simulation evidence. Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. The GUI wake-up change was tested in software.
 
 ## 日本語
 
 - 機器からの応答をバックグラウンド処理が受け取ると GUI を即座に起こし、状態反映までの待ち時間を減らします。
-- [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.2) は Pico 2 W の USB 更新を修正し、書き込み前にバックアップを検証します。すでに 1.2.1 のファームウェアで稼働中の Pico はそのまま使えます。
+- [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2) は Pico 2 W の USB 更新を修正し、書き込み前にバックアップを検証します。すでに 1.2.1 のファームウェアで稼働中の Pico はそのまま使えます。
 - ソース ZIP、ビルド記録、SHA-256、Linux GUI API 模擬検証結果を同梱します。Windows 版は未署名、macOS 版はアドホック署名で未公証です。GUI の変更はソフトウェアで検証しました。
 
 ---
@@ -43,13 +43,13 @@ NautilusのPico 3900Sで公開前候補を試験し、CH0の開閉指令に対�
 # KohdaLab Shutter 0.6.11
 
 - GUI API requests received during a device refresh wait in the existing bounded queue until the refresh finishes, subject to their request deadline.
-- With [Pico Setup 1.2.1 firmware](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.1), each refresh uses one TCP connection to renew the lease and read state and faults. Older firmware uses the existing three requests.
+- With [Pico Setup 1.2.1 firmware](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.1), each refresh uses one TCP connection to renew the lease and read state and faults. Older firmware uses the existing three requests.
 - The release includes the source ZIP, build manifests, SHA-256 checksums and Linux GUI API simulation evidence tied to the tagged commit. Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. This release was tested in simulation without a physical Pico or shutter.
 
 ## 日本語
 
 - 機器の定期更新中に届いた GUI API の要求は、期限内であれば既存のキューで待機し、更新後に処理されます。
-- [Pico Setup 1.2.1 のファームウェア](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.1)では、定期更新1回につき TCP 接続1回で所有権を延長し、状態と異常を取得します。旧ファームウェアでは従来の3要求を使います。
+- [Pico Setup 1.2.1 のファームウェア](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.1)では、定期更新1回につき TCP 接続1回で所有権を延長し、状態と異常を取得します。旧ファームウェアでは従来の3要求を使います。
 - ソース ZIP、ビルド記録、SHA-256、タグのコミットに紐付いた Linux GUI API 模擬検証結果を同梱します。Windows 版は未署名、macOS 版はアドホック署名で未公証です。実機の Pico とシャッターによる検証は行っていません。
 
 ---
@@ -64,7 +64,7 @@ NautilusのPico 3900Sで公開前候補を試験し、CH0の開閉指令に対�
 
 ## Compatibility and migration
 
-- Fault reporting needs the firmware in [Pico Setup 1.2.0](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.0). With older firmware this desktop version works as 0.6.9 did and never shows `Fault`. Older desktop versions work with the new firmware and ignore the fault report.
+- Fault reporting needs the firmware in [Pico Setup 1.2.0](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.0). With older firmware this desktop version works as 0.6.9 did and never shows `Fault`. Older desktop versions work with the new firmware and ignore the fault report.
 - Shutter commands, `STATE`/`STATUS`, the profile format, lease policy and safety behaviour are unchanged. Existing profiles and operation journals remain usable.
 - Journal records of type `reported_state_changed` gain a `faulted_channel_ids` array.
 
@@ -90,7 +90,7 @@ Windows binaries are unsigned. Mac applications are ad hoc signed and not notari
 
 - **CHの異常が見えるようになりました。** PicoがCHのI2C書き込み異常を報告すると、GUIはそのシャッターを赤い`Fault`で表示し、CLIの`info`にも印が付きます。異常の発生と解消は操作ジャーナルに記録します。異常中のシャッターをクリックすると新しい指令が送られ、Picoがそのチャンネルを再試行します。
 - **スクリプトから異常が分かります。** GUI APIの`status`の各CHに真偽値`fault`があります。`state`の意味は変わらないので、既存のスクリプトが読む文字列は同じです。Pythonの`wait_for_state()`はtimeoutを待たずに`GuiShutterError`（`code == "fault"`）を出します。Pythonクライアント`kohdalab-shutter-api`は0.6.10です。
-- **互換性：** 異常の報告には[Pico Setup 1.2.0](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.0)のファームウェアが必要です。旧ファームウェアでは0.6.9と同じ動作で、`Fault`は表示されません。旧デスクトップ版は新ファームウェアでも動き、異常の報告を無視します。指令、`STATE`/`STATUS`、設定形式、lease方針、安全動作は変わりません。
+- **互換性：** 異常の報告には[Pico Setup 1.2.0](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.0)のファームウェアが必要です。旧ファームウェアでは0.6.9と同じ動作で、`Fault`は表示されません。旧デスクトップ版は新ファームウェアでも動き、異常の報告を無視します。指令、`STATE`/`STATUS`、設定形式、lease方針、安全動作は変わりません。
 - **配布物：** Windows版は未署名、Mac版はアドホック署名でApple公証は受けていません。リリースcommitのソースを`kohdalab-shutter-0.6.10-source.zip`として同梱します。
 - **検証と来歴：** `RELEASE-VERIFICATION.json`にリリースcommit、ソースtree、検証・配布workflowの実行、署名状態、各ファイルのSHA-256を記録します。`SHA256SUMS.txt`は公開する全ファイルを含みます。`validation-linux-gui-api.json`は、リリースcommitをLinuxでビルドした実GUIとAPIの模擬検証です。WindowsとMacの配布物はビルド・インストールまたは起動・版の確認までで、GUI APIの模擬検証は繰り返していません。実機のPico W・サーボ・光学測定は使用していません。
 
