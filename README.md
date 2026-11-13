@@ -5,22 +5,38 @@
 [![CI](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml/badge.svg)](https://github.com/woolen-yarn/kohdalab-shutter/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Rust desktop controller and MicroPython Pico W firmware for servo-driven optical shutters.
-Rust製デスクトップコントローラーと、サーボ式光シャッター用Pico W MicroPythonファームウェアです。
+KohdaLab Shutter opens and closes servo-driven optical shutters from a lab computer. Use it to select a networked Pico W controller, reserve the channels for your experiment and operate each shutter from a compact desktop window.
 
-[Download / ダウンロード](https://github.com/woolen-yarn/kohdalab-shutter/releases) · [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
+KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを開閉するアプリです。ネットワーク上のPico Wを選び、実験で使うチャンネルを確保して、操作画面から個別に開閉します。
 
-- Select a labelled Pico W and the channels you need in a separate connection screen.
-- Locks selected channels on the Pico; other PCs can use the remaining channels.
-- Shows only your channels in a compact dark control window, with editable names and clickable light-window switches.
+[Download / ダウンロード](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest) · [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
 
-- 接続画面で名前付きのPico Wと使用CHを選びます。
-- Pico側で選択CHだけをロックし、残りのCHは他のPCから使用できます。
-- 操作画面は使用CHだけを表示する小型の黒テーマです。
+![Simulated Shutter control window with named channels](docs/images/kohdalab-shutter.png)
+
+*Control window with simulated hardware. / 模擬機器を使った操作画面。*
+
+## Downloads / ダウンロード
+
+Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). No Rust or Python installation is needed to run the GUI.
+
+[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)から配布アプリをダウンロードできます。PCでGUIを使うためにRust・Pythonは不要です。
+
+| Platform / OS | Download / ファイル |
+| --- | --- |
+| Windows 10/11 (x64) | `kohdalab-shutter-<version>-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
+| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-<version>-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
+
+Windows packages are not publisher-signed; Mac packages are ad hoc signed and not Apple-notarized. See the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware is installed and updated with the separate Pico Setup app above.
+
+Windows版は発行元の署名がなく、Mac版はアドホック署名でAppleの公証を受けていないため、初回起動で確認が出ることがあります。[導入手順](docs/install.md)をご覧ください。Pico Wのファームウェアの転送・更新には、上記のPico Setupアプリを使います。
+
+## Quick start / クイックスタート
+
+1. Start the Pico W controller on the lab network. / 実験室ネットワーク上のPico Wを起動します。
+2. Open Shutter, choose **Find Pico W**, select the controller and channels, then choose **Connect**. / **Find Pico W** で制御器を探し、使用するCHを選んで **Connect** を押します。
+3. Click a channel’s aperture to toggle it. The display shows the commanded position. / 各CHの光窓をクリックして開閉します。画面は指令した位置を表示します。
 
 ## Interface / 画面
-
-![KohdaLab Shutter interface](docs/images/kohdalab-shutter.png)
 
 Choose a named controller on the left and channels in the vertical list on the right, then Connect. In the compact control window, each CH number sits above its name box. Click the name to edit and press Enter to apply; Escape or clicking elsewhere discards unconfirmed text. Click the light window to toggle the shutter. The connection-name menu contains Disconnect; ··· opens Settings for the Pico name, layout, order and local API. Confirmed names and settings save automatically. Labels are shared through the Pico. The dark palette follows kohdalab-trkr; images use simulated hardware.
 
@@ -49,21 +65,6 @@ Ordering changes the display only; hardware channel identifiers stay fixed.
 表示順だけが変わり、実機のCH番号は変わりません。
 
 </details>
-
-## Downloads / ダウンロード
-
-Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). No Rust or Python installation is needed to run the GUI.
-
-[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)から配布アプリをダウンロードできます。PCでGUIを使うためにRust・Pythonは不要です。
-
-| Platform / OS | Download / ファイル |
-| --- | --- |
-| Windows 10/11 (x64) | `kohdalab-shutter-<version>-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
-| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-<version>-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
-
-Windows packages are not publisher-signed; Mac packages are ad hoc signed and not Apple-notarized. See the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware is installed and updated with the separate Pico Setup app above.
-
-Windows版は発行元の署名がなく、Mac版はアドホック署名でAppleの公証を受けていないため、初回起動で確認が出ることがあります。[導入手順](docs/install.md)をご覧ください。Pico Wのファームウェアの転送・更新には、上記のPico Setupアプリを使います。
 
 ## Code signing / 署名・公証
 
