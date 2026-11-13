@@ -11,23 +11,50 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
 
-[Try without hardware / 機器なしで試す](docs/install.md) · [Hardware and connections / 機器と接続](docs/usage.md) · [Python and API / PythonとAPI](docs/gui-api.md)
+[Downloads / ダウンロード](#downloads--ダウンロード) · [Hardware and verification / 対応機器と実機検証](#hardware-and-verification--対応機器と実機検証) · [Try without hardware / 機器なしで試す](docs/install.md) · [Python and API / PythonとAPI](docs/gui-api.md)
 
 ## Downloads / ダウンロード
 
-**KohdaLab Shutter 1.0.1**
+[Latest stable release / 最新安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest) · [v1.0.2 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.2)
 
-| Platform / OS | Install / インストール版 | Portable / ポータブル版 | Hardware validation / 実機検証 |
-| --- | --- | --- | --- |
-| Windows 10/11 (x64) | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-windows-x64.zip) | Simulated Pico / 模擬 Pico で検証 |
-| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-macos-universal.zip) | Physical-device operation unverified / 実機操作未検証 |
-| Ubuntu 24.04 (x86_64) | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter_1.0.1_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-linux-x86_64.tar.gz) | Physical-device operation unverified / 実機操作未検証 |
+| OS / 対応環境 | Installer / インストーラー | Portable / ポータブル |
+| --- | --- | --- |
+| Windows 10/11 x64 | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter-1.0.2-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter-1.0.2-windows-x64.zip) |
+| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter-1.0.2-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter-1.0.2-macos-universal.zip) |
+| Ubuntu 24.04 x64 | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter_1.0.2_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter-1.0.2-linux-x86_64.tar.gz) |
+
+[SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.2/kohdalab-shutter-1.0.2-source.zip)
 
 Use Setup on Windows, drag the app from the DMG to Applications on macOS, or install the DEB on Ubuntu. For portable use, extract the archive before launching. / Windows は Setup、macOS は DMG からアプリを Applications へコピー、Ubuntu は DEB を使います。ポータブル版は展開して起動します。
 
 Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. / Windows 版は未署名、macOS 版はアドホック署名で未公証です。 [Installation guide / 導入手順](docs/install.md)
 
-[Release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.1) · [SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.1/kohdalab-shutter-1.0.1-source.zip)
+## Hardware and verification / 対応機器と実機検証
+
+| Model / 機器 | Role / 役割 | Connection / 接続方法 | Physical test scope / 実機検証の範囲 |
+| --- | --- | --- | --- |
+| Pico W + PCA9685 | Controller / 制御器 | Desktop → Pico over lab TCP; PCA9685 over I²C / PCからTCP、基板内はI²C | Windows pre-release, Pico 3900S CH0 reported 0° → 90° → 0° / 公開前Windows候補、CH0の報告角度を確認 |
+| Pico 2 W | Controller / 制御器 | Lab TCP; USB firmware setup / TCP操作・USB初期設定 | Firmware supported; physical desktop control unrecorded / ファームウェア対応・デスクトップ実機操作は記録なし |
+
+The 3900S record is a controller response, with no optical-path measurement. Current packages passed simulated Pico checks. / 3900Sはコントローラーの応答記録です。光路は測定していません。現行パッケージは模擬Picoで検証しました。
+
+[Connection guide / 接続手順](docs/usage.md) · [Verification record / 検証記録](docs/release-notes.md#kohdalab-shutter-100)
+
+### 4-channel build / 4CH構成の主要部品
+
+| Part / 部品 | Quantity / 数量 |
+| --- | ---: |
+| Raspberry Pi Pico W or Pico 2 W / Raspberry Pi Pico W または Pico 2 W | 1 |
+| PCA9685 PWM driver board / PCA9685 PWMドライバ基板 | 1 |
+| Servo, mounting bracket, and horn / サーボ・取付ブラケット・ホーン | 4 each / 各4 |
+| Push button, red LED, and green LED / 押しボタン・赤LED・緑LED | 4 each / 各4 |
+| LED current-limiting resistors / LED電流制限抵抗 | 8 |
+| Mini breadboard for channel controls / CH操作用ミニブレッドボード | 4 |
+| External servo power supply / サーボ用外部電源 | 1 |
+| Wiring and servo extension cables / 配線材・サーボ延長ケーブル | As needed / 必要数 |
+| Beam block / ビームブロック | 1 per beam path / 光路ごとに1 |
+
+See the [4-channel purchase list](docs/purchase-list.md) for part numbers and suppliers. / 詳しい型番と購入先は [4CH購入品リスト](docs/purchase-list.md) を参照してください。
 
 ## Pico server / Pico 側の準備
 
@@ -73,30 +100,6 @@ PC layout, order, selected channels, CH display names, endpoint/broadcast and Lo
 Pico名はPico側に保存し、他のPCとも共有します。GUIで編集したCH名はこのPCだけの表示名で、PicoのデバイスIDとCH番号ごとにPC設定へ保存します。Picoへは書き込まないため、別のPicoや別のPCには反映しません。PC側の名前がないCHはPicoの共有名（なければ`CH00`など）を表示し、Picoの名前を入力し直すと共有名に戻ります。旧版の設定はそのまま使え、PC側のCH名は空の状態から始まります。PC側の配置・昇降順・選択CH・接続設定・APIの有効無効も保存します。次回起動時に復元しますが、勝手に接続・駆動しません。API認証情報は保存せず、破損設定や他アプリの設定は上書きしません。
 
 ![Settings](docs/images/kohdalab-shutter-settings.png)
-
-## Supported hardware / 対応ハードウェア
-
-| Role / 役割 | Current implementation / 現在の実装 |
-| --- | --- |
-| Controller / 制御器 | Raspberry Pi Pico W running MicroPython / MicroPythonを実行するRaspberry Pi Pico W |
-| Servo PWM / サーボPWM | PCA9685, one board, up to 16 outputs / PCA9685 1枚、最大16出力 |
-| Desktop / PC | Rust GUI and CLI on Windows, macOS, or Linux / Windows・macOS・Linux向けRust GUI・CLI |
-
-### 4-channel build / 4CH構成の主要部品
-
-| Part / 部品 | Quantity / 数量 |
-| --- | ---: |
-| Raspberry Pi Pico W or Pico 2 W / Raspberry Pi Pico W または Pico 2 W | 1 |
-| PCA9685 PWM driver board / PCA9685 PWMドライバ基板 | 1 |
-| Servo, mounting bracket, and horn / サーボ・取付ブラケット・ホーン | 4 each / 各4 |
-| Push button, red LED, and green LED / 押しボタン・赤LED・緑LED | 4 each / 各4 |
-| LED current-limiting resistors / LED電流制限抵抗 | 8 |
-| Mini breadboard for channel controls / CH操作用ミニブレッドボード | 4 |
-| External servo power supply / サーボ用外部電源 | 1 |
-| Wiring and servo extension cables / 配線材・サーボ延長ケーブル | As needed / 必要数 |
-| Beam block / ビームブロック | 1 per beam path / 光路ごとに1 |
-
-See the [4-channel purchase list](docs/purchase-list.md) for part numbers and suppliers. / 詳しい型番と購入先は [4CH購入品リスト](docs/purchase-list.md) を参照してください。
 
 ## External control / 外部制御
 
