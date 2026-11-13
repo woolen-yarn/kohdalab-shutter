@@ -1,4 +1,4 @@
-<img src="assets/kohdalab-shutter.svg" width="64" height="64" align="right" alt="KohdaLab Shutter icon">
+<img src="assets/kohdalab-shutter.png" width="64" height="64" align="right" alt="KohdaLab Shutter icon">
 
 # KohdaLab Shutter
 
