@@ -1,0 +1,221 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*", "pico-tools-v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        python-version: ["3.13", "3.14"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Verify dependency lock is current
+        run: uv lock --check
+
+      - name: Install Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups --frozen
+
+      - name: Common GUI control SDK (device-free)
+        run: uv run python -m unittest discover -s bindings/control -p "test_*.py" -v
+      - name: Check local documentation links
+        run: uv run python scripts/check_docs.py
+      - name: Run lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check client server tests bindings/python scripts
+
+      - name: Run strict core type checks
+        run: uv run mypy
+
+      - name: Run tests with complete core branch coverage
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+  package:
+    name: Package smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.13"
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Validate metadata and wheel contents
+        run: |
+          uv sync --only-group package --frozen
+          uv run --only-group package twine check --strict dist/*
+          uv run --only-group package check-wheel-contents dist/*.whl
+
+      - name: Install and smoke-test wheel
+        run: |
+          uv venv .wheel-venv
+          uv pip install --python .wheel-venv/bin/python dist/*.whl
+          .wheel-venv/bin/kohdalab-shutter --help
+
+      - name: Build and verify the Python GUI API client
+        run: |
+          uv build bindings/python --out-dir api-dist --no-sources
+          uv run --only-group package twine check --strict api-dist/*
+          uv run --only-group package check-wheel-contents api-dist/*.whl
+          uv pip install --python .wheel-venv/bin/python api-dist/*.whl
+          .wheel-venv/bin/python -c "from kohdalab_shutter import GuiShutter; print(GuiShutter.__name__)"
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install locked dependencies
+        run: uv sync --all-extras --all-groups --frozen
+
+      - name: Audit locked dependencies
+        run: uv run pip-audit
+
+  rust:
+    name: Rust / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Linux GUI build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev libegl1-mesa-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dri xvfb xauth
+      - name: Set up stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Check Rust formatting
+        run: cargo fmt --check
+      - name: Check Rust code
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Test Rust client and mock network servers
+        run: cargo test --locked --workspace --all-targets
+      - name: Build native clients
+        run: cargo build --release --locked
+      - name: Check CLI entry point
+        run: cargo run --locked --bin kohdalab-shutter -- --help
+      - name: Verify multi-user channel sessions against the production Pico protocol
+        if: runner.os == 'Linux'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a python3 scripts/verify_channel_sessions.py target/release/kohdalab-shutter --gui target/release/kohdalab-shutter-gui
+      - name: Verify native GUI API in isolated simulation
+        if: runner.os == 'Linux'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a python3 scripts/verify_gui_api.py target/release/kohdalab-shutter-gui --output target/gui-api-validation.json
+      - name: Keep the GUI API validation report for release evidence
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        with:
+          name: gui-api-validation
+          if-no-files-found: error
+          retention-days: 14
+          path: target/gui-api-validation.json
+
+  micropython:
+    name: MicroPython Pico session compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build a pinned official MicroPython interpreter
+        run: |
+          git clone --depth 1 --branch v1.24.1 https://github.com/micropython/micropython.git build/micropython
+          test "$(git -C build/micropython rev-parse HEAD)" = ecfdd5d6f9be971852003c2049600dc7b3e2a838
+          make -C build/micropython/mpy-cross -j2
+          make -C build/micropython/ports/unix -j2 MICROPY_PY_BTREE=0 MICROPY_PY_SSL=0 MICROPY_PY_FFI=0 FROZEN_MANIFEST=
+      - name: Exercise production Pico sessions with actual MicroPython
+        run: |
+          build/micropython/ports/unix/build-standard/micropython --version
+          build/micropython/ports/unix/build-standard/micropython scripts/verify_micropython_sessions.py build/micropython-label-test.json
+
+  # Keep the existing protected-branch contexts. Both gates require every
+  # Python/Rust platform, packaging check, and dependency audit to succeed.
+  required:
+    name: ${{ matrix.context }}
+    needs: [test, package, audit, rust, micropython]
+    if: ${{ always() }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - context: ubuntu-latest
+            runner: ubuntu-24.04
+          - context: windows-latest
+            runner: windows-2025
+    steps:
+      - name: Require the complete validation suite
+        env:
+          CHECK_RESULTS: ${{ join(needs.*.result, ',') }}
+        run: python -c "import os, sys; sys.exit(0 if all(result == 'success' for result in os.environ['CHECK_RESULTS'].split(',')) else 1)"

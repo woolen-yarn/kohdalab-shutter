@@ -1,0 +1,5 @@
+# Preserve the exact upstream bytes used by dependency-notice SHA-256 checks.
+assets/dependency-licenses/** -text
+
+# Keep the packaged control helper byte-identical across platform checkouts.
+bindings/control/kohdalab_control.py text eol=lf

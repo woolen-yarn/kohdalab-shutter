@@ -1,0 +1,4 @@
+PyInstaller==6.22.3
+PySide6_Essentials==6.11.1
+mpremote==1.28.0
+pyserial==3.5
