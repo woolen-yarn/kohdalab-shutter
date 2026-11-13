@@ -38,9 +38,9 @@ For real hardware, connect in the GUI first, or await `connect(host="...", chann
 
 ## Ownership and results / 操作権と結果
 
-`GuiShutter()` discovers exactly one active GUI endpoint. If multiple GUIs are running, pass `endpoint="/path/to/shutter-…json"`; it never chooses one silently. Read-only `capabilities()`, `status()`, `config()` and `result(id)` do not acquire control. Mutating calls acquire a ten-second lease and heartbeat every two seconds. Manual controls are locked until release or operator takeover.
+`GuiShutter()` discovers exactly one active GUI endpoint, searching `~/.kohdalab/shutter/run` (where the GUI writes descriptors) and the legacy `~/.kohdalab/control`; stale descriptors are skipped and the same GUI found twice counts once. If multiple GUIs are running, pass `endpoint="/path/to/shutter-…json"`; it never chooses one silently. Read-only `capabilities()`, `status()`, `config()` and `result(id)` do not acquire control. Mutating calls acquire a ten-second lease and heartbeat every two seconds. Manual controls are locked until release or operator takeover.
 
-複数のGUIが起動している場合は `endpoint=` で指定します。参照操作は操作権を取得しません。変更操作は10秒の操作権を取得し、2秒ごとに更新します。操作権の解放またはGUIのTake controlまで手動操作をロックします。
+`GuiShutter()` は現行の `~/.kohdalab/shutter/run` と旧版の `~/.kohdalab/control` を検索します。複数のGUIが起動している場合は `endpoint=` で指定します。参照操作は操作権を取得しません。変更操作は10秒の操作権を取得し、2秒ごとに更新します。操作権の解放またはGUIのTake controlまで手動操作をロックします。
 
 Each mutation accepts a UUID `request_id`. Retrying the identical request with the same ID returns its existing receipt; a conflicting payload is rejected. `toggle()` is never automatically retried. `result(id)` inspects a receipt and `wait(id)` waits for its terminal state. `wait()` raises `GuiShutterError` for an error receipt; `result()` retains the receipt for inspection. An error does not mean the shutter stayed still.
 

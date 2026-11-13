@@ -101,31 +101,80 @@ class GuiShutter:
                 f"Cannot read GUI endpoint: {path}", "transport"
             ) from exc
 
+    @staticmethod
+    def _home() -> Path:
+        """Resolve the user home exactly like the GUI's Rust ``home_directory``."""
+        home = os.environ.get("HOME") or None
+        profile = os.environ.get("USERPROFILE") or None
+        selected = (profile or home) if os.name == "nt" else (home or profile)
+        return Path(selected) if selected is not None else Path.home()
+
+    @classmethod
+    def default_directories(cls) -> list[Path]:
+        """Directories searched when no endpoint or directory is given.
+
+        The GUI publishes descriptors in ``~/.kohdalab/shutter/run``.  The
+        suite-wide ``~/.kohdalab/control`` directory is still read so older
+        GUIs keep working; it is never written by this client.
+        """
+        root = cls._home() / ".kohdalab"
+        return [root / "shutter" / "run", root / "control"]
+
     @classmethod
     def discover(
         cls, directory: str | os.PathLike[str] | None = None, *, timeout: float = 1.0
     ) -> Path:
-        """Return the one active endpoint; never choose among multiple GUIs."""
-        base = (
-            Path(directory).expanduser()
+        """Return the one active endpoint; never choose among multiple GUIs.
+
+        An explicit ``directory`` is searched exactly.  Otherwise the current
+        and legacy default directories are both searched.  Unreadable, invalid
+        and stale (unreachable) descriptors are skipped but never deleted.  The
+        same GUI instance seen twice (symlinked directories or a copied
+        descriptor) counts once; distinct active GUIs raise
+        ``multiple_endpoints``.
+        """
+        bases = (
+            [Path(directory).expanduser()]
             if directory is not None
-            else Path.home() / ".kohdalab" / "control"
+            else cls.default_directories()
         )
+        seen_paths: set[str] = set()
+        seen_instances: set[tuple[str, int]] = set()
         active: list[Path] = []
-        for candidate in sorted(base.glob("shutter-*.json")) if base.is_dir() else []:
-            try:
-                probe = cls(candidate, timeout=timeout)
-                probe.capabilities()
-            except (GuiShutterError, ValueError):
+        for base in bases:
+            if not base.is_dir():
                 continue
-            active.append(candidate)
+            for candidate in sorted(base.glob("shutter-*.json")):
+                real = os.path.normcase(os.path.realpath(candidate))
+                if real in seen_paths:
+                    continue
+                seen_paths.add(real)
+                try:
+                    descriptor = cls._load(candidate)
+                except (GuiShutterError, ValueError):
+                    continue
+                instance = (descriptor["instance_id"], descriptor["port"])
+                if instance in seen_instances:
+                    continue
+                try:
+                    probe = cls(candidate, timeout=timeout)
+                    probe._descriptor = descriptor
+                    probe.capabilities()
+                except (GuiShutterError, ValueError):
+                    continue
+                seen_instances.add(instance)
+                active.append(candidate)
         if not active:
+            searched = ", ".join(str(base) for base in bases)
             raise GuiShutterError(
-                "No active KohdaLab Shutter GUI API was found", "transport"
+                f"No active KohdaLab Shutter GUI API was found (searched {searched})",
+                "transport",
             )
         if len(active) != 1:
+            found = ", ".join(str(path) for path in active)
             raise GuiShutterError(
-                "Multiple active GUI APIs found; pass endpoint=", "multiple_endpoints"
+                f"Multiple active GUI APIs found ({found}); pass endpoint=",
+                "multiple_endpoints",
             )
         return active[0]
 

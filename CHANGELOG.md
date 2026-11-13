@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The dedicated Python client discovers both the current and legacy GUI endpoints. / 専用Pythonクライアントが現行と旧版のGUI接続先を探索します。
+
 ## 1.0.1
 
 - Save CH display names per PC, Pico and channel. / CH の表示名を PC・Pico・CH ごとに保存します。
