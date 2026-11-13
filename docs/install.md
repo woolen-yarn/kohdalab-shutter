@@ -1,22 +1,16 @@
 # Install the desktop app / デスクトップアプリの導入
 
-Download the current version from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). The desktop app does not require Rust or Python.
+Choose the installer or portable archive for your OS from the [download table](../README.md#downloads--ダウンロード). The desktop app does not require Rust or Python.
 
-[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)からダウンロードします。PCでアプリを使うためにRust・Pythonを導入する必要はありません。
-
-| Platform / OS | Download / 配布ファイル | Start / 起動方法 |
-| --- | --- | --- |
-| Windows 10/11, x64 | `kohdalab-shutter-<version>-windows-x64-Setup.exe` | Run Setup, then open KohdaLab Shutter from Start or the desktop. / Setupを実行後、スタートメニューまたはデスクトップから起動 |
-| macOS 13+, Apple Silicon / Intel | `kohdalab-shutter-<version>-macos-universal.dmg` | Open the DMG, drag `KohdaLab Shutter.app` to Applications, then open the app. / DMGを開き、アプリをApplicationsへドラッグして起動 |
-| Ubuntu 24.04 x86_64 | `kohdalab-shutter_1.0.0_amd64.deb` | Run `sudo apt install ./kohdalab-shutter_1.0.0_amd64.deb`, then open KohdaLab Shutter from the application menu. / インストール後、アプリ一覧から起動 |
+[ダウンロード表](../README.md#downloads--ダウンロード)で、OS に合うインストール版またはポータブル版を選びます。アプリの起動に Rust や Python の導入は不要です。
 
 The Windows ZIP remains a portable alternative: extract it entirely and open `kohdalab-shutter-gui.exe`. Setup installs for all users under `%ProgramFiles%\Kohdalab\KohdaLab Shutter` and requires administrator approval. Close the app before updating by running the new Setup. Remove it through **Settings → Apps → Installed apps → KohdaLab Shutter → Uninstall**; user settings and unrelated files are preserved.
 
 WindowsのZIP版も引き続き利用できます。Setup版は管理者の許可を得て全ユーザー向けに `%ProgramFiles%\Kohdalab\KohdaLab Shutter` へ導入します。更新時はアプリを閉じて新しいSetupを実行します。削除は「設定 → アプリ → インストールされているアプリ → KohdaLab Shutter → アンインストール」から行い、ユーザー設定・無関係なファイルは保持します。
 
-The Mac ZIP is an alternative to the DMG; both contain the same universal app. Windows ARM64 and Linux binaries are not provided in this release.
+On macOS, open the DMG and drag the app to Applications, or extract the universal ZIP and launch the app. On Ubuntu 24.04 x86_64, run `sudo apt install ./kohdalab-shutter_1.0.0_amd64.deb` or extract the portable tar.gz. Physical-device operation on macOS and Linux is unverified.
 
-MacのZIP版はDMG版と同じUniversalアプリです。このリリースではWindows ARM64・Linux向けバイナリは配布していません。
+macOS は DMG を開いてアプリを Applications へコピーするか、Universal ZIP を展開して起動します。Ubuntu 24.04 x86_64 は DEB を導入するか、ポータブル版の tar.gz を展開します。macOS と Linux での実機操作は未検証です。
 
 For future trusted builds, see [signing setup](code-signing.md). The current downloads remain unsigned/ad-hoc until provider enrollment and activation.
 

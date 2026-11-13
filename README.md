@@ -9,29 +9,29 @@ KohdaLab Shutter opens and closes servo-driven optical shutters from a lab compu
 
 KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを開閉するアプリです。ネットワーク上のPico Wを選び、実験で使うチャンネルを確保して、操作画面から個別に開閉します。
 
-[Download / ダウンロード](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest) · [Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
+[Documentation / ドキュメント](docs/README.md) · [Report an issue / 問題を報告](https://github.com/woolen-yarn/kohdalab-shutter/issues)
+
+## Downloads / ダウンロード
+
+**KohdaLab Shutter 1.0.0**
+
+| Platform / OS | Install / インストール版 | Portable / ポータブル版 | Hardware validation / 実機検証 |
+| --- | --- | --- | --- |
+| Windows 10/11 (x64) | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-windows-x64.zip) | Windows and Pico on Nautilus / Nautilus で実機確認 |
+| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-macos-universal.zip) | Physical-device operation unverified / 実機操作未検証 |
+| Ubuntu 24.04 (x86_64) | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter_1.0.0_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-linux-x86_64.tar.gz) | Physical-device operation unverified / 実機操作未検証 |
+
+Use Setup on Windows, drag the app from the DMG to Applications on macOS, or install the DEB on Ubuntu. For portable use, extract the archive before launching. / Windows は Setup、macOS は DMG からアプリを Applications へコピー、Ubuntu は DEB を使います。ポータブル版は展開して起動します。
+
+Windows packages are unsigned. macOS packages are ad hoc signed and not notarized. / Windows 版は未署名、macOS 版はアドホック署名で未公証です。 [Installation guide / 導入手順](docs/install.md)
+
+[Release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.0) · [SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-source.zip) · [Previous releases / 旧版](https://github.com/woolen-yarn/kohdalab-shutter-old/releases)
+
+For initial firmware transfer or USB updates, use the separate Pico Setup app. / Pico の初回書き込みと USB 更新には専用アプリを使います。 [Pico Setup 1.2.2](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2) · [Pico setup guide / 手順](docs/pico-upload.md)
 
 ![Simulated Shutter control window with named channels](docs/images/kohdalab-shutter.png)
 
 *Control window with simulated hardware. / 模擬機器を使った操作画面。*
-
-## Downloads / ダウンロード
-
-Download the desktop app from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest). The release also includes portable builds for Windows, macOS and Linux. No Rust or Python installation is needed to run the GUI.
-
-[GitHub Releases](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest)から配布アプリをダウンロードできます。Windows・macOS・Linuxのポータブル版もあります。PCでGUIを使うためにRust・Pythonは不要です。
-
-| Platform / OS | Download / ファイル |
-| --- | --- |
-| Windows 10/11 (x64) | `kohdalab-shutter-<version>-windows-x64-Setup.exe` — install and open from Start / インストール後、スタートメニューから起動 |
-| macOS 13+ (Apple Silicon / Intel) | `kohdalab-shutter-<version>-macos-universal.dmg` — drag the app to Applications / アプリをApplicationsへドラッグ |
-| Ubuntu 24.04 (x86_64) | [Install .deb](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter_1.0.0_amd64.deb) · [Portable tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.0/kohdalab-shutter-1.0.0-linux-x86_64.tar.gz) |
-
-Windows packages are not publisher-signed; Mac packages are ad hoc signed and not Apple-notarized. See the [installation guide / 導入手順](docs/install.md) for first-launch prompts. Pico W firmware is installed and updated with the separate Pico Setup app above.
-
-Windows版は発行元の署名がなく、Mac版はアドホック署名でAppleの公証を受けていないため、初回起動で確認が出ることがあります。[導入手順](docs/install.md)をご覧ください。Pico Wのファームウェアの転送・更新には、上記のPico Setupアプリを使います。
-
-[Previous releases / 旧版の配布](https://github.com/woolen-yarn/kohdalab-shutter-old/releases)
 
 ## Quick start / クイックスタート
 
@@ -46,10 +46,6 @@ Choose a named controller on the left and channels in the vertical list on the r
 接続画面は左で機器、右の縦並びで使用CHを選び、Connectします。操作画面はCH番号の下に名前の入力欄を置き、クリックで編集・Enterで確定します。Escapeや欄外のクリックでは未確定の編集を戻します。光の窓を押すと開閉を切り替えます。上部の接続名メニューにDisconnect、「···」のSettingsにPico名・配置・並び順・外部APIをまとめました。確定した名前と設定は自動保存し、名前はPicoを通じて他のPCにも共有します。黒テーマはkohdalab-trkrと統一しています。画像は模擬接続です。
 
 ![Connection picker](docs/images/kohdalab-shutter-connect.png)
-
-**Pico USB setup/update:** download the standalone [Pico Setup app](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2). Extract the ZIP and double-click the Windows exe or Mac app; no Python or uv installation is needed. Choose Initial setup or Update. Channel tuning offers per-CH endpoints and opt-in gentle approach. Both use DHCP; Update backs up and preserves calibration, pins, Wi-Fi and labels. [Instructions](docs/pico-upload.md)
-
-**Picoへの初回転送・更新：** 専用の[Pico Setupアプリ](https://github.com/woolen-yarn/kohdalab-shutter-old/releases/tag/pico-tools-v1.2.2)を配布しています。ZIPを展開し、Windowsのexe／Macのappを開くだけで、Python・uvの別途インストールは不要です。初回／更新と、CH別の角度・終端減速の調整に対応し、どちらもDHCPです。更新はバックアップを取り、校正・配線・Wi-Fi・ラベルを保持します。[手順](docs/pico-upload.md)
 
 <details>
 <summary>Vertical layout / 縦並び</summary>
