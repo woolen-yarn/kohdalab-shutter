@@ -10,9 +10,7 @@ Extract the [Shutter 1.0.0 source ZIP](https://github.com/woolen-yarn/kohdalab-s
 
 **既存装置の更新ではBOOTSELを押さないでください。** 普通にUSB接続し、一覧のPicoとUpdateを選択します。RPI-RP2／BOOTSELと表示された場合は一度抜き、BOOTSELを押さずにつなぎ直します。通常の更新のためにMicroPythonを入れ直したり、設定を消したりしないでください。
 
-If the device is selectable but upload fails, note/copy the displayed **failed step and error code**. USB_ACCESS indicates a port-open failure (close Thonny/other updaters); PICO_RESPONSE indicates a MicroPython prompt/response problem. Other codes identify memory, module, syntax, storage or generic USB-command failure. These codes help narrow the problem and are not proof of a specific hardware cause. Status is retained across refreshes and never includes raw Wi-Fi source.
-
-選べるのに失敗する場合は、画面の**失敗した段階とエラーコード**を選択してコピーしてください。USB_ACCESSはポートを開けない場合、PICO_RESPONSEはMicroPythonの応答を得られない場合です。その他はメモリ・モジュール・構文・空き容量・USB命令の失敗を区別します。コードだけで特定の実機故障を断定するものではありません。再検出しても失敗表示を残し、Wi-Fi情報の生出力は表示しません。
+If transfer fails, record the error message and the step where it occurred. For a port-open error, close Thonny and any other serial tool before retrying. / 転送に失敗したら、エラー文と失敗した段階を控えます。ポートを開けない場合は Thonny などのシリアルツールを終了してから再試行します。
 
 ## Transfer / 転送
 
@@ -31,9 +29,9 @@ uv run --no-project --python 3.13 --with 'mpremote>=1.25,<2' python scripts/uplo
 
 ## New Pico: install MicroPython once / 新品Pico：MicroPythonの初回導入
 
-The USB tool transfers Python files; it does not install the MicroPython runtime. If MicroPython is absent, download the stable [Pico W UF2](https://micropython.org/download/RPI_PICO_W/), hold **BOOTSEL** while connecting USB, and copy the UF2 onto the `RPI-RP2` drive. After it restarts, run the USB tool above. An existing working controller normally does not need this step. Do not use a filesystem-erasing UF2 on a configured device.
+The USB tool transfers Python files; it does not install the MicroPython runtime. If MicroPython is absent, download the stable [Pico W UF2](https://micropython.org/download/RPI_PICO_W/) or [Pico 2 W UF2](https://micropython.org/download/RPI_PICO2_W/) for your board, hold **BOOTSEL** while connecting USB, and copy the UF2 onto the `RPI-RP2` drive. After it restarts, run the USB tool above. An existing working controller normally does not need this step. Do not use a filesystem-erasing UF2 on a configured device.
 
-このツールはPythonファイルを転送します。MicroPython本体が未導入の場合だけ、[Pico W用UF2](https://micropython.org/download/RPI_PICO_W/)を取得し、**BOOTSELを押しながらUSB接続**して表示される`RPI-RP2`へコピーします。再起動後に上のツールを実行してください。すでに動いている装置では通常この操作は不要です。保存済み設定を消すUF2は使わないでください。
+このツールはPythonファイルを転送します。MicroPython本体が未導入の場合だけ、基板に合う [Pico W 用 UF2](https://micropython.org/download/RPI_PICO_W/) または [Pico 2 W 用 UF2](https://micropython.org/download/RPI_PICO2_W/) を取得し、**BOOTSELを押しながらUSB接続**して表示される`RPI-RP2`へコピーします。再起動後に上のツールを実行してください。すでに動いている装置では通常この操作は不要です。保存済み設定を消すUF2は使わないでください。
 
 ## Backup and recovery / バックアップ・復旧
 
