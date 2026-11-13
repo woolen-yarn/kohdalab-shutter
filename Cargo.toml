@@ -21,7 +21,7 @@ gui = ["dep:eframe", "dep:image"]
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 kohdalab-control-protocol = { path = "crates/kohdalab-control-protocol" }
-eframe = { version = "0.34.3", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+eframe = { version = "0.35.0", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 
 image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 
