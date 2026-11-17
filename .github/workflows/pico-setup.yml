@@ -59,7 +59,7 @@ jobs:
             dist/pico-setup/*.zip
             dist/pico-setup/BUILD-*.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
   publish:
     if: startsWith(github.ref, 'refs/tags/pico-tools-v')

@@ -110,7 +110,7 @@ jobs:
         with:
           name: signpath-input-windows-${{ github.sha }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: |
             build/signpath-input/kohdalab-shutter-gui.exe
             build/signpath-input/kohdalab-shutter.exe
@@ -120,7 +120,7 @@ jobs:
         with:
           name: signing-review-windows-${{ github.sha }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: build/signing-review/*.json
       - name: Build both Mac architectures
         if: runner.os == 'macOS'
@@ -147,7 +147,7 @@ jobs:
         with:
           name: desktop-${{ matrix.platform }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: |
             dist/*-Setup.exe
             dist/*.zip
