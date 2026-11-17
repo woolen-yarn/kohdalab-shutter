@@ -143,6 +143,8 @@ jobs:
           $v = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])"
           ./scripts/check_windows_installer.ps1 -Installer "dist/kohdalab-shutter-$v-windows-x64-Setup.exe" -Version $v
       - name: Upload release candidates
+        # PR's Intel smoke test consumes only the universal Mac archive.
+        if: github.event_name != 'pull_request' || runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: desktop-${{ matrix.platform }}
