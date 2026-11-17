@@ -105,7 +105,7 @@ jobs:
           $hashes | ConvertTo-Json | Set-Content build/signing-review/SHA256.json -Encoding utf8
       - name: Upload provider-review input without submitting a signing request
         id: signpath-input
-        if: runner.os == 'Windows'
+        if: (runner.os == 'Windows') && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: signpath-input-windows-${{ github.sha }}
@@ -115,7 +115,7 @@ jobs:
             build/signpath-input/kohdalab-shutter-gui.exe
             build/signpath-input/kohdalab-shutter.exe
       - name: Upload metadata, signature and hash reports
-        if: runner.os == 'Windows'
+        if: (runner.os == 'Windows') && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: signing-review-windows-${{ github.sha }}

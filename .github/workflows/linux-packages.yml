@@ -22,8 +22,10 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: bash scripts/package_linux.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
+          retention-days: 7
           name: shutter-linux-x86_64
           path: dist/linux/*
           if-no-files-found: error
