@@ -237,7 +237,7 @@ def release_notes(info: dict, digests: dict[str, str]) -> str:
 # --- side effects -------------------------------------------------------------
 
 def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)  # noqa: S603 - internal gh/git argument lists; never a shell
     if check and result.returncode != 0:
         raise PublishError(f"{command[0]} {command[1]} failed: {result.stderr.strip()}")
     return result

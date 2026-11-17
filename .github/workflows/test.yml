@@ -172,7 +172,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: xvfb-run -a python3 scripts/verify_gui_api.py target/release/kohdalab-shutter-gui --output target/gui-api-validation.json
       - name: Keep the GUI API validation report for release evidence
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: gui-api-validation
