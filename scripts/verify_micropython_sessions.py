@@ -134,8 +134,57 @@ def verify_channel_motion():
     require(not sessions.info()["channels"][0]["fault"], "fault did not clear")
 
 
+def verify_driver_guard():
+    """Brown-out detection with MicroPython's own getattr/callable/bytes."""
+    from servo import DriverGuard
+
+    class Chip:
+        def __init__(self):
+            self.registers = {0x00: 0x21, 0xFE: 121}
+
+        def readfrom_mem(self, _address, register, count):
+            return bytes([self.registers[register]] * count)
+
+    class Driver:
+        def __init__(self, chip, resets):
+            self.chip = chip
+            self.resets = resets
+
+        def disable(self, _channel):
+            pass
+
+    class ResettableDriver(Driver):
+        def reset(self):
+            self.resets.append(True)
+            self.chip.registers.update({0x00: 0x21, 0xFE: 121})
+
+    chip = Chip()
+    resets = []
+    guard = DriverGuard(chip, 0x40, ResettableDriver(chip, resets))
+    require(guard.check() is False and not resets, "healthy driver was reset")
+    chip.registers.update({0x00: 0x11, 0xFE: 0x1E})  # PCA9685 power-on defaults
+    require(guard.check() is True and resets == [True], "power loss not restored")
+    chip.registers.update({0x00: 0x11, 0xFE: 0x1E})
+    try:
+        DriverGuard(chip, 0x40, Driver(chip, resets))
+    except OSError:
+        pass
+    else:
+        raise RuntimeError("sleeping driver accepted at startup")
+    chip.registers.update({0x00: 0x21, 0xFE: 121})
+    guard = DriverGuard(chip, 0x40, Driver(chip, resets))
+    chip.registers[0x00] = 0x11
+    try:
+        guard.check()
+    except OSError:
+        pass
+    else:
+        raise RuntimeError("driver without reset() was trusted after power loss")
+
+
 def main():
     verify_channel_motion()
+    verify_driver_guard()
     path = sys.argv[1] if len(sys.argv) > 1 else "micropython-session-label-test.json"
     remove_if_present(path)
     remove_if_present(path + ".tmp")

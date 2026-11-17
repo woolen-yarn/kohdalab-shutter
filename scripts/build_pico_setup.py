@@ -100,7 +100,7 @@ def main():
         app = output / NAME
         binary = app / (NAME + ".exe")
         call(str(binary), "--smoke-test")
-    archive_base = output / f"kohdalab-pico-setup-1.2.2-{args.platform}"
+    archive_base = output / f"kohdalab-pico-setup-1.2.3-{args.platform}"
     if sys.platform == "darwin":
         archive = Path(str(archive_base) + ".zip")
         call(
@@ -123,7 +123,7 @@ def main():
         [git, "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
     report = {
-        "version": "1.2.2",
+        "version": "1.2.3",
         "platform": args.platform,
         "commit": commit,
         "python": platform.python_version(),

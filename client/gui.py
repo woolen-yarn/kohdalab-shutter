@@ -21,12 +21,48 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .protocol import DEFAULT_HOST, DEFAULT_PORT
-from .transport import ShutterClient
+from .protocol import DEFAULT_HOST, DEFAULT_PORT, state_name
+from .transport import ShutterClient, ShutterConnectionError
 
 POLL_MS = 1000
-CLOSE_ANGLE = 0
-OPEN_ANGLE = 90
+BADGES = {"OPEN": "badgeOpen", "CLOSE": "badgeClose"}
+
+
+def send_operation(client, operation, channels):
+    """Send ``operation`` to every channel; return all failures together.
+
+    A rejected channel (e.g. LOCKED) does not stop the remaining channels.
+    A lost connection, after the transport's own retries, stops the batch
+    and reports the channels that were never sent.
+    """
+    commands = {"open": client.open, "close": client.close, "toggle": client.toggle}
+    command = commands[operation]
+    failures = []
+    for index, channel in enumerate(channels):
+        try:
+            command(channel)
+        except ShutterConnectionError as exc:
+            failures.append(f"CH{channel}: {exc}")
+            skipped = ", ".join(f"CH{ch}" for ch in channels[index + 1 :])
+            if skipped:
+                failures.append(f"Not sent (connection lost): {skipped}")
+            break
+        except Exception as exc:
+            failures.append(f"CH{channel}: {exc}")
+    return failures
+
+
+def run_operation(client, operation, channels):
+    """Send a batch, then read the state even if some channels failed."""
+    failures = send_operation(client, operation, channels)
+    try:
+        snapshot = client.snapshot()
+    except Exception as exc:
+        if not failures:
+            raise
+        failures.append(f"Status refresh failed: {exc}")
+        snapshot = None
+    return snapshot, failures
 
 
 class TaskSignals(QObject):
@@ -99,17 +135,11 @@ class ChannelCard(QFrame):
         layout.addLayout(state_row)
         layout.addLayout(action_row)
 
-    def set_angle(self, angle):
+    def set_state(self, angle, name):
+        """Show ``name`` from the channel's own calibration (``state_name``)."""
         self.angle.setText(f"{angle} deg" if angle is not None else "- deg")
-        if angle == OPEN_ANGLE:
-            self.badge.setText("OPEN")
-            self.badge.setObjectName("badgeOpen")
-        elif angle == CLOSE_ANGLE:
-            self.badge.setText("CLOSE")
-            self.badge.setObjectName("badgeClose")
-        else:
-            self.badge.setText("MOVING")
-            self.badge.setObjectName("badgeUnknown")
+        self.badge.setText(name)
+        self.badge.setObjectName(BADGES.get(name, "badgeUnknown"))
         self.badge.style().unpolish(self.badge)
         self.badge.style().polish(self.badge)
 
@@ -134,6 +164,7 @@ class App(QMainWindow):
 
         self.client = None
         self.current_status = {}
+        self.current_state = None
         self.channel_cards = {}
         self.thread_pool = QThreadPool.globalInstance()
         self.connect_inflight = False
@@ -411,11 +442,12 @@ class App(QMainWindow):
         self._set_connected(False)
 
         client = ShutterClient(host, port)
-        self._run_task("connect", client, lambda c: c.status(), {"client": client})
+        self._run_task("connect", client, lambda c: c.snapshot(), {"client": client})
 
     def disconnect_from_server(self):
         self.client = None
         self.current_status = {}
+        self.current_state = None
         self.connect_inflight = False
         self.refresh_inflight = False
         self.command_inflight = False
@@ -436,7 +468,7 @@ class App(QMainWindow):
             return
 
         self.refresh_inflight = True
-        self._run_task("refresh", self.client, lambda c: c.status())
+        self._run_task("refresh", self.client, lambda c: c.snapshot())
 
     def run_command(self, operation, channels):
         if not self.client or self.command_inflight or not channels:
@@ -446,17 +478,12 @@ class App(QMainWindow):
         self._set_actions_enabled(False)
         self._set_busy_message(f"{operation.title()}...")
 
-        def callback(client):
-            for channel in channels:
-                if operation == "open":
-                    client.open(channel)
-                elif operation == "close":
-                    client.close(channel)
-                elif operation == "toggle":
-                    client.toggle(channel)
-            return client.status()
-
-        self._run_task("command", self.client, callback, {"operation": operation})
+        self._run_task(
+            "command",
+            self.client,
+            lambda client: run_operation(client, operation, channels),
+            {"operation": operation},
+        )
 
     def _run_task(self, name, client, callback, context=None):
         task = ClientTask(name, client, callback, context)
@@ -474,7 +501,6 @@ class App(QMainWindow):
                 self.statusBar().showMessage("Connection failed")
                 return
             self.client = context["client"]
-            self.current_status = result
             self.connection_label.setText(
                 f"Connected to {self.client.host}:{self.client.port}"
             )
@@ -482,8 +508,7 @@ class App(QMainWindow):
             self.setWindowTitle(
                 f"Kohda Lab Shutter - {self.client.host}:{self.client.port}"
             )
-            self._sync_channels(result)
-            self._apply_status(result)
+            self._show_snapshot(result)
             self._set_connected(True)
             self.poll_timer.start()
             return
@@ -493,9 +518,7 @@ class App(QMainWindow):
             if error:
                 self._mark_error(error)
                 return
-            self.current_status = result
-            self._sync_channels(result)
-            self._apply_status(result)
+            self._show_snapshot(result)
             return
 
         if name == "command":
@@ -505,9 +528,17 @@ class App(QMainWindow):
                 self._show_error("Command failed", error)
                 self.statusBar().showMessage("Command failed")
                 return
-            self.current_status = result
-            self._sync_channels(result)
-            self._apply_status(result)
+            snapshot, failures = result
+            if snapshot is not None:
+                self._show_snapshot(snapshot)
+            if failures:
+                self._show_error("Command failed", "\n".join(failures))
+                self.statusBar().showMessage("Command failed")
+
+    def _show_snapshot(self, snapshot):
+        self.current_status, self.current_state = snapshot
+        self._sync_channels(self.current_status)
+        self._apply_status(self.current_status)
 
     def _set_connected(self, connected):
         self.host_input.setEnabled(not connected and not self.connect_inflight)
@@ -556,19 +587,19 @@ class App(QMainWindow):
         self._set_actions_enabled(self.client is not None and not self.command_inflight)
 
     def _apply_status(self, status):
-        open_count = close_count = moving_count = 0
+        counts = {"OPEN": 0, "CLOSE": 0, "MOVING": 0, "UNKNOWN": 0}
+        state = self.current_state or {}
         for channel, card in self.channel_cards.items():
-            angle = status.get(channel)
-            card.set_angle(angle)
-            if angle == OPEN_ANGLE:
-                open_count += 1
-            elif angle == CLOSE_ANGLE:
-                close_count += 1
-            else:
-                moving_count += 1
+            # Each channel's own calibrated endpoints; firmware without STATE
+            # cannot say which angle is open, so it is shown as Unknown.
+            name = state_name(state.get(channel))
+            card.set_state(status.get(channel), name)
+            counts[name] += 1
 
         self.summary_label.setText(
-            f"{len(self.channel_cards)} channels | open {open_count} | close {close_count} | moving {moving_count}"
+            f"{len(self.channel_cards)} channels | open {counts['OPEN']}"
+            f" | close {counts['CLOSE']} | moving {counts['MOVING']}"
+            f" | unknown {counts['UNKNOWN']}"
         )
         self.last_update_label.setText(f"Last update: {time.strftime('%H:%M:%S')}")
         if self.client:

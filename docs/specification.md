@@ -111,6 +111,10 @@
 
 **EN:** An I2C write error cancels active or queued motion for the affected channel, keeps its last successfully written angle as both position and target, and attempts PWM release once. Other channels continue. Check wiring and power, then issue a physical or network command to clear the channel fault and retry motion. If PCA9685 initialization fails at startup, all channels show the fault pattern and the Pico stays idle with the network server off. Check the hardware and power-cycle the Pico. Faults do not trigger an automatic reboot.
 
+**JP:** 新しい動作（待ち行列から開始する動作と、動作中の目標変更）の前に、PCA9685 の MODE1（SLEEP・自動インクリメント）と PRE_SCALE を読み、起動時の値と比べます。PCA9685 だけが電源を失って既定値に戻っていた場合は、Pico にある校正済みドライバーの `reset()` で再初期化し、読み戻して確認します。ドライバーに `reset()` がない、再初期化後も一致しない、読み出しに失敗した場合は、動作成功とせず、新しい動作と実行中の動作の CH を異常にします。再初期化で中断された他 CH の動作は再開せず、移動途中だった CH は異常にします。待機中で指令のない CH は検査しないため、次の指令まで検出しません。実機では未確認です。
+
+**EN:** Before each new motion (starting a queued motion or retargeting an active one), the firmware reads PCA9685 MODE1 (SLEEP, auto-increment) and PRE_SCALE and compares them with the values read at startup. If only the PCA9685 lost power and returned to its defaults, the calibrated driver already on the Pico is reinitialized with its `reset()` and read back. If the driver has no `reset()`, the registers still differ, or the read fails, no move is reported: the new and running motions are faulted. Other motions interrupted by the reinitialization are not resumed; a channel that was mid-motion is faulted. Idle channels are not checked until their next command. Not yet verified on hardware.
+
 **JP:** セッションの確保応答に `poll_supported: true` がある場合、GUI は `SESSION {"op":"poll","token":"…"}` で確保を延長し、状態と機器情報を1回の接続で取得します。非対応のファームウェアでは従来の3回の要求を使います。
 
 **EN:** When the claim response advertises `poll_supported: true`, the GUI uses one session poll to renew the lease and read state and controller information. Older firmware uses the existing three requests.

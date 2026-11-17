@@ -1,6 +1,6 @@
 [project]
 name = "kohdalab-shutter"
-version = "0.2.0"
+version = "0.2.1"
 description = "PC-side tools for a Pico W servo shutter controller"
 readme = "README.md"
 requires-python = ">=3.13,<3.15"

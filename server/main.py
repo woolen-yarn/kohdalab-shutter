@@ -2,7 +2,7 @@ from machine import I2C, Pin, unique_id
 import ubinascii
 from discovery import DiscoveryResponder
 from pca9685 import PCA9685
-from servo import ServoBoard
+from servo import DriverGuard, ServoBoard
 from sessions import DeviceLabel, Sessions
 from settings import (
     AUTO_START_SERVER,
@@ -461,6 +461,8 @@ class WifiServer:
 try:
     i2c = I2C(I2C_BUS, sda=Pin(I2C_SDA_PIN), scl=Pin(I2C_SCL_PIN), freq=I2C_FREQ)
     pwm = PCA9685(i2c, address=PCA9685_ADDRESS, angle_offset=PCA9685_ANGLE_OFFSET)
+    # Kept in main/servo: updates preserve pca9685.py, which may lack reset().
+    guard = DriverGuard(i2c, PCA9685_ADDRESS, pwm)
 except OSError as exc:
     print("PCA9685 initialization failed; power cycle after checking I2C:", exc)
     leds = LedDeck(CHANNELS, None)
@@ -478,6 +480,7 @@ servos = ServoBoard(
     release_delay_ms=SERVO_RELEASE_DELAY_MS,
     max_active=SERVO_MAX_ACTIVE,
     release_pwm=SERVO_RELEASE_PWM,
+    guard=guard,
 )
 leds = LedDeck(CHANNELS, servos)
 device_id = ubinascii.hexlify(unique_id()).decode()

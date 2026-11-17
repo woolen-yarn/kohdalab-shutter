@@ -6,7 +6,9 @@ from .protocol import (
     DEFAULT_PORT,
     ENCODING,
     LINE_ENDING,
+    ChannelState,
     ProtocolError,
+    parse_state,
     parse_status,
 )
 
@@ -89,6 +91,14 @@ class ShutterClient:
 
     def status(self) -> dict[int, int]:
         return parse_status(self.send("STATUS"))
+
+    def snapshot(self) -> tuple[dict[int, int], dict[int, ChannelState] | None]:
+        """Positions and per-channel state; state is ``None`` without ``STATE``."""
+        raw = self.send("STATE")
+        if raw == "UNKNOWN":
+            return self.status(), None
+        state = parse_state(raw)
+        return {channel: entry.position for channel, entry in state.items()}, state
 
     def open(self, channel: int) -> str:
         return self._command("OPEN", channel)

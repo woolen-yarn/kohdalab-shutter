@@ -1,5 +1,59 @@
 """Hardware-independent servo motion scheduling for the Pico W server."""
 
+PCA9685_MODE1 = 0x00
+PCA9685_PRE_SCALE = 0xFE
+PCA9685_SLEEP = 0x10
+PCA9685_AUTO_INCREMENT = 0x20
+
+
+class DriverGuard:
+    """Detect a PCA9685 that lost power on its own before trusting a new motion.
+
+    A PCA9685 that browns out while the Pico stays powered returns to SLEEP with
+    its power-on prescale and register mode, yet still ACKs every write. The
+    baseline is read from the calibrated driver already on the Pico (the update
+    tool preserves that file), so its own prescale and register mode are kept.
+    """
+
+    def __init__(self, i2c, address, pwm):
+        self._i2c = i2c
+        self._address = address
+        self._pwm = pwm
+        mode, prescale = self._read()
+        if mode & PCA9685_SLEEP:
+            raise OSError("PCA9685 is still asleep after initialization")
+        self._mode = mode & PCA9685_AUTO_INCREMENT
+        self._prescale = prescale
+
+    def _read(self):
+        mode = self._i2c.readfrom_mem(self._address, PCA9685_MODE1, 1)[0]
+        prescale = self._i2c.readfrom_mem(self._address, PCA9685_PRE_SCALE, 1)[0]
+        return mode, prescale
+
+    def _configured(self):
+        mode, prescale = self._read()
+        return (
+            not mode & PCA9685_SLEEP
+            and (mode & PCA9685_AUTO_INCREMENT) == self._mode
+            and prescale == self._prescale
+        )
+
+    def check(self):
+        """Return True after a reinitialization; raise OSError if not trusted."""
+        if self._configured():
+            return False
+        reset = getattr(self._pwm, "reset", None)
+        if not callable(reset):
+            raise OSError("PCA9685 lost its configuration; driver cannot reset")
+        try:
+            reset()
+        except Exception as exc:
+            # A preserved custom driver must not stop the servo/button loop.
+            raise OSError("PCA9685 reinitialization failed: {}".format(exc)) from exc
+        if not self._configured():
+            raise OSError("PCA9685 reinitialization did not restore its configuration")
+        return True
+
 
 class ChannelConfigurationError(ValueError):
     """Raised when a channel definition could damage or misaddress hardware."""
@@ -94,6 +148,7 @@ class ServoBoard:
         release_delay_ms=500,
         max_active=1,
         release_pwm=True,
+        guard=None,
     ):
         validate_channels(channels)
         if step_degrees <= 0:
@@ -112,6 +167,7 @@ class ServoBoard:
         self.release_delay_ms = release_delay_ms
         self.max_active = max_active
         self.release_pwm = release_pwm
+        self._guard = guard
 
         self.angles = [channel["close"] for channel in channels]
         self.positions = list(self.angles)
@@ -146,13 +202,15 @@ class ServoBoard:
             return False
 
         self.faults[index] = False
-        self.angles[index] = angle
         if index in self._active:
+            # Even a repeated command may be the first one after a chip reset.
+            self._active[index]["verify"] = True
             self._active[index]["settle_at"] = (
                 self._ticks_ms() if self.positions[index] == angle else None
             )
         elif index not in self._pending:
             self._pending.append(index)
+        self.angles[index] = angle
         return True
 
     def open(self, index):
@@ -176,6 +234,10 @@ class ServoBoard:
         """Advance active motions once and release settled servo outputs."""
         now = self._ticks_ms()
         finished = []
+        starting = [i for i, state in self._active.items() if state.get("verify")]
+        if starting or self._pending:
+            # Before any step of this tick, so no motion writes to a reset chip.
+            self._verify_driver(starting)
 
         for index, state in self._active.items():
             target = self.angles[index]
@@ -257,6 +319,46 @@ class ServoBoard:
             return False
         self.positions[index] = angle
         return True
+
+    def _verify_driver(self, starting):
+        """Check the shared PCA9685 once before the new motions of this tick.
+
+        ``starting`` are active channels that received a new target. Queued
+        channels are new motions as well.
+        """
+        if self._guard is None:
+            return
+        try:
+            restored = self._guard.check()
+        except OSError:
+            # The chip cannot be trusted: no queued or running motion may count
+            # an acknowledged write as success. Each needs a new command.
+            for index in list(self._active) + self._pending:
+                self._mark_fault(index)
+                self._release_quietly(index)
+            self._active = {}
+            self._pending = []
+            return
+        for index in starting:
+            self._active[index]["verify"] = False
+            if restored and self.positions[index] == self.angles[index]:
+                # The remembered angle may match while the physical output is off.
+                if not self._write_angle(index, self.angles[index]):
+                    del self._active[index]
+        if restored:
+            # A reset left every output full-off. Do not resume other motions
+            # from stale positions; they need a new command to drive again.
+            for other in [i for i in self._active if i not in starting]:
+                if self.positions[other] != self.angles[other]:
+                    self._mark_fault(other)
+                self._release_quietly(other)
+                del self._active[other]
+
+    def _release_quietly(self, index):
+        try:
+            self._pwm.disable(self.channels[index]["servo"])
+        except OSError:
+            pass
 
     def _mark_fault(self, index):
         self.faults[index] = True

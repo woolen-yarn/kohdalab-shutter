@@ -35,13 +35,13 @@ These builds are not publisher-signed or Apple-notarized. The Mac app has a loca
 1. Update/start the Pico firmware as below, then choose **Find Pico W**.
 2. Select a controller by its label. Names are shown on both connection and control screens.
 3. Select the available channels and **Connect**. In-use channels are disabled; acquisition is atomic if another PC connects at the same time.
-4. Click a light window to toggle its shutter. Edit its name below the CH number and press **Enter** to apply; Escape or clicking elsewhere cancels unconfirmed text. The CH name is saved on this PC only. **··· → Settings** contains Pico name, layout, order and local API. Confirmed names and settings save automatically.
+4. Click a light window to toggle its shutter: a shutter shown Open is sent Close and one shown Close is sent Open; Moving, Unknown or Fault sends Close (firmware without per-channel calibration keeps the Pico-side toggle). Edit its name below the CH number and press **Enter** to apply; Escape or clicking elsewhere cancels unconfirmed text. The CH name is saved on this PC only. **··· → Settings** contains Pico name, layout, order and local API. Confirmed names and settings save automatically.
 5. Choose **controller name ▾ → Disconnect**, or close the window, to release your channels. After a crash/network loss, the Pico releases them after 15 seconds; position is held.
 
 1. 下記手順でPicoを更新・起動し、**Find Pico W**で検索します。
 2. ラベルで機器を選びます。名前は接続後のSettingsで変更できます。
 3. 空いているCHを選んで **Connect**。使用中CHは選べず、複数人が同時に取得しても重複使用しません。
-4. 光の窓を押すと開閉を切り替えます。CH番号の下の名前欄を編集し、**Enter**で確定します。CH名はこのPCだけに保存します。Escapeや欄外クリックは未確定の編集を戻します。**··· → Settings**にPico名・配置・順序・外部APIをまとめ、確定した名前と設定を自動保存します。
+4. 光の窓を押すと開閉を切り替えます。表示がOpenならClose、CloseならOpenを明示的に送り、Moving・Unknown・FaultのときはCloseを送ります（CHごとの校正情報を返さない旧ファームウェアでは従来どおりPico側のtoggleです）。CH番号の下の名前欄を編集し、**Enter**で確定します。CH名はこのPCだけに保存します。Escapeや欄外クリックは未確定の編集を戻します。**··· → Settings**にPico名・配置・順序・外部APIをまとめ、確定した名前と設定を自動保存します。
 5. **接続名 ▾ → Disconnect**または画面を閉じて解放します。通信断・異常終了時は15秒で解放し、位置は維持します。
 
 ## Pico firmware update / Pico側の更新
