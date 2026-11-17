@@ -15,7 +15,7 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 ## Downloads / ダウンロード
 
-[Latest stable release / 最新安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest) · [v1.0.3 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3)
+[Stable release / 安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3) · [v1.0.3 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3)
 
 | OS / 対応環境 | Installer / インストーラー | Portable / ポータブル |
 | --- | --- | --- |
