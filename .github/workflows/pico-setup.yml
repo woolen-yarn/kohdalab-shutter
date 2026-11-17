@@ -52,14 +52,15 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Windows ]; then py=.pico-build/Scripts/python.exe; else py=.pico-build/bin/python; fi
           "$py" scripts/build_pico_setup.py --platform '${{ matrix.platform }}'
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: pico-setup-${{ matrix.platform }}
           path: |
             dist/pico-setup/*.zip
             dist/pico-setup/BUILD-*.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
 
   publish:
     if: startsWith(github.ref, 'refs/tags/pico-tools-v')

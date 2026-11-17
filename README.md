@@ -15,7 +15,7 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 ## Downloads / ダウンロード
 
-[Latest stable release / 最新安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/latest) · [v1.0.3 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3)
+[Stable release / 安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3) · [v1.0.3 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3)
 
 | OS / 対応環境 | Installer / インストーラー | Portable / ポータブル |
 | --- | --- | --- |
@@ -166,3 +166,5 @@ MIT. See [LICENSE](LICENSE).
 [Control Protocol 1 and Python/Notebook examples / 共通APIとPython・Notebook](docs/reference/common-control-api.md). The existing application API remains supported; operation payloads and safety policy are app-specific. Camera is read-only. / 既存APIは維持し、操作引数と安全方針は各アプリに従います。Cameraは読み取り専用です。
 
 See [Measurement output bundles / 測定データの保存セット](docs/reference/measurement-output.md) for common file roles and unit conventions.
+
+[One-click distribution / ワンクリック配布](DISTRIBUTION.md)

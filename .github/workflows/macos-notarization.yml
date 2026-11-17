@@ -93,7 +93,7 @@ jobs:
         with:
           name: macos-notarization-input
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: |
             dist/*-macos-universal.zip
             dist/BUILD-macos-universal.json
@@ -181,7 +181,7 @@ jobs:
         with:
           name: macos-signed-and-notarized
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: signed/*
 
   publish:

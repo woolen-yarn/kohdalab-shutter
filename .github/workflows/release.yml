@@ -105,22 +105,22 @@ jobs:
           $hashes | ConvertTo-Json | Set-Content build/signing-review/SHA256.json -Encoding utf8
       - name: Upload provider-review input without submitting a signing request
         id: signpath-input
-        if: runner.os == 'Windows'
+        if: (runner.os == 'Windows') && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: signpath-input-windows-${{ github.sha }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: |
             build/signpath-input/kohdalab-shutter-gui.exe
             build/signpath-input/kohdalab-shutter.exe
       - name: Upload metadata, signature and hash reports
-        if: runner.os == 'Windows'
+        if: (runner.os == 'Windows') && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: signing-review-windows-${{ github.sha }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: build/signing-review/*.json
       - name: Build both Mac architectures
         if: runner.os == 'macOS'
@@ -143,11 +143,13 @@ jobs:
           $v = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])"
           ./scripts/check_windows_installer.ps1 -Installer "dist/kohdalab-shutter-$v-windows-x64-Setup.exe" -Version $v
       - name: Upload release candidates
+        # PR's Intel smoke test consumes only the universal Mac archive.
+        if: github.event_name != 'pull_request' || runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: desktop-${{ matrix.platform }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
           path: |
             dist/*-Setup.exe
             dist/*.zip

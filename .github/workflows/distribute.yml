@@ -1,0 +1,117 @@
+name: Distribute
+'on':
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: Build and test without creating a release
+        type: boolean
+        default: false
+        required: false
+  pull_request:
+    paths:
+    - .github/workflows/distribute.yml
+    - .github/distribution/**
+permissions:
+  contents: read
+concurrency:
+  group: distribution-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: '3.13'
+    - run: python -m unittest discover -s .github/distribution -p "test_*.py" -v
+  distribute:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+    - name: Verify selected branch
+      shell: bash
+      env:
+        EXPECTED_BRANCH: ${{ github.event.repository.default_branch }}
+      run: test "$GITHUB_REF" = "refs/heads/$EXPECTED_BRANCH" || test "${{ inputs.verify_only }}" = true
+    - name: Check out source
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      with:
+        persist-credentials: false
+    - name: Install stable Rust
+      run: rustup toolchain install stable --profile minimal
+    - name: Cache native Rust builds
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      with:
+        shared-key: desktop-windows-x64
+        cache-on-failure: true
+    - name: Verify release tag matches application version
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        RELEASE_TAG: ${{ github.ref_name }}
+      run: python -c "import os,pathlib,tomllib; v=tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version']; assert os.environ['RELEASE_TAG']=='v'+v,
+        'Tag does not match Cargo.toml'"
+    - name: Test native application
+      run: cargo +stable test --locked --all-targets
+    - name: Build Windows application with static runtime
+      if: runner.os == 'Windows'
+      run: cargo +stable build --release --locked --target x86_64-pc-windows-msvc
+    - name: Prepare Windows binaries
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/release | Out-Null
+        Copy-Item target/x86_64-pc-windows-msvc/release/kohdalab-shutter*.exe build/release/
+        foreach ($file in Get-ChildItem build/release/*.exe) {
+          $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+          if ([Text.Encoding]::ASCII.GetString($bytes) -match '(?i)(vcruntime|msvcp)140[^\x00]*\.dll') {
+            throw "External Visual C++ runtime dependency: $file"
+          }
+        }
+    - name: Validate first-party Windows metadata and record signature status
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $v = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])"
+        ./scripts/check_windows_metadata.ps1 -Directory build/release -Version $v -ReportPath build/signing-review/windows-metadata.json
+        ./scripts/check_windows_signatures.ps1 -Directory build/release -ReportPath build/signing-review/windows-signatures.json
+    - name: Stage exact first-party SignPath input (unsigned)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force build/signpath-input | Out-Null
+        Copy-Item build/release/kohdalab-shutter-gui.exe,build/release/kohdalab-shutter.exe build/signpath-input/
+        $hashes = [ordered]@{}
+        foreach ($file in Get-ChildItem build/signpath-input/*.exe) {
+          $hashes[$file.Name] = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $hashes | ConvertTo-Json | Set-Content build/signing-review/SHA256.json -Encoding utf8
+    - name: Collect dependency licensing metadata
+      run: cargo +stable metadata --locked --format-version 1 > build-metadata.json
+    - name: Package and verify native apps
+      run: python scripts/package_release.py --platform windows-x64 --binaries build/release --metadata build-metadata.json --output dist
+    - name: Verify Windows setup, reinstall and uninstall
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $v = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])"
+        ./scripts/check_windows_installer.ps1 -Installer "dist/kohdalab-shutter-$v-windows-x64-Setup.exe" -Version $v
+    - name: Validate publisher
+      run: python -m unittest discover -s .github/distribution -p "test_*.py" -v
+    - name: Publish verified distribution directly to Releases
+      if: ${{ !inputs.verify_only }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        DISTRIBUTION_BRANCH: ${{ github.event.repository.default_branch }}
+        DISTRIBUTION_QUALIFICATION: Windows CI tests and package validation. Physical-device acceptance follows the separately documented model and connection matrix.
+      run: python .github/distribution/publish_distribution.py --directory dist --portable-glob "*windows-x64.zip" --alias kohdalab-shutter-windows.zip
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    needs: validate
