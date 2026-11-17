@@ -66,9 +66,15 @@ Connection, discovery, shutter, and display mutations return `{id,kind,status,re
 
 操作ごとに受付IDを返し、そのIDで完了を照会します。同じIDの再送は二重実行せず、異なる内容の使い回しは拒否します。
 
-The GUI retains the last **64** receipts and remembers **4096** action IDs until restart. Job completion means command acknowledgement, **not physical closure or completed motion**. `wait_for_state()` separately polls Open/Close after firmware-reported queued motion and settling finish. Following a new command, cached state is marked moving until a fresh device state arrives. Network loss never causes automatic retries of `TOGGLE`.
+The GUI retains the last **64** receipts and remembers **4096** action IDs until restart. Remembered IDs are never discarded, so an old Toggle or Open cannot run again. Once 4096 IDs are used, every other mutation returns `capacity` (restart the GUI), but `close` and `close_all` stay available: such an ID is deduplicated only while its receipt is among the last 64, so a replay after that can at most repeat the close. Job completion means command acknowledgement, **not physical closure or completed motion**. `wait_for_state()` separately polls Open/Close after firmware-reported queued motion and settling finish. Following a new command, cached state is marked moving until a fresh device state arrives. Network loss never causes automatic retries of `TOGGLE`.
+
+受付IDは4096件まで再起動まで記憶し、忘れないため古いToggle/Openは再実行されません。上限到達後は`close`/`close_all`以外が`capacity`になります（GUIを再起動）。`close`/`close_all`は上限後も受け付け、そのIDは直近64件の受付結果がある間だけ重複判定されます。それ以降に同じIDを再送すると閉操作が繰り返されることがあります。
 
 ジョブ完了はコマンド受付であり、移動完了とは区別します。`wait_for_state()` はPico側の移動・整定情報を確認します。新しい指令後は古い表示を完了扱いせず、最新の応答を待ちます。
+
+Through the common protocol, `control.status` returns `phase` (`ready`, `busy`, `reconnecting` or `disconnected`), `busy`, `ownership` (`owned`, `owner`), `cleanup` (`not_required`, the hold-last-state policy) and the native snapshot under `native`. The native snapshot fields are also kept at the top level for existing common clients. The native `status` method is unchanged.
+
+共通プロトコルの`control.status`は`phase`・`busy`・`ownership`・`cleanup`と、`native`以下のネイティブ状態を返します。既存の共通クライアントのため、ネイティブの項目は最上位にも残します。ネイティブの`status`は変わりません。
 
 Each `status().channels` entry contains `state`, `position`, `target`, `close_angle`, `open_angle`, `busy`, and boolean `fault`. Open/Close use the Pico's own per-channel calibration; busy/queued/settling is Moving. Older firmware without `STATE` is Unknown. All states are software-commanded/output states, not sensor confirmation. `status` also includes connection, demo mode, layout, order, the numeric `display_order` array, owner, command-task busy flag, endpoint and discovered devices.
 
@@ -79,6 +85,10 @@ Open/Close判定は各チャンネルの校正値を使います。移動待ち�
 各CHの真偽値 `fault` はPicoの異常を示します。互換性のため `state` は異常中も従来のOpen/Close等の値を維持します。`wait_for_state()` は対象CHの `fault` が真なら、状態が一致していても待たずに `GuiShutterError`（`code == "fault"`）を送出します。`fault` のない旧GUIでは従来どおり待機し、異常報告のない旧ファームウェアでは `false` になります。
 
 The transport admits at most four peers and sixteen queued GUI requests. Input is bounded to 64 KiB with a two-second absolute read/response deadline. Expired requests are discarded before dispatch. After a lost response, use the same request ID or `result(id)`; do not invent a new ID for a blind Toggle retry.
+
+While the GUI is waiting for a refresh or a previous command, shutter actions (including `close_all`) are answered `busy` immediately and are never run later by the GUI. `busy` is returned before any receipt exists, so resending the same request ID cannot run an action twice. The Python `GuiShutter` therefore resends `open`/`close`/`toggle`/`open_all`/`close_all` with the same request ID on `busy` for at most two seconds, then raises `busy`. It does not retry any other error, and a busy `connect`/`discover` is returned at once. Other clients should do the same or handle `busy` themselves.
+
+状態更新や前の指令の応答待ちの間、開閉操作（`close_all`を含む）は直ちに`busy`を返し、GUIが後から勝手に実行することはありません。`busy`は受付記録より前に返るため、同じrequest IDの再送で二重実行は起きません。Pythonの`GuiShutter`は開閉操作に限り、`busy`のとき同じIDで最大2秒間再送し、それでも`busy`なら例外を送出します。他のエラーは再送せず、`connect`/`discover`の`busy`はすぐ返します。
 
 ## Validation / 検証
 

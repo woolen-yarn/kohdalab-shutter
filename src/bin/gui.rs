@@ -140,7 +140,9 @@ struct App {
     name_edits: BTreeMap<u8, String>,
     active_name: Option<(String, u8)>,
     refreshing: bool,
-    queued_toggle: Option<u8>,
+    /// One manual click made during a refresh, with the explicit command
+    /// resolved from the state shown when it was clicked.
+    queued_toggle: Option<(u8, Operation)>,
     dirty_device: bool,
     draft_device: Option<String>,
     config_due: Option<Instant>,
@@ -1123,11 +1125,11 @@ impl App {
             );
             self.control.complete(&id, result);
         }
-        if let Some(channel) = self.queued_toggle.take()
+        if let Some((channel, operation)) = self.queued_toggle.take()
             && self.connected()
             && !self.control.owned()
         {
-            self.operate(Operation::Toggle, vec![channel]);
+            self.operate(operation, vec![channel]);
         }
     }
 
@@ -1258,6 +1260,35 @@ impl App {
             "state_semantics":"commanded_not_sensor_verified"})
     }
 
+    /// `control.status` in the common schema, with the native snapshot under
+    /// `native`. Native top-level fields are kept for existing common clients;
+    /// the native `status` method itself is unchanged.
+    fn common_status(&self) -> Value {
+        let native = self.snapshot_json();
+        let phase = if self.link_interrupted.is_some() {
+            "reconnecting"
+        } else if self.pending.is_some() {
+            "busy"
+        } else if self.connected() {
+            "ready"
+        } else {
+            "disconnected"
+        };
+        let common = kohdalab_control_protocol::status(
+            phase,
+            self.pending.is_some(),
+            json!({"owned":self.control.owned(),"owner":self.control.label()}),
+            // Hold-last-state: release/expiry never needs a device cleanup.
+            "not_required",
+            native.clone(),
+        );
+        let mut status = native;
+        if let (Some(fields), Some(common)) = (status.as_object_mut(), common.as_object()) {
+            fields.extend(common.clone());
+        }
+        status
+    }
+
     fn process_api(&mut self) {
         if self.control.expire() {
             self.record("External control expired; holding last requested state");
@@ -1350,7 +1381,12 @@ impl App {
                                 native["action"] = json!(mapped);
                             }
                         }
-                        let native_response = response(self.api_request(&native));
+                        let is_status = native["_control_method"] == "status";
+                        let native_response = if is_status {
+                            response(Ok(self.common_status()))
+                        } else {
+                            response(self.api_request(&native))
+                        };
                         if is_common(&original) {
                             common_response(&original, native_response)
                         } else {
@@ -2001,10 +2037,18 @@ impl App {
             let device = value.devices.entry(info.device_id.clone()).or_default();
             device.selected_channels = self.selected.iter().copied().collect();
             // Cache only committed Pico labels, never an unacknowledged edit.
-            device.label = info.label.clone();
+            // Firmware defaults are not length-checked on the Pico; a shared
+            // label the PC file cannot hold is left uncached (shown live from
+            // the Pico) instead of making the whole PC settings save fail.
+            device.label = if valid_name(&info.label) {
+                info.label.clone()
+            } else {
+                String::new()
+            };
             device.channel_labels = info
                 .channels
                 .iter()
+                .filter(|ch| valid_name(&ch.label))
                 .map(|ch| (ch.id, ch.label.clone()))
                 .collect();
         }
@@ -2247,6 +2291,23 @@ impl App {
         }
     }
 
+    /// The explicit command for a click, resolved from what the operator saw.
+    ///
+    /// A relative Toggle would follow the Pico's own target, which may have
+    /// changed (e.g. a physical button) since the display was last refreshed.
+    /// Moving, Unknown, Fault and a missing state only ever close. Firmware
+    /// without `STATE` reports no calibration at all, so it keeps the legacy
+    /// Toggle.
+    fn manual_operation(&self, channel: u8) -> Operation {
+        match self.state.channels.get(&channel) {
+            Some(state) if state.close_angle.is_none() || state.open_angle.is_none() => {
+                Operation::Toggle
+            }
+            _ if self.displayed_channel_state(channel) == "Close" => Operation::Open,
+            _ => Operation::Close,
+        }
+    }
+
     fn request_toggle(&mut self, channel: u8) {
         if !self.connected()
             || !self.selected.contains(&channel)
@@ -2256,12 +2317,13 @@ impl App {
         {
             return;
         }
+        let operation = self.manual_operation(channel);
         if self.pending.is_some() {
             if self.refreshing {
-                self.queued_toggle = Some(channel);
+                self.queued_toggle = Some((channel, operation));
             }
         } else {
-            self.operate(Operation::Toggle, vec![channel]);
+            self.operate(operation, vec![channel]);
         }
     }
 
@@ -3468,6 +3530,43 @@ mod tests {
         assert_eq!(app.api_request(&wrong).unwrap_err().code, "ownership_lost");
     }
     #[test]
+    fn common_status_uses_the_common_schema_and_native_status_is_unchanged() {
+        let mut app = App::demo();
+        let live = Instant::now() + Duration::from_secs(5);
+        let (request, reply) = held_request(
+            json!({"control_protocol":1,"method":"control.status"}),
+            live,
+        );
+        app.answer_api(request);
+        let common = reply.recv().unwrap();
+        assert_eq!(common["control_protocol"], 1);
+        assert_eq!(common["ok"], true);
+        let status = &common["result"];
+        assert_eq!(status["phase"], "ready");
+        assert_eq!(status["busy"], false);
+        assert_eq!(status["ownership"]["owned"], false);
+        assert_eq!(status["cleanup"], "not_required");
+        assert_eq!(status["native"], app.snapshot_json());
+        // Existing common clients reading native fields at the top keep working.
+        assert_eq!(status["demo"], true);
+        assert_eq!(status["channels"], app.snapshot_json()["channels"]);
+
+        let (request, reply) = held_request(json!({"method":"status"}), live);
+        app.answer_api(request);
+        let native = reply.recv().unwrap();
+        assert_eq!(native["result"], app.snapshot_json());
+        assert!(native["result"].get("phase").is_none());
+
+        api_owner(&mut app);
+        let (request, reply) = held_request(
+            json!({"control_protocol":1,"method":"control.status"}),
+            live,
+        );
+        app.answer_api(request);
+        assert_eq!(reply.recv().unwrap()["result"]["ownership"]["owned"], true);
+    }
+
+    #[test]
     fn demo_operations_never_create_a_network_client_or_task() {
         let mut app = App::demo();
         app.operate(Operation::Open, vec![0, 2]);
@@ -4124,6 +4223,37 @@ mod tests {
     }
 
     #[test]
+    fn overlong_shared_labels_do_not_block_saving_pc_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut app = App::demo();
+        app.init_preferences(Some(path.clone()));
+        let long = "L".repeat(40);
+        let info = app.info.as_mut().unwrap();
+        let device_id = info.device_id.clone();
+        info.label = long.clone();
+        info.channels[1].label = long.clone();
+        app.layout = Layout::Vertical;
+        app.persist_preferences(true);
+        assert!(
+            app.preferences_error.is_empty(),
+            "{}",
+            app.preferences_error
+        );
+        let saved = kohdalab_shutter::preferences::Preferences::load(&path).unwrap();
+        assert_eq!(saved.layout, "vertical");
+        let device = &saved.devices[&device_id];
+        assert_eq!(device.label, "");
+        assert_eq!(
+            device.channel_labels.get(&0).map(String::as_str),
+            Some("Pump")
+        );
+        assert!(!device.channel_labels.contains_key(&1));
+        // The live Pico value is still what the GUI shows.
+        assert_eq!(app.channel_label(1), long);
+    }
+
+    #[test]
     fn preferences_retry_after_a_temporary_save_failure() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("preferences.json");
@@ -4586,6 +4716,65 @@ mod tests {
     }
 
     #[test]
+    fn manual_click_sends_the_explicit_opposite_of_the_displayed_state() {
+        use kohdalab_shutter::protocol::ChannelState;
+        let calibrated = |position, busy| ChannelState {
+            position,
+            target: Some(position),
+            close_angle: Some(90),
+            open_angle: Some(0),
+            busy,
+        };
+        let mut app = App::demo();
+        for (state, expected) in [
+            (calibrated(0, false), Operation::Close), // shown Open (reversed endpoints)
+            (calibrated(90, false), Operation::Open), // shown Close
+            (calibrated(45, true), Operation::Close), // Moving never reopens
+            (calibrated(45, false), Operation::Close), // calibrated Unknown
+            (
+                ChannelState {
+                    position: 45,
+                    target: None,
+                    close_angle: None,
+                    open_angle: None,
+                    busy: false,
+                },
+                Operation::Toggle, // firmware without STATE keeps legacy Toggle
+            ),
+        ] {
+            app.state.channels.insert(0, state);
+            assert_eq!(app.manual_operation(0), expected);
+        }
+        app.state.channels.insert(0, calibrated(90, false));
+        let info = app.info.as_mut().unwrap();
+        info.channels
+            .iter_mut()
+            .find(|ch| ch.id == 0)
+            .unwrap()
+            .fault = true;
+        assert_eq!(app.manual_operation(0), Operation::Close); // shown Fault
+        app.state.channels.remove(&0);
+        assert_eq!(app.manual_operation(0), Operation::Close);
+
+        // The command is fixed when clicked: a refresh that reports the Pico
+        // already closed (e.g. by its button) does not turn the click into Open.
+        let mut app = App::demo();
+        app.demo_status.insert(0, 90);
+        app.apply_snapshot(Snapshot::demo(&app.demo_status));
+        let (_sender, receiver) = mpsc::channel();
+        app.pending = Some(receiver);
+        app.refreshing = true;
+        app.request_toggle(0);
+        assert_eq!(app.queued_toggle, Some((0, Operation::Close)));
+        app.demo_status.insert(0, 0);
+        let snapshot = Snapshot::demo(&app.demo_status);
+        let info = app.info.clone().unwrap();
+        deliver(&mut app, Ok(Reply::Refreshed(snapshot, info)));
+        assert_eq!(app.demo_status[&0], 0);
+        assert_eq!(app.queued_toggle, None);
+    }
+
+    #[test]
     fn polling_queues_only_one_toggle_and_transport_failure_cancels_it() {
         let mut app = App::demo();
         let (_sender, receiver) = mpsc::channel();
@@ -4593,13 +4782,13 @@ mod tests {
         app.refreshing = true;
         app.request_toggle(0);
         app.request_toggle(0);
-        assert_eq!(app.queued_toggle, Some(0));
+        assert_eq!(app.queued_toggle, Some((0, Operation::Open)));
         let snapshot = Snapshot::demo(&app.demo_status);
         let info = app.info.clone().unwrap();
         deliver(&mut app, Ok(Reply::Refreshed(snapshot, info)));
         assert_eq!(app.demo_status[&0], 90);
         assert_eq!(app.queued_toggle, None);
-        app.queued_toggle = Some(0);
+        app.queued_toggle = Some((0, Operation::Close));
         deliver(&mut app, Err("connection lost".into()));
         assert_eq!(app.queued_toggle, None);
         assert_eq!(app.demo_status[&0], 90);

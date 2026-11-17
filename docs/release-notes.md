@@ -1,3 +1,19 @@
+# KohdaLab Shutter 1.0.3
+
+- Manual GUI clicks send explicit Open or Close for channels with calibration data, using the state shown at the time of the click.
+- API close commands remain available after the action ID ceiling. After that point a close ID is deduplicated while its receipt is retained. The Python SDK briefly retries an explicit busy response with the same ID.
+- The common status response includes the shared protocol fields, and long Pico labels no longer prevent saving PC preferences. The legacy Python GUI uses per-channel calibration and reports partial Close All failures.
+- Desktop and firmware changes were tested in simulation. PCA9685 power recovery requires the firmware from Pico Setup 1.2.3 and has not been tested on physical hardware. Windows packages are unsigned and macOS packages are ad hoc signed and not notarized.
+
+## 日本語
+
+- 校正値を取得できるCHでは、クリック時の表示に沿って明示的な開・閉指令を送ります。
+- APIの操作IDが上限に達しても閉操作を受け付けます。上限後の閉操作は受付記録が残っている間に重複を防ぎます。Python SDKは明示的なbusy応答に限り、同じIDで短時間再試行します。
+- 共通ステータスの応答形式に対応し、長いPicoの共有名がPC設定の保存を妨げる問題を修正しました。旧Python GUIはCHごとの校正値を使い、一括閉で一部が失敗した場合に報告します。
+- デスクトップとファームウェアの変更は模擬環境で確認しました。PCA9685の単独復電対策にはPico Setup 1.2.3のファームウェアが必要で、実機は未検証です。Windows版は未署名、macOS版はアドホック署名で未公証です。
+
+---
+
 # KohdaLab Shutter 1.0.2
 
 Discover the active GUI from the current and legacy Python endpoint paths. / Pythonで現行と旧版のGUI接続先を探索できるようにしました。

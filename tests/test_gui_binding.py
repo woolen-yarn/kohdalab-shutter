@@ -69,3 +69,58 @@ def test_wait_for_state_legacy_errors(monkeypatch, snapshot, code):
     with pytest.raises(binding.GuiShutterError) as error:
         shutter.wait_for_state(0, "Open", timeout=0)
     assert error.value.code == code
+
+
+def busy_then(result, failures=2):
+    replies = [binding.GuiShutterError("busy", "busy")] * failures + [result]
+    return Mock(side_effect=replies)
+
+
+def test_close_all_retries_explicit_busy_with_the_same_request_id(monkeypatch):
+    shutter = binding.GuiShutter()
+    shutter._lease = "lease"
+    request = busy_then({"id": "job"})
+    sleep = Mock()
+    monkeypatch.setattr(shutter, "_request", request)
+    monkeypatch.setattr(binding.time, "sleep", sleep)
+
+    assert shutter.close_all() == {"id": "job"}
+    ids = {call.kwargs["request_id"] for call in request.call_args_list}
+    assert request.call_count == 3 and len(ids) == 1
+    assert [call.args for call in sleep.call_args_list] == [(0.05,), (0.1,)]
+
+
+def test_busy_retry_is_bounded_and_other_errors_are_not_retried(monkeypatch):
+    shutter = binding.GuiShutter()
+    shutter._lease = "lease"
+    now = [0.0]
+
+    def sleep(seconds):
+        now[0] += seconds
+
+    monkeypatch.setattr(binding.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(binding.time, "sleep", sleep)
+    busy = Mock(side_effect=binding.GuiShutterError("busy", "busy"))
+    monkeypatch.setattr(shutter, "_request", busy)
+    with pytest.raises(binding.GuiShutterError) as error:
+        shutter.toggle(0)
+    assert error.value.code == "busy"
+    assert now[0] <= binding.GuiShutter._BUSY_RETRY_SECONDS
+    assert len({call.kwargs["request_id"] for call in busy.call_args_list}) == 1
+
+    for code in ("capacity", "timeout", "transport", "ownership_lost"):
+        failed = Mock(side_effect=binding.GuiShutterError(code, code))
+        monkeypatch.setattr(shutter, "_request", failed)
+        with pytest.raises(binding.GuiShutterError):
+            shutter.close(0)
+        failed.assert_called_once()
+
+
+def test_busy_connect_is_returned_at_once(monkeypatch):
+    shutter = binding.GuiShutter()
+    shutter._lease = "lease"
+    request = busy_then({"id": "job"}, failures=1)
+    monkeypatch.setattr(shutter, "_request", request)
+    with pytest.raises(binding.GuiShutterError):
+        shutter.connect(host="127.0.0.1", channels=[0])
+    request.assert_called_once()

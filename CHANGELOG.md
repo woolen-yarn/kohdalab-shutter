@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 / Pico Setup 1.2.3
 
 - The dedicated Python client discovers both the current and legacy GUI endpoints. / 専用Pythonクライアントが現行と旧版のGUI接続先を探索します。
+- Pico firmware reads back the PCA9685 mode and prescale before each new motion. If the PCA9685 lost power on its own, the calibrated driver is reinitialized; if that is not possible, the channel stays faulted instead of reporting a move. Other motions interrupted by the reset are faulted, not resumed. Not yet verified on hardware. / 新しい動作の前にPCA9685のモードとプリスケールを読み戻します。PCA9685だけが電源を失った場合は校正済みドライバーで再初期化し、できない場合は動作成功とせず故障を維持します。リセットで中断された他CHの動作は再開せず故障にします。実機では未確認です。
+- GUI API: after 4096 action IDs, `close`/`close_all` remain available; Earlier IDs remain protected against replay. Closes admitted after the ceiling are deduplicated while their receipts are retained. The Python client briefly resends shutter actions with the same request ID on `busy`. / 4096件の受付ID上限後も`close`/`close_all`は利用できます。上限前のIDは再実行されません。上限後の閉操作は受付記録が残っている間に重複を防ぎます。Pythonクライアントは`busy`のとき同じIDで開閉操作を短時間再送します。
+- Clicking a shutter sends explicit Close when it is shown Open and Open when shown Close; Moving, Unknown and Fault send Close. / シャッターのクリックは表示がOpenならClose、CloseならOpenを送り、Moving・Unknown・FaultではCloseを送ります。
+- `control.status` returns the common `phase`/`busy`/`ownership`/`cleanup`/`native` fields; the native `status` is unchanged. Over-long shared Pico labels no longer block saving PC settings. / `control.status`が共通形式の項目を返します。ネイティブの`status`は変わりません。長すぎるPicoの共有名がPC設定の保存を妨げなくなりました。
+- The legacy Python GUI uses each channel's own calibration (`STATE`) and shows Unknown on firmware without it; Close All tries every channel and reports failures together. / 旧Python GUIはCHごとの校正値で開閉を表示し、`STATE`のない旧ファームウェアではUnknownと表示します。一括操作は全CHに送ってから失敗をまとめて表示します。
 
 ## 1.0.1
 

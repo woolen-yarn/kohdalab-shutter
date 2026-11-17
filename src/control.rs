@@ -136,14 +136,16 @@ impl Control {
                 "request_id must be a UUID",
             ));
         }
-        if !self.used.contains(id) {
-            return Ok(None);
-        }
+        // Receipts are checked first: a close admitted beyond the ID capacity
+        // is remembered only while its receipt is retained.
         let Some(previous) = self.fingerprints.get(id) else {
-            return Err(ApiError::new(
-                "expired_job",
-                "Receipt expired; this request ID cannot be reused",
-            ));
+            if self.used.contains(id) {
+                return Err(ApiError::new(
+                    "expired_job",
+                    "Receipt expired; this request ID cannot be reused",
+                ));
+            }
+            return Ok(None);
         };
         if previous != &fingerprint(body, method) {
             return Err(ApiError::new(
@@ -157,10 +159,15 @@ impl Control {
         if let Some(receipt) = self.cached(body, method)? {
             return Ok(receipt);
         }
-        if self.used.len() >= MAX_IDS {
+        // Past IDs are never forgotten wholesale, so an old Toggle/Open cannot
+        // run again. Once the bounded ID set is full only an absolute close is
+        // still admitted: its ID lives as long as its receipt, so a very late
+        // replay can at most repeat that close, the fail-safe direction.
+        let overflow = self.used.len() >= MAX_IDS;
+        if overflow && !matches!(method, "close" | "close_all") {
             return Err(ApiError::new(
                 "capacity",
-                "Action ID capacity reached; restart GUI",
+                "Action ID capacity reached; only close/close_all remain available until the GUI restarts",
             ));
         }
         let id = string(body, "request_id")?.to_owned();
@@ -171,7 +178,9 @@ impl Control {
             self.fingerprints.remove(id);
         }
         let receipt = json!({"id":id,"kind":method,"status":"running","result":null,"error":null,"error_code":null});
-        self.used.insert(id.clone());
+        if !overflow {
+            self.used.insert(id.clone());
+        }
         self.fingerprints.insert(id, fingerprint(body, method));
         self.jobs.push_back(receipt.clone());
         Ok(receipt)
@@ -267,6 +276,52 @@ mod tests {
             control.result(receipt["id"].as_str().unwrap()).unwrap()["status"],
             "completed"
         );
+    }
+    #[test]
+    fn full_id_capacity_still_admits_close_without_forgetting_old_ids() {
+        let mut control = Control::default();
+        let toggle = body();
+        control.begin(&toggle, "toggle").unwrap();
+        while control.used.len() < MAX_IDS {
+            control.begin(&body(), "open").unwrap();
+        }
+        // Old IDs stay remembered: a replayed Toggle never runs again.
+        assert_eq!(
+            control.begin(&toggle, "toggle").unwrap_err().code,
+            "expired_job"
+        );
+        for method in ["open", "toggle", "open_all", "connect", "set_layout"] {
+            assert_eq!(control.begin(&body(), method).unwrap_err().code, "capacity");
+        }
+        let close = body();
+        let receipt = control.begin(&close, "close").unwrap();
+        control.begin(&body(), "close_all").unwrap();
+        assert_eq!(control.used.len(), MAX_IDS);
+        // While the receipt is retained the close is deduplicated and checked.
+        assert_eq!(control.begin(&close, "close").unwrap(), receipt);
+        let mut conflicting = close.clone();
+        conflicting["channel"] = json!(1);
+        assert_eq!(
+            control.begin(&conflicting, "close").unwrap_err().code,
+            "request_id_conflict"
+        );
+        assert_eq!(
+            control.begin(&close, "toggle").unwrap_err().code,
+            "request_id_conflict"
+        );
+        // Memory stays bounded however many closes are admitted.
+        for _ in 0..(2 * MAX_RECEIPTS) {
+            control.begin(&body(), "close").unwrap();
+        }
+        assert_eq!(control.used.len(), MAX_IDS);
+        assert!(control.fingerprints.len() <= MAX_RECEIPTS + 1);
+        assert!(control.jobs.len() <= MAX_RECEIPTS);
+        // An evicted overflow close ID can only ever be a close again.
+        assert_eq!(
+            control.begin(&close, "toggle").unwrap_err().code,
+            "capacity"
+        );
+        assert!(control.begin(&close, "close").is_ok());
     }
     #[test]
     fn evicted_receipts_cannot_execute_again() {

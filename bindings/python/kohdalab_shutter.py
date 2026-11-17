@@ -30,6 +30,12 @@ class GuiShutter:
 
     _MAX_RESPONSE = 64 * 1024
     _TERMINAL = {"completed", "error"}
+    # The GUI answers ``busy`` before it records a receipt or sends anything, so
+    # resending the *same* request ID cannot run an action twice (not even
+    # Toggle). Only shutter actions retry, only on ``busy``, and only briefly;
+    # a busy connect/discover reflects state and is returned at once.
+    _BUSY_RETRY_METHODS = {"open", "close", "toggle", "open_all", "close_all"}
+    _BUSY_RETRY_SECONDS = 2.0
 
     def __init__(
         self,
@@ -309,7 +315,18 @@ class GuiShutter:
             if request_id is None
             else self._uuid(request_id),
         )
-        return self._request(method, **body)
+        if method not in self._BUSY_RETRY_METHODS:
+            return self._request(method, **body)
+        deadline = time.monotonic() + self._BUSY_RETRY_SECONDS
+        delay = 0.05
+        while True:
+            try:
+                return self._request(method, **body)
+            except GuiShutterError as error:
+                if error.code != "busy" or time.monotonic() + delay > deadline:
+                    raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.4)
 
     def connect(
         self,
