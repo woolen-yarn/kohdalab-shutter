@@ -107,6 +107,8 @@ Python/Jupyter can attach to the running GUI using an opt-in local API. The GUI 
 
 Python/Jupyterから起動中GUIへ接続できます。Pico接続はGUIが所有し、手動操作とAPI操作は同じ制御経路・Open/Close判定を使います。
 
+While Python owns the GUI, the top **External control** banner shows the owner and commanded state. **Take control** holds the last requested state; nothing is sent. / Pythonの操作中は上部の「External control」に所有者と状態を表示します。「Take control」は最後の状態を保持します（送信なし）。
+
 ```sh
 cargo run --release --locked --bin kohdalab-shutter-gui -- --demo --gui-api
 python -m pip install ./bindings/python

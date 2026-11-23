@@ -52,9 +52,15 @@ Success is `{"ok":true,"result":...,"data":...}`; `data` is a compatibility alia
 
 ## Ownership / 操作権
 
-The first Python mutation, or entering `with GuiShutter()`, acquires one exclusive lease. The client heartbeats every two seconds and the GUI expires it after ten seconds without renewal. The header API indicator and the ··· menu identify the external controller; ordinary manual inputs are locked. **Take control** revokes that client after the current command task finishes. An expired/revoked client must create a new client UUID to acquire again. Voluntary release permits reuse.
+The first Python mutation, or entering `with GuiShutter()`, acquires one exclusive lease. The client heartbeats every two seconds and the GUI expires it after ten seconds without renewal. The top External control banner and the ··· menu identify the external controller; ordinary manual inputs, including per-channel Open/Close, are locked. **Take control** (banner only) revokes that client after the current command task finishes. An expired/revoked client must create a new client UUID to acquire again. Voluntary release permits reuse.
 
 変更操作は排他的な操作権を取得します。操作中の外部クライアント名をGUIに表示し、手動入力をロックします。Take controlで操作権を取り戻せます。失効・取り消し後の古いクライアントは再取得できません。
+
+While a client owns the GUI, a top **External control** banner shows `Python owns control` (or `Python · <label> owns control`) and a summary of the commanded per-channel state, such as `Open 2 · Close 1`, marked `Command in progress` while a task runs. Its only action is **Take control**, which revokes the client and holds the last requested state; nothing is sent to the Pico. It is disabled while a command task is in flight. After takeover, use the existing per-channel Close.
+
+Shutter has no Stop. `capabilities()` keeps all existing fields; `safety` adds `supports_stop: false`, `lease_timeout_seconds` (10), and `on_release` / `on_disconnect` (`hold_last_state`, covering release, client loss and heartbeat expiry).
+
+外部クライアントが操作権を持つ間、上部の「External control」に所有者と指令上の開閉状態を表示します。操作は「Take control」のみで、操作権を取り戻し最後の状態を保持します（Picoへは送信しません）。指令の処理中は押せません。閉じる場合は取り戻した後に既存のCH別Closeを使います。Stopはありません。`capabilities()`の既存項目は変えず、`safety`に`supports_stop: false`、`lease_timeout_seconds`、`on_release`・`on_disconnect`を追加しました。
 
 Release, client loss, and heartbeat expiry **hold the last requested state**. They do not automatically send Open or Close. An already accepted finite job may finish; manual controls remain unavailable while its command task is in flight. This policy is reported by `capabilities()` and the acquisition response. Dropping a Python object does not leave a self-retaining heartbeat thread.
 

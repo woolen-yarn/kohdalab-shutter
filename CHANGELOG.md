@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- While Python owns the GUI, a top **External control** banner shows the owner and the commanded Open/Close state, with the existing **Take control** (hold the last requested state; nothing is sent). It replaces the duplicate Take control in the ··· menu. There is no Stop and no new hardware action. `capabilities.safety` adds `supports_stop: false`, `lease_timeout_seconds`, `on_release` and `on_disconnect` (`hold_last_state`); existing fields are unchanged. / Pythonが操作権を持つ間、上部の「External control」に所有者と指令上の開閉状態を表示し、既存の「Take control」（最後の状態を保持、Picoへは送信しません）を置きます。···メニューの重複ボタンは削除しました。Stopや新しいハードウェア操作はありません。`capabilities.safety`に`supports_stop: false`、`lease_timeout_seconds`、`on_release`・`on_disconnect`（`hold_last_state`）を追加し、既存項目は変えていません。
+
 ## 1.0.3 / Pico Setup 1.2.3
 
 - The dedicated Python client discovers both the current and legacy GUI endpoints. / 専用Pythonクライアントが現行と旧版のGUI接続先を探索します。
