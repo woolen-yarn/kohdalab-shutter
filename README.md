@@ -15,15 +15,15 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 ## Downloads / ダウンロード
 
-[Stable release / 安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3) · [v1.0.3 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.3)
+[Stable release / 安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.4) · [v1.0.4 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.4)
 
 | OS / 対応環境 | Installer / インストーラー | Portable / ポータブル |
 | --- | --- | --- |
-| Windows 10/11 x64 | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter-1.0.3-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter-1.0.3-windows-x64.zip) |
-| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter-1.0.3-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter-1.0.3-macos-universal.zip) |
-| Ubuntu 24.04 x64 | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter_1.0.3_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter-1.0.3-linux-x86_64.tar.gz) |
+| Windows 10/11 x64 | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-windows-x64.zip) |
+| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-macos-universal.zip) |
+| Ubuntu 24.04 x64 | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter_1.0.4_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-linux-x86_64.tar.gz) |
 
-[SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.3/kohdalab-shutter-1.0.3-source.zip)
+[SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-source.zip)
 
 Use Setup on Windows, drag the app from the DMG to Applications on macOS, or install the DEB on Ubuntu. For portable use, extract the archive before launching. / Windows は Setup、macOS は DMG からアプリを Applications へコピー、Ubuntu は DEB を使います。ポータブル版は展開して起動します。
 
