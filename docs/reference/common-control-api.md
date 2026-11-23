@@ -61,7 +61,7 @@ or explicitly stop work before releasing when required by the app policy.
 | IV | Measurement, configuration, source/gate operations through GUI | Existing protections and fresh output-OFF confirmation on release/takeover |
 | TRKR | Measurement, configuration and supported motion through GUI | Existing continuation options and motion/stop admission rules |
 | PLE | Measurement/configuration through GUI; explicit confirmations retained | Optical cleanup barrier and command-ACK/run-job distinction |
-| Shutter | Supported channel operations through GUI | Hold last state; commanded position is not measured optical transmission |
+| Shutter | Supported channel operations through GUI | Hold last state; no Stop (`safety.supports_stop: false`); External control offers only Take control (hold last state); commanded position is not measured optical transmission |
 | Camera | Read-only GUI status/configuration | Acquisition helper remains private; no new device commands |
 
 The common contract does not make device stop policies identical. Read the

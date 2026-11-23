@@ -1,4 +1,18 @@
-# KohdaLab Shutter 1.0.3
+# KohdaLab Shutter 1.0.4
+
+## Changes / 変更点
+
+Align the external-control bar and clarify that Take control and Release retain the last commanded state. Update the common Python SDK. Pico firmware and optical behavior are unchanged.
+
+## Validation scope / 検証範囲
+
+The previous hardware compatibility and safety guidance remains applicable. The release software checks include simulation. New physical-device operating scenarios are outside this qualification.
+
+See SHA256SUMS.txt and the release page's platform packages. / 対応OSとSHA-256は配布ページをご覧ください。
+
+## Previous release / 前の版
+
+### KohdaLab Shutter 1.0.3
 
 - Manual GUI clicks send explicit Open or Close for channels with calibration data, using the state shown at the time of the click.
 - API close commands remain available after the action ID ceiling. After that point a close ID is deduplicated while its receipt is retained. The Python SDK briefly retries an explicit busy response with the same ID.

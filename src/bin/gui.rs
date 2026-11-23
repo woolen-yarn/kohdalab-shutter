@@ -39,6 +39,8 @@ const BUTTON: Color32 = Color32::from_rgb(45, 46, 53);
 const TEAL: Color32 = Color32::from_rgb(63, 215, 194);
 const ORANGE: Color32 = Color32::from_rgb(245, 183, 82);
 const RED: Color32 = Color32::from_rgb(255, 123, 130);
+/// Height of the top External control banner shown while Python owns the GUI.
+const EXTERNAL_BANNER_HEIGHT: f32 = 62.0;
 
 const IDLE_REFRESH: Duration = Duration::from_secs(1);
 const MOVING_REFRESH: Duration = Duration::from_millis(100);
@@ -1411,7 +1413,11 @@ impl App {
                     json!({"protocol":2,"app":"kohdalab-shutter","version":env!("CARGO_PKG_VERSION"),
                 "application":"kohdalab-shutter","control_protocol":1,
                 "methods":["control.describe","control.status","control.config","control.acquire","control.heartbeat","control.release","control.result","control.discover","control.connect","control.disconnect","control.open","control.close","control.toggle","control.open_all","control.close_all","control.set_layout","control.set_order"],
-                "safety":{"supports_ownership":true,"exclusive_control":true,"physical_auto_connect":false,"simulation_required_for_tests":true,"stop_requires_lease":true},
+                "safety":{"supports_ownership":true,"exclusive_control":true,"physical_auto_connect":false,"simulation_required_for_tests":true,"stop_requires_lease":true,
+                    // Additive, same keys as IV, describing existing behavior: no common
+                    // Stop; release and heartbeat expiry hold the last requested state.
+                    "supports_stop":false,"lease_timeout_seconds":10,
+                    "on_release":"hold_last_state","on_disconnect":"hold_last_state"},
                 "actions":["capabilities","status","config","acquire","heartbeat","release","result","discover","connect","disconnect","open","close","toggle","open_all","close_all","set_layout","set_order"],
                 "channel_selection_required":true,"channel_lock_scope":"pico_channel","pico_lease_timeout_s":15,"lease_timeout_s":10,"release_policy":"hold_last_state","job_completion":"command_acknowledgement",
                 "state_semantics":"commanded_not_sensor_verified","receipt_limit":64,"action_id_limit":4096,
@@ -1958,14 +1964,117 @@ impl App {
         if !self.api_error.is_empty() {
             ui.label(RichText::new(&self.api_error).small().color(ORANGE));
         }
+        // Take control lives only in the External control banner.
         if let Some(label) = self.control.label() {
-            ui.label(format!("Controlled by {label}"));
-            if ui
-                .add_enabled(self.pending.is_none(), egui::Button::new("Take control"))
-                .clicked()
-            {
-                self.control.revoke();
+            ui.label("Controlled by Python");
+            if let Some(text) = display_client_label(label) {
+                ui.label(RichText::new(text).small().italics().weak());
             }
+        }
+    }
+
+    /// Takeover waits for the in-flight command task, as before.
+    fn can_take_control(&self) -> bool {
+        self.control.owned() && self.pending.is_none()
+    }
+
+    /// Revoke the external client and hold the last requested state.
+    /// Nothing is sent to the Pico.
+    fn take_control(&mut self) {
+        if !self.can_take_control() {
+            return;
+        }
+        let client = self
+            .control
+            .label()
+            .and_then(display_client_label)
+            .map_or(String::new(), |text| format!(" ({text})"));
+        self.control.revoke();
+        self.record(format!(
+            "Took control from Python{client}; holding last requested state"
+        ));
+    }
+
+    /// Commanded-state summary for the External control banner.
+    fn external_state_summary(&self) -> String {
+        if !self.connected() {
+            return "Disconnected".into();
+        }
+        if self.link_interrupted.is_some() {
+            return "Reconnecting… lease held".into();
+        }
+        let mut counts: Vec<(&str, usize)> = ["Open", "Close", "Moving", "Unknown", "Fault"]
+            .into_iter()
+            .map(|name| (name, 0))
+            .collect();
+        for channel in self.ordered_channels() {
+            let state = self.displayed_channel_state(channel);
+            if let Some(entry) = counts.iter_mut().find(|(name, _)| *name == state) {
+                entry.1 += 1;
+            }
+        }
+        let mut summary = counts
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(name, count)| format!("{name} {count}"))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        if summary.is_empty() {
+            summary = "No channels".into();
+        }
+        if self.pending.is_some() {
+            summary.push_str(" · Command in progress");
+        }
+        summary
+    }
+
+    /// Top banner shown while a Python client owns the GUI.
+    fn external_control_banner(&mut self, root: &mut egui::Ui) {
+        let Some(client_label) = self.control.label().map(display_client_label) else {
+            return;
+        };
+        // Authoritative ownership text; client-supplied text is shown apart.
+        let owner = "Python owns control";
+        let summary = self.external_state_summary();
+        let mut take = false;
+        egui::Panel::top("external-control")
+            .exact_size(EXTERNAL_BANNER_HEIGHT)
+            .show_separator_line(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(SURFACE)
+                    .stroke(Stroke::new(1.0_f32, BORDER))
+                    .inner_margin(egui::Margin::symmetric(12, 6)),
+            )
+            .show_inside(root, |ui| {
+                ui.horizontal(|ui| {
+                    status_dot(ui, ORANGE);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.label(RichText::new("External control").strong().size(13.0));
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(owner).small().color(MUTED))
+                                .on_hover_text("Manual controls are locked");
+                            if let Some(text) = &client_label {
+                                ui.label(RichText::new(text).small().italics().weak())
+                                    .on_hover_text(
+                                        "Label supplied by the Python client; not a GUI status",
+                                    );
+                            }
+                        });
+                        ui.label(RichText::new(&summary).small().color(TEXT))
+                            .on_hover_text("Commanded state, not measured optical transmission");
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        take = ui
+                            .add_enabled(self.can_take_control(), egui::Button::new("Take control"))
+                            .on_hover_text("Hold the last requested state; nothing is sent")
+                            .clicked();
+                    });
+                });
+            });
+        if take {
+            self.take_control();
         }
     }
 
@@ -2548,14 +2657,25 @@ impl App {
         if self.settings_open {
             return Vec2::new(560.0, 560.0);
         }
+        // The External control banner adds height only while it is shown.
+        let banner = if self.control.owned() {
+            EXTERNAL_BANNER_HEIGHT
+        } else {
+            0.0
+        };
         if !self.connected() {
-            return Vec2::new(540.0, 490.0);
+            return Vec2::new(540.0, 490.0 + banner);
         }
         let count = self.status.len().max(1) as f32;
         if self.layout == Layout::Horizontal {
-            Vec2::new((count * 166.0 + 26.0).clamp(280.0, 1160.0), 260.0)
+            // A single-channel window widens only while the banner needs room.
+            let min_width = if banner > 0.0 { 340.0 } else { 280.0 };
+            Vec2::new(
+                (count * 166.0 + 26.0).clamp(min_width, 1160.0),
+                260.0 + banner,
+            )
         } else {
-            Vec2::new(350.0, (count * 98.0 + 68.0).min(820.0))
+            Vec2::new(350.0, (count * 98.0 + 68.0).min(820.0) + banner)
         }
     }
 
@@ -2572,6 +2692,7 @@ impl App {
             }));
         }
         self.header(root);
+        self.external_control_banner(root);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -2702,6 +2823,58 @@ fn valid_name(label: &str) -> bool {
 }
 
 /// Answer a request without running it, in the envelope it was sent in.
+const CLIENT_LABEL_DISPLAY_CHARS: usize = 32;
+
+/// Banner text for a client-supplied label, visibly marked as client text.
+/// Line breaks and control characters become spaces; bidi and other invisible
+/// formatting characters are removed so the label cannot reshape or
+/// impersonate the ownership line. Blank or default labels show nothing extra.
+fn display_client_label(raw: &str) -> Option<String> {
+    let cleaned = raw
+        .chars()
+        .filter_map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                Some(' ')
+            } else if hidden_formatting(c) {
+                None
+            } else {
+                Some(c)
+            }
+        })
+        .collect::<String>();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    if cleaned.is_empty() || cleaned == "Python" {
+        return None;
+    }
+    let mut shown: String = cleaned.chars().take(CLIENT_LABEL_DISPLAY_CHARS).collect();
+    if cleaned.chars().count() > CLIENT_LABEL_DISPLAY_CHARS {
+        shown.push('…');
+    }
+    Some(format!("Client label: “{shown}”"))
+}
+
+/// Invisible, bidi and other formatting characters that are removed outright.
+fn hidden_formatting(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{115F}'
+            | '\u{1160}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E007F}'
+    )
+}
+
 fn reply_error(request: remote::Request, code: &'static str, message: &str) {
     let native = response(Err(ApiError::new(code, message)));
     let value = if is_common(&request.body) {
@@ -4516,6 +4689,159 @@ mod tests {
         );
     }
 
+    fn texts(app: &mut App) -> Vec<String> {
+        render_text(app).into_iter().map(|(text, _)| text).collect()
+    }
+
+    #[test]
+    fn external_control_banner_shows_python_owner_and_commanded_state() {
+        let mut app = App::demo();
+        let manual_size = app.desired_size();
+        let text = texts(&mut app);
+        assert!(!text.iter().any(|t| t == "External control"));
+        assert!(!text.iter().any(|t| t == "Take control"));
+
+        api_owner(&mut app);
+        let text = texts(&mut app);
+        assert!(text.iter().any(|t| t == "External control"));
+        assert!(text.iter().any(|t| t == "Python owns control"));
+        assert!(text.iter().any(|t| t == "Open 2 · Close 2"), "{text:?}");
+        // One takeover control and no new hardware action in the banner.
+        assert_eq!(text.iter().filter(|t| *t == "Take control").count(), 1);
+        assert!(!text.iter().any(|t| t == "Stop" || t == "Close all"));
+        assert_eq!(app.desired_size().y, manual_size.y + EXTERNAL_BANNER_HEIGHT);
+
+        let mut named = App::demo();
+        let request = json!({"client":uuid::Uuid::new_v4().to_string(),"method":"acquire",
+            "label":"All shutters closed\n\u{202E}Safe"});
+        named.api_request(&request).unwrap();
+        let text = texts(&mut named);
+        // Ownership text stays authoritative; client text is separate and marked.
+        assert!(text.iter().any(|t| t == "Python owns control"), "{text:?}");
+        assert!(
+            text.iter()
+                .any(|t| t == "Client label: “All shutters closed Safe”"),
+            "{text:?}"
+        );
+        assert!(
+            !text
+                .iter()
+                .any(|t| t.contains('\n') || t.contains('\u{202E}'))
+        );
+        assert_eq!(
+            named.desired_size().y,
+            manual_size.y + EXTERNAL_BANNER_HEIGHT
+        );
+        // API payload keeps the client's label unchanged.
+        assert_eq!(
+            named.control.label(),
+            Some("All shutters closed\n\u{202E}Safe")
+        );
+    }
+
+    #[test]
+    fn client_label_display_strips_formatting_and_falls_back_when_blank() {
+        assert_eq!(
+            display_client_label("Notebook").as_deref(),
+            Some("Client label: “Notebook”")
+        );
+        for blank in [
+            "",
+            " \t\r\n",
+            "\u{200B}\u{2066}\u{FEFF}",
+            "Python",
+            "\u{0085}",
+        ] {
+            assert_eq!(display_client_label(blank), None, "{blank:?}");
+        }
+        assert_eq!(
+            display_client_label("a\u{2028}b\u{2029}c\u{0007}d\u{200F}e").as_deref(),
+            Some("Client label: “a b c de”")
+        );
+        let long = display_client_label(&"y".repeat(64)).unwrap();
+        assert_eq!(long, format!("Client label: “{}…”", "y".repeat(32)));
+    }
+
+    #[test]
+    fn take_control_holds_last_state_without_any_command() {
+        let mut app = App::demo();
+        let owner = api_owner(&mut app);
+        let before = app.demo_status.clone();
+        let command = app.last_command.clone();
+        let ctx = egui::Context::default();
+        style(&ctx);
+        let output = ui_frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, text_position(&output, "Take control"));
+        assert!(!app.control.owned());
+        assert_eq!(app.demo_status, before, "hold-last-state: no Pico command");
+        assert_eq!(app.last_command, command);
+        assert!(
+            app.log
+                .back()
+                .unwrap()
+                .contains("holding last requested state")
+        );
+        let mut heartbeat = owner;
+        heartbeat["method"] = json!("heartbeat");
+        assert_eq!(
+            app.api_request(&heartbeat).unwrap_err().code,
+            "ownership_lost"
+        );
+        assert!(!texts(&mut app).iter().any(|t| t == "External control"));
+    }
+
+    #[test]
+    fn take_control_is_offered_once_with_settings_open() {
+        let mut app = App::demo();
+        api_owner(&mut app);
+        app.settings_open = true;
+        // Let the new Settings window finish its sizing frame so its content
+        // is actually painted before checking for a duplicate takeover.
+        let text: Vec<String> = render_text_frames(&mut app, 3)
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect();
+        assert!(text.iter().any(|t| t == "Controlled by Python"), "{text:?}");
+        assert_eq!(text.iter().filter(|t| *t == "Take control").count(), 1);
+    }
+
+    #[test]
+    fn takeover_waits_for_the_in_flight_command() {
+        let mut app = App::demo();
+        api_owner(&mut app);
+        app.task(|| Ok(Reply::Accepted("Close accepted".into())));
+        assert!(!app.can_take_control());
+        app.take_control();
+        assert!(app.control.owned());
+        assert!(
+            app.external_state_summary()
+                .ends_with("Command in progress")
+        );
+    }
+
+    #[test]
+    fn capabilities_advertise_takeover_without_a_common_stop() {
+        let mut app = App::demo();
+        let caps = app.api_request(&json!({"method":"capabilities"})).unwrap();
+        let methods = caps["methods"].as_array().unwrap();
+        assert!(!methods.iter().any(|m| m == "control.stop"));
+        assert!(
+            !caps["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m == "stop")
+        );
+        assert_eq!(caps["release_policy"], "hold_last_state");
+        let safety = &caps["safety"];
+        assert_eq!(safety["supports_stop"], false);
+        assert_eq!(safety["lease_timeout_seconds"], caps["lease_timeout_s"]);
+        assert_eq!(safety["on_release"], "hold_last_state");
+        assert_eq!(safety["on_disconnect"], "hold_last_state");
+        assert_eq!(safety["stop_requires_lease"], true, "existing field kept");
+        assert!(caps.get("gui_control").is_none(), "no new contract object");
+    }
+
     #[test]
     fn unsaved_names_cannot_cross_controller_identity() {
         let mut app = App::demo();
@@ -4795,6 +5121,13 @@ mod tests {
     }
 
     fn render_text(app: &mut App) -> Vec<(String, egui::Pos2)> {
+        render_text_frames(app, 1)
+    }
+
+    /// Render `frames` passes on one context and return the last frame's
+    /// text. A newly opened egui Window spends its first frame measuring
+    /// itself and paints nothing, so Settings content needs a later frame.
+    fn render_text_frames(app: &mut App, frames: usize) -> Vec<(String, egui::Pos2)> {
         fn collect(shape: &egui::epaint::Shape, text: &mut Vec<(String, egui::Pos2)>) {
             match shape {
                 egui::epaint::Shape::Text(label) => {
@@ -4810,18 +5143,10 @@ mod tests {
         }
         let ctx = egui::Context::default();
         style(&ctx);
-        let output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    app.desired_size(),
-                )),
-                ..Default::default()
-            },
-            |ctx| {
-                app.draw(ctx);
-            },
-        );
+        let mut output = ui_frame(app, &ctx, vec![]);
+        for _ in 1..frames {
+            output = ui_frame(app, &ctx, vec![]);
+        }
         let mut text = Vec::new();
         for shape in output.shapes {
             collect(&shape.shape, &mut text);
