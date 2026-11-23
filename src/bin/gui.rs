@@ -1966,7 +1966,10 @@ impl App {
         }
         // Take control lives only in the External control banner.
         if let Some(label) = self.control.label() {
-            ui.label(format!("Controlled by {label}"));
+            ui.label("Controlled by Python");
+            if let Some(text) = display_client_label(label) {
+                ui.label(RichText::new(text).small().italics().weak());
+            }
         }
     }
 
@@ -1981,10 +1984,14 @@ impl App {
         if !self.can_take_control() {
             return;
         }
-        let label = self.control.label().unwrap_or("Python").to_owned();
+        let client = self
+            .control
+            .label()
+            .and_then(display_client_label)
+            .map_or(String::new(), |text| format!(" ({text})"));
         self.control.revoke();
         self.record(format!(
-            "Took control from {label}; holding last requested state"
+            "Took control from Python{client}; holding last requested state"
         ));
     }
 
@@ -2023,14 +2030,11 @@ impl App {
 
     /// Top banner shown while a Python client owns the GUI.
     fn external_control_banner(&mut self, root: &mut egui::Ui) {
-        let Some(label) = self.control.label().map(str::to_owned) else {
+        let Some(client_label) = self.control.label().map(display_client_label) else {
             return;
         };
-        let owner = if label == "Python" {
-            "Python owns control".to_owned()
-        } else {
-            format!("Python · {label} owns control")
-        };
+        // Authoritative ownership text; client-supplied text is shown apart.
+        let owner = "Python owns control";
         let summary = self.external_state_summary();
         let mut take = false;
         egui::Panel::top("external-control")
@@ -2048,8 +2052,16 @@ impl App {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
                         ui.label(RichText::new("External control").strong().size(13.0));
-                        ui.label(RichText::new(&owner).small().color(MUTED))
-                            .on_hover_text("Manual controls are locked");
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(owner).small().color(MUTED))
+                                .on_hover_text("Manual controls are locked");
+                            if let Some(text) = &client_label {
+                                ui.label(RichText::new(text).small().italics().weak())
+                                    .on_hover_text(
+                                        "Label supplied by the Python client; not a GUI status",
+                                    );
+                            }
+                        });
                         ui.label(RichText::new(&summary).small().color(TEXT))
                             .on_hover_text("Commanded state, not measured optical transmission");
                     });
@@ -2811,6 +2823,58 @@ fn valid_name(label: &str) -> bool {
 }
 
 /// Answer a request without running it, in the envelope it was sent in.
+const CLIENT_LABEL_DISPLAY_CHARS: usize = 32;
+
+/// Banner text for a client-supplied label, visibly marked as client text.
+/// Line breaks and control characters become spaces; bidi and other invisible
+/// formatting characters are removed so the label cannot reshape or
+/// impersonate the ownership line. Blank or default labels show nothing extra.
+fn display_client_label(raw: &str) -> Option<String> {
+    let cleaned = raw
+        .chars()
+        .filter_map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                Some(' ')
+            } else if hidden_formatting(c) {
+                None
+            } else {
+                Some(c)
+            }
+        })
+        .collect::<String>();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    if cleaned.is_empty() || cleaned == "Python" {
+        return None;
+    }
+    let mut shown: String = cleaned.chars().take(CLIENT_LABEL_DISPLAY_CHARS).collect();
+    if cleaned.chars().count() > CLIENT_LABEL_DISPLAY_CHARS {
+        shown.push('…');
+    }
+    Some(format!("Client label: “{shown}”"))
+}
+
+/// Invisible, bidi and other formatting characters that are removed outright.
+fn hidden_formatting(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{115F}'
+            | '\u{1160}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E007F}'
+    )
+}
+
 fn reply_error(request: remote::Request, code: &'static str, message: &str) {
     let native = response(Err(ApiError::new(code, message)));
     let value = if is_common(&request.body) {
@@ -4648,13 +4712,54 @@ mod tests {
         assert_eq!(app.desired_size().y, manual_size.y + EXTERNAL_BANNER_HEIGHT);
 
         let mut named = App::demo();
-        let request = json!({"client":uuid::Uuid::new_v4().to_string(),"method":"acquire","label":"Notebook"});
+        let request = json!({"client":uuid::Uuid::new_v4().to_string(),"method":"acquire",
+            "label":"All shutters closed\n\u{202E}Safe"});
         named.api_request(&request).unwrap();
+        let text = texts(&mut named);
+        // Ownership text stays authoritative; client text is separate and marked.
+        assert!(text.iter().any(|t| t == "Python owns control"), "{text:?}");
         assert!(
-            texts(&mut named)
-                .iter()
-                .any(|t| t == "Python · Notebook owns control")
+            text.iter()
+                .any(|t| t == "Client label: “All shutters closed Safe”"),
+            "{text:?}"
         );
+        assert!(
+            !text
+                .iter()
+                .any(|t| t.contains('\n') || t.contains('\u{202E}'))
+        );
+        assert_eq!(
+            named.desired_size().y,
+            manual_size.y + EXTERNAL_BANNER_HEIGHT
+        );
+        // API payload keeps the client's label unchanged.
+        assert_eq!(
+            named.control.label(),
+            Some("All shutters closed\n\u{202E}Safe")
+        );
+    }
+
+    #[test]
+    fn client_label_display_strips_formatting_and_falls_back_when_blank() {
+        assert_eq!(
+            display_client_label("Notebook").as_deref(),
+            Some("Client label: “Notebook”")
+        );
+        for blank in [
+            "",
+            " \t\r\n",
+            "\u{200B}\u{2066}\u{FEFF}",
+            "Python",
+            "\u{0085}",
+        ] {
+            assert_eq!(display_client_label(blank), None, "{blank:?}");
+        }
+        assert_eq!(
+            display_client_label("a\u{2028}b\u{2029}c\u{0007}d\u{200F}e").as_deref(),
+            Some("Client label: “a b c de”")
+        );
+        let long = display_client_label(&"y".repeat(64)).unwrap();
+        assert_eq!(long, format!("Client label: “{}…”", "y".repeat(32)));
     }
 
     #[test]
