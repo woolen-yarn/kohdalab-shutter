@@ -1,3 +1,19 @@
+# KohdaLab Pico Setup 1.2.4
+
+- The Pico shares read time across admitted TCP clients while retaining the individual command deadline. If all pending slots are occupied, new connections may still wait for a slot.
+- Malformed UTF-8 receives `UNKNOWN`. A partially accepted operation reports the accepted, failed and unattempted channels.
+- Update existing Pico W and Pico 2 W controllers via USB to install the firmware while preserving their calibration. This release was tested in simulation. Physical hardware validation was skipped.
+- Windows is unsigned. macOS is ad hoc signed and not notarized.
+
+## 日本語
+
+- Picoは受付済みのTCP接続を順番に読み取ります。コマンドごとの期限は維持し、受付枠が埋まっている場合は空きを待ちます。
+- 不正なUTF-8には `UNKNOWN` を返し、複数CH操作の部分失敗では受理、失敗、未試行のCHを報告します。
+- 既設のPico W・Pico 2 WはUSB経由で更新でき、校正値を保持します。模擬環境で検証し、この版では実機検証を省略しました。
+- Windows版は未署名です。macOS版はアドホック署名で未公証です。
+
+---
+
 # KohdaLab Pico Setup 1.2.3
 
 - Before accepting a new motion as successful, the firmware checks the PCA9685 mode and prescale. If the PWM controller lost its configuration, the firmware reinitializes it through the existing calibrated driver when possible. Otherwise it reports a channel fault.
