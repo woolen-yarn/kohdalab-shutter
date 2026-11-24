@@ -45,6 +45,11 @@
 | `CLOSE n` | `OK` / `ERR` | Move channel n to the close angle / チャンネル n を close 角へ動かす |
 | `TOGGLE n` | `OK` / `ERR` | Toggle channel n / チャンネル n を反転する |
 | Unknown | `UNKNOWN` | Undefined command / 未定義コマンド |
+| Invalid UTF-8 line | `UNKNOWN` | Command bytes are not valid UTF-8; nothing is executed / コマンドが不正な UTF-8 の場合は何も実行しない |
+
+**JP:** 不正な UTF-8 を含むコマンド行（`SESSION` 行を含む）は、途中で切れた要求や読み取り期限切れと同じく、何も実行せずに `UNKNOWN` を返します。
+
+**EN:** A command line containing invalid UTF-8 bytes (including a `SESSION` line) is handled like a truncated or timed-out request: nothing is executed and the reply is `UNKNOWN`, not the generic `ERROR` fallback.
 
 **JP:** `n` は 0 始まりのチャンネル番号です。現在の 4CH 構成では `0..3` です。
 
