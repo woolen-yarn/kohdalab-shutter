@@ -373,7 +373,12 @@ class WifiServer:
                 if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
                     return ""
                 buffer += chunk[:newline]
-                return bytes(buffer).decode().strip()
+                try:
+                    return bytes(buffer).decode("utf-8").strip()
+                except UnicodeError:
+                    # Invalid UTF-8 is treated like a truncated request:
+                    # never act on it; _handle replies UNKNOWN.
+                    return ""
             buffer += chunk
         # Commands are line framed. Never operate on a truncated request.
         return ""

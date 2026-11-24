@@ -743,6 +743,58 @@ def test_complete_maximum_unicode_label_patch_exceeds_old_limit_but_is_accepted(
     assert connection.reads == (len(command.encode()) + 256) // 256
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [b"OPEN 0\xff\n", b"\xc3\x28\n", b'SESSION {"op":"info","x":"\xed\xa0\x80"}\n'],
+)
+def test_invalid_utf8_command_returns_unknown_without_acting(payload):
+    clock = Clock()
+    symbols = pico_symbols(clock)
+    server = object.__new__(symbols["WifiServer"])
+    server.servos = FakeServos()
+    server.leds = symbols["LedDeck"](CHANNELS, server.servos)
+    server.sessions = Sessions(
+        CHANNELS, "id", "Bench", clock.ticks_ms, clock.ticks_diff, lambda _: None
+    )
+    server.running = True
+
+    class InvalidConnection(Connection):
+        def __init__(self):
+            super().__init__()
+            self.data = payload
+            self.closed = False
+
+        def settimeout(self, _timeout):
+            pass
+
+        def recv(self, size):
+            chunk, self.data = self.data[:size], self.data[size:]
+            return chunk
+
+        def close(self):
+            self.closed = True
+
+    assert server._readline(InvalidConnection()) == ""
+
+    accepted = InvalidConnection()
+    server.sock = type("Listener", (), {})()
+    pending = deque([accepted])
+
+    def accept():
+        if pending:
+            return pending.popleft(), ("192.0.2.20", 4321)
+        raise OSError("No connection")
+
+    server.sock.accept = accept
+    server.discovery = SimpleNamespace(poll=lambda: None)
+    server.reconnecting = False
+    server._poll_wifi = lambda: None
+    server.poll()
+    assert accepted.writes == [b"UNKNOWN\n"]
+    assert accepted.closed
+    assert server.servos.actions == []
+
+
 def test_open_without_newline_times_out_and_returns_unknown():
     clock = Clock()
     symbols = pico_symbols(clock)
