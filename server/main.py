@@ -430,7 +430,10 @@ class WifiServer:
             if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
                 return ""
             buffer.extend(chunk[:newline])
-            return bytes(buffer).decode().strip()
+            try:
+                return bytes(buffer).decode("utf-8").strip()
+            except UnicodeError:
+                return ""
         # extend() mutates the entry's buffer in place on MicroPython too.
         buffer.extend(chunk)
         if len(buffer) >= max_length:
