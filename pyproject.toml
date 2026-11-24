@@ -51,13 +51,16 @@ select = ["E4", "E7", "E9", "F", "W", "B", "PIE", "S"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# Kept for MicroPython firmware: B905 because MicroPython's zip() has no strict=;
+# S104 because the Pico must listen on every interface of its single WLAN;
+# S110 because best-effort socket close/error replies must never stop the loop.
 "server/main.py" = ["B905", "S104", "S110"]
 "server/wifi_config.example.py" = ["S105"]
 
 [tool.mypy]
 python_version = "3.13"
 strict = true
-files = ["client/protocol.py", "client/transport.py", "client/cli.py", "bindings/python/kohdalab_shutter.py"]
+files = ["client/protocol.py", "client/transport.py", "client/cli.py", "client/gui.py", "bindings/python/kohdalab_shutter.py"]
 show_error_codes = true
 warn_unused_ignores = true
 
@@ -65,7 +68,9 @@ warn_unused_ignores = true
 branch = true
 relative_files = true
 source = ["client", "server"]
-omit = ["client/gui.py", "server/main.py", "server/settings.py"]
+# settings.py is per-device configuration data with no logic; it is never
+# imported on the host (main.py tests inject a stand-in settings module).
+omit = ["server/settings.py"]
 
 [tool.coverage.report]
 fail_under = 100

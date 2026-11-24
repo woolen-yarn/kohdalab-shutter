@@ -1,5 +1,7 @@
 import sys
 import time
+from collections.abc import Callable, Sequence
+from typing import Protocol, cast
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QFont
@@ -21,23 +23,44 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .protocol import DEFAULT_HOST, DEFAULT_PORT, state_name
+from .protocol import DEFAULT_HOST, DEFAULT_PORT, ChannelState, state_name
 from .transport import ShutterClient, ShutterConnectionError
 
 POLL_MS = 1000
 BADGES = {"OPEN": "badgeOpen", "CLOSE": "badgeClose"}
 
+Snapshot = tuple[dict[int, int], dict[int, ChannelState] | None]
+TaskContext = dict[str, ShutterClient | str]
 
-def send_operation(client, operation, channels):
+
+class OperationClient(Protocol):
+    """The subset of :class:`ShutterClient` that a command batch uses."""
+
+    def open(self, channel: int) -> str: ...
+
+    def close(self, channel: int) -> str: ...
+
+    def toggle(self, channel: int) -> str: ...
+
+    def snapshot(self) -> Snapshot: ...
+
+
+def send_operation(
+    client: OperationClient, operation: str, channels: Sequence[int]
+) -> list[str]:
     """Send ``operation`` to every channel; return all failures together.
 
     A rejected channel (e.g. LOCKED) does not stop the remaining channels.
     A lost connection, after the transport's own retries, stops the batch
     and reports the channels that were never sent.
     """
-    commands = {"open": client.open, "close": client.close, "toggle": client.toggle}
+    commands: dict[str, Callable[[int], str]] = {
+        "open": client.open,
+        "close": client.close,
+        "toggle": client.toggle,
+    }
     command = commands[operation]
-    failures = []
+    failures: list[str] = []
     for index, channel in enumerate(channels):
         try:
             command(channel)
@@ -52,9 +75,12 @@ def send_operation(client, operation, channels):
     return failures
 
 
-def run_operation(client, operation, channels):
+def run_operation(
+    client: OperationClient, operation: str, channels: Sequence[int]
+) -> tuple[Snapshot | None, list[str]]:
     """Send a batch, then read the state even if some channels failed."""
     failures = send_operation(client, operation, channels)
+    snapshot: Snapshot | None
     try:
         snapshot = client.snapshot()
     except Exception as exc:
@@ -70,7 +96,13 @@ class TaskSignals(QObject):
 
 
 class ClientTask(QRunnable):
-    def __init__(self, name, client, callback, context=None):
+    def __init__(
+        self,
+        name: str,
+        client: ShutterClient,
+        callback: Callable[[ShutterClient], object],
+        context: TaskContext | None = None,
+    ) -> None:
         super().__init__()
         self.name = name
         self.client = client
@@ -79,7 +111,7 @@ class ClientTask(QRunnable):
         self.signals = TaskSignals()
 
     @Slot()
-    def run(self):
+    def run(self) -> None:
         try:
             result = self.callback(self.client)
             self.signals.finished.emit(self.name, result, None, self.context)
@@ -88,7 +120,7 @@ class ClientTask(QRunnable):
 
 
 class ChannelCard(QFrame):
-    def __init__(self, channel, parent=None):
+    def __init__(self, channel: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.channel = channel
         self.setObjectName("channelCard")
@@ -106,12 +138,14 @@ class ChannelCard(QFrame):
 
         self.badge = QLabel("UNKNOWN")
         self.badge.setObjectName("badgeUnknown")
-        self.badge.setAlignment(Qt.AlignCenter)
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge.setMinimumWidth(88)
 
         self.angle = QLabel("- deg")
         self.angle.setObjectName("mutedText")
-        self.angle.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.angle.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         self.angle.setMinimumWidth(56)
 
         self.close_button = QPushButton("Close")
@@ -119,7 +153,7 @@ class ChannelCard(QFrame):
         self.toggle_button = QPushButton("Toggle")
         for button in (self.close_button, self.open_button, self.toggle_button):
             button.setMinimumHeight(34)
-            button.setCursor(Qt.PointingHandCursor)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         state_row.addWidget(self.title)
         state_row.addWidget(self.badge)
@@ -135,7 +169,7 @@ class ChannelCard(QFrame):
         layout.addLayout(state_row)
         layout.addLayout(action_row)
 
-    def set_state(self, angle, name):
+    def set_state(self, angle: int | None, name: str) -> None:
         """Show ``name`` from the channel's own calibration (``state_name``)."""
         self.angle.setText(f"{angle} deg" if angle is not None else "- deg")
         self.badge.setText(name)
@@ -143,29 +177,29 @@ class ChannelCard(QFrame):
         self.badge.style().unpolish(self.badge)
         self.badge.style().polish(self.badge)
 
-    def set_error(self):
+    def set_error(self) -> None:
         self.badge.setText("ERROR")
         self.badge.setObjectName("badgeError")
         self.badge.style().unpolish(self.badge)
         self.badge.style().polish(self.badge)
 
-    def set_actions_enabled(self, enabled):
+    def set_actions_enabled(self, enabled: bool) -> None:
         self.close_button.setEnabled(enabled)
         self.open_button.setEnabled(enabled)
         self.toggle_button.setEnabled(enabled)
 
 
 class App(QMainWindow):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Kohda Lab Shutter")
         self.resize(560, 780)
         self.setMinimumSize(420, 600)
 
-        self.client = None
-        self.current_status = {}
-        self.current_state = None
-        self.channel_cards = {}
+        self.client: ShutterClient | None = None
+        self.current_status: dict[int, int] = {}
+        self.current_state: dict[int, ChannelState] | None = None
+        self.channel_cards: dict[int, ChannelCard] = {}
         self.thread_pool = QThreadPool.globalInstance()
         self.connect_inflight = False
         self.refresh_inflight = False
@@ -179,7 +213,7 @@ class App(QMainWindow):
         self._apply_styles()
         self._set_connected(False)
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         self.setStatusBar(QStatusBar(self))
         self.statusBar().showMessage("Disconnected")
 
@@ -243,7 +277,9 @@ class App(QMainWindow):
 
         self.connection_label = QLabel("Disconnected")
         self.connection_label.setObjectName("mutedText")
-        self.connection_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.connection_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         connection_layout.addWidget(self.connection_label, 2, 0, 1, 4)
         connection_layout.setColumnStretch(1, 1)
         root_layout.addWidget(connection_panel)
@@ -267,23 +303,23 @@ class App(QMainWindow):
         summary_layout.addLayout(summary_buttons)
         root_layout.addLayout(summary_layout)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setObjectName("scrollArea")
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setObjectName("scrollArea")
         self.channel_container = QWidget()
         self.channel_layout = QVBoxLayout(self.channel_container)
         self.channel_layout.setContentsMargins(0, 0, 8, 0)
         self.channel_layout.setSpacing(10)
         self.channel_layout.addStretch(1)
-        self.scroll.setWidget(self.channel_container)
-        root_layout.addWidget(self.scroll, 1)
+        self.scroll_area.setWidget(self.channel_container)
+        root_layout.addWidget(self.scroll_area, 1)
 
         self.empty_label = QLabel("Connect to the Pico W server to load channels.")
         self.empty_label.setObjectName("emptyText")
-        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.channel_layout.insertWidget(0, self.empty_label)
 
-    def _apply_styles(self):
+    def _apply_styles(self) -> None:
         self.setStyleSheet(
             """
             QMainWindow {
@@ -429,9 +465,9 @@ class App(QMainWindow):
             """
         )
         font = QFont("Segoe UI", 10)
-        QApplication.instance().setFont(font)
+        cast(QApplication, QApplication.instance()).setFont(font)
 
-    def connect_to_server(self):
+    def connect_to_server(self) -> None:
         if self.connect_inflight:
             return
 
@@ -444,7 +480,7 @@ class App(QMainWindow):
         client = ShutterClient(host, port)
         self._run_task("connect", client, lambda c: c.snapshot(), {"client": client})
 
-    def disconnect_from_server(self):
+    def disconnect_from_server(self) -> None:
         self.client = None
         self.current_status = {}
         self.current_state = None
@@ -461,7 +497,7 @@ class App(QMainWindow):
         self.setWindowTitle("Kohda Lab Shutter")
         self._set_connected(False)
 
-    def refresh_status(self, force=False):
+    def refresh_status(self, force: bool = False) -> None:
         if not self.client or self.refresh_inflight:
             return
         if self.command_inflight and not force:
@@ -470,7 +506,7 @@ class App(QMainWindow):
         self.refresh_inflight = True
         self._run_task("refresh", self.client, lambda c: c.snapshot())
 
-    def run_command(self, operation, channels):
+    def run_command(self, operation: str, channels: Sequence[int]) -> None:
         if not self.client or self.command_inflight or not channels:
             return
 
@@ -485,13 +521,21 @@ class App(QMainWindow):
             {"operation": operation},
         )
 
-    def _run_task(self, name, client, callback, context=None):
+    def _run_task(
+        self,
+        name: str,
+        client: ShutterClient,
+        callback: Callable[[ShutterClient], object],
+        context: TaskContext | None = None,
+    ) -> None:
         task = ClientTask(name, client, callback, context)
         task.signals.finished.connect(self._task_finished)
         self.thread_pool.start(task)
 
     @Slot(str, object, object, object)
-    def _task_finished(self, name, result, error, context):
+    def _task_finished(
+        self, name: str, result: object, error: object, context: object
+    ) -> None:
         if name == "connect":
             self.connect_inflight = False
             if error:
@@ -500,15 +544,12 @@ class App(QMainWindow):
                 self.connection_label.setText("Connection failed")
                 self.statusBar().showMessage("Connection failed")
                 return
-            self.client = context["client"]
-            self.connection_label.setText(
-                f"Connected to {self.client.host}:{self.client.port}"
-            )
+            client = cast(ShutterClient, cast(TaskContext, context)["client"])
+            self.client = client
+            self.connection_label.setText(f"Connected to {client.host}:{client.port}")
             self.statusBar().showMessage("Connected")
-            self.setWindowTitle(
-                f"Kohda Lab Shutter - {self.client.host}:{self.client.port}"
-            )
-            self._show_snapshot(result)
+            self.setWindowTitle(f"Kohda Lab Shutter - {client.host}:{client.port}")
+            self._show_snapshot(cast(Snapshot, result))
             self._set_connected(True)
             self.poll_timer.start()
             return
@@ -518,7 +559,7 @@ class App(QMainWindow):
             if error:
                 self._mark_error(error)
                 return
-            self._show_snapshot(result)
+            self._show_snapshot(cast(Snapshot, result))
             return
 
         if name == "command":
@@ -528,19 +569,19 @@ class App(QMainWindow):
                 self._show_error("Command failed", error)
                 self.statusBar().showMessage("Command failed")
                 return
-            snapshot, failures = result
+            snapshot, failures = cast(tuple[Snapshot | None, list[str]], result)
             if snapshot is not None:
                 self._show_snapshot(snapshot)
             if failures:
                 self._show_error("Command failed", "\n".join(failures))
                 self.statusBar().showMessage("Command failed")
 
-    def _show_snapshot(self, snapshot):
+    def _show_snapshot(self, snapshot: Snapshot) -> None:
         self.current_status, self.current_state = snapshot
         self._sync_channels(self.current_status)
         self._apply_status(self.current_status)
 
-    def _set_connected(self, connected):
+    def _set_connected(self, connected: bool) -> None:
         self.host_input.setEnabled(not connected and not self.connect_inflight)
         self.port_input.setEnabled(not connected and not self.connect_inflight)
         self.connect_button.setEnabled(not connected and not self.connect_inflight)
@@ -548,23 +589,23 @@ class App(QMainWindow):
         self.refresh_action.setEnabled(connected)
         self._set_actions_enabled(connected and not self.command_inflight)
 
-    def _set_actions_enabled(self, enabled):
+    def _set_actions_enabled(self, enabled: bool) -> None:
         self.open_all_button.setEnabled(enabled)
         self.close_all_button.setEnabled(enabled)
         for card in self.channel_cards.values():
             card.set_actions_enabled(enabled)
 
-    def _set_busy_message(self, message):
+    def _set_busy_message(self, message: str) -> None:
         self.connection_label.setText(message)
         self.statusBar().showMessage(message)
 
-    def _clear_channels(self):
+    def _clear_channels(self) -> None:
         for card in self.channel_cards.values():
             self.channel_layout.removeWidget(card)
             card.deleteLater()
         self.channel_cards.clear()
 
-    def _sync_channels(self, status):
+    def _sync_channels(self, status: dict[int, int]) -> None:
         channels = sorted(status)
         if channels == sorted(self.channel_cards):
             return
@@ -586,9 +627,9 @@ class App(QMainWindow):
             self.channel_cards[channel] = card
         self._set_actions_enabled(self.client is not None and not self.command_inflight)
 
-    def _apply_status(self, status):
+    def _apply_status(self, status: dict[int, int]) -> None:
         counts = {"OPEN": 0, "CLOSE": 0, "MOVING": 0, "UNKNOWN": 0}
-        state = self.current_state or {}
+        state: dict[int, ChannelState] = self.current_state or {}
         for channel, card in self.channel_cards.items():
             # Each channel's own calibrated endpoints; firmware without STATE
             # cannot say which angle is open, so it is shown as Unknown.
@@ -608,23 +649,23 @@ class App(QMainWindow):
             )
         self.statusBar().showMessage("Status updated")
 
-    def _mark_error(self, error):
+    def _mark_error(self, error: object) -> None:
         for card in self.channel_cards.values():
             card.set_error()
         self.last_update_label.setText("Last update: failed")
         self.connection_label.setText(f"Communication error: {error}")
         self.statusBar().showMessage("Communication error")
 
-    def _known_channels(self):
+    def _known_channels(self) -> list[int]:
         if self.current_status:
             return sorted(self.current_status)
         return sorted(self.channel_cards)
 
-    def _show_error(self, title, error):
+    def _show_error(self, title: str, error: object) -> None:
         QMessageBox.critical(self, title, str(error))
 
 
-def main():
+def main() -> None:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = App()
@@ -632,5 +673,7 @@ def main():
     sys.exit(app.exec())
 
 
-if __name__ == "__main__":
+if (
+    __name__ == "__main__"
+):  # pragma: no cover - exercised through the console entry point
     main()
