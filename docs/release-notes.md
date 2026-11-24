@@ -1,3 +1,19 @@
+# KohdaLab Shutter 1.0.5
+
+- The operation journal records which channels were accepted, failed, or not attempted when updated Pico firmware reports a partial result. The operation as a whole remains unresolved.
+- Python GUI and firmware entry-point tests now run under the existing coverage gate. CI also publishes an informational Rust coverage report.
+- Windows, macOS and Linux packages are built by CI. Pico protocol changes were tested in simulation. Physical hardware validation was skipped for this release.
+- Windows packages are unsigned. macOS packages are ad hoc signed and not notarized.
+
+## 日本語
+
+- 更新済みPicoが複数CH操作の部分失敗を報告した場合、ジャーナルに受理、失敗、未試行のCHを記録します。操作全体は未解決として記録します。
+- Python GUIとPicoの起動処理を既存のカバレッジ検査に追加しました。CIは参考情報としてRustのカバレッジも出力します。
+- Windows、macOS、LinuxのパッケージをCIでビルドします。Picoの通信変更は模擬環境で検証し、この版では実機検証を省略しました。
+- Windows版は未署名です。macOS版はアドホック署名で未公証です。
+
+---
+
 # KohdaLab Shutter 1.0.4
 
 ## Changes / 変更点

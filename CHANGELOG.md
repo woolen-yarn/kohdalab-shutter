@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5 / Pico Setup 1.2.4
+
+- Report accepted, failed and unattempted channels after a partial Pico operation. / Picoの複数CH操作で部分失敗が起きた場合、受理、失敗、未試行のCHを報告します。
+- Give admitted TCP clients alternating read turns and reject malformed UTF-8 consistently. / 受付済みのTCP接続を順に読み取り、不正なUTF-8には一貫した応答を返します。
+- Expand Python typing and coverage checks and publish an informational Rust coverage report. / Pythonの型・カバレッジ検査を拡張し、参考情報としてRustのカバレッジを出力します。
+
 ## 1.0.4
 
 - While Python owns the GUI, a top **External control** banner shows the owner and the commanded Open/Close state, with the existing **Take control** (hold the last requested state; nothing is sent). It replaces the duplicate Take control in the ··· menu. There is no Stop and no new hardware action. `capabilities.safety` adds `supports_stop: false`, `lease_timeout_seconds`, `on_release` and `on_disconnect` (`hold_last_state`); existing fields are unchanged. / Pythonが操作権を持つ間、上部の「External control」に所有者と指令上の開閉状態を表示し、既存の「Take control」（最後の状態を保持、Picoへは送信しません）を置きます。···メニューの重複ボタンは削除しました。Stopや新しいハードウェア操作はありません。`capabilities.safety`に`supports_stop: false`、`lease_timeout_seconds`、`on_release`・`on_disconnect`（`hold_last_state`）を追加し、既存項目は変えていません。
