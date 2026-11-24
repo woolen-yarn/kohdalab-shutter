@@ -981,10 +981,9 @@ impl App {
                 let total = channels.len();
                 if let Err(error) = client.operate_many(operation, &channels) {
                     return match PartialOperation::from_error(&error) {
-                        Some(partial) => Ok(Reply::PartialOperation(
-                            partial.clone(),
-                            error.to_string(),
-                        )),
+                        Some(partial) => {
+                            Ok(Reply::PartialOperation(partial.clone(), error.to_string()))
+                        }
                         None => Err(error),
                     };
                 }

@@ -42,11 +42,7 @@ impl PartialOperation {
 
     /// Accept only a self-consistent report: every listed channel was
     /// requested, appears once, and something actually failed.
-    fn parse(
-        code: &str,
-        body: &serde_json::Map<String, Value>,
-        requested: &[u8],
-    ) -> Option<Self> {
+    fn parse(code: &str, body: &serde_json::Map<String, Value>, requested: &[u8]) -> Option<Self> {
         let list = |key: &str| -> Option<Vec<u8>> {
             body.get(key)?
                 .as_array()?
@@ -680,7 +676,9 @@ mod tests {
         let rejected = "Pico session rejected request: invalid_request";
         let detail = "; commanded CH [0], failed CH [2], not attempted CH [3]";
         let leased = client.claim(&[0, 2, 3]).unwrap();
-        let error = leased.operate_many(Operation::Close, &[0, 2, 3]).unwrap_err();
+        let error = leased
+            .operate_many(Operation::Close, &[0, 2, 3])
+            .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidInput);
         assert_eq!(
             PartialOperation::from_error(&error),
@@ -694,7 +692,9 @@ mod tests {
         assert_eq!(error.to_string(), format!("{rejected}{detail}"));
 
         for _ in 0..2 {
-            let error = leased.operate_many(Operation::Close, &[0, 2, 3]).unwrap_err();
+            let error = leased
+                .operate_many(Operation::Close, &[0, 2, 3])
+                .unwrap_err();
             assert_eq!(error.kind(), ErrorKind::InvalidInput);
             assert!(PartialOperation::from_error(&error).is_none());
             assert_eq!(error.to_string(), rejected);
