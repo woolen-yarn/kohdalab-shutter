@@ -289,7 +289,17 @@ class Sessions:
         ):
             return self._reply("lease_lost")
         # Validate ownership for the entire action before moving anything.
-        if not callback(action, selected):
+        outcome = callback(action, selected)
+        if isinstance(outcome, dict):
+            # Partial servo failure: keep the legacy error code and add the
+            # per-channel result so older clients still see a failure.
+            return self._reply(
+                "invalid_request",
+                commanded=list(outcome.get("commanded", ())),
+                failed=list(outcome.get("failed", ())),
+                not_attempted=list(outcome.get("not_attempted", ())),
+            )
+        if not outcome:
             return self._reply("invalid_request")
         owner["seen"] = self.ticks_ms()
         return self._reply()

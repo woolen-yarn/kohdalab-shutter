@@ -190,6 +190,67 @@ def test_session_json_preserves_lowercase_token_and_raw_command_is_locked():
     assert servos.actions == [("open", 0)]
 
 
+@pytest.mark.parametrize(
+    ("failing", "actions", "outcome", "reflected"),
+    [
+        (
+            1,
+            [("close", 0), ("close", 1)],
+            {"commanded": [0], "failed": [1], "not_attempted": []},
+            1,
+        ),
+        (
+            0,
+            [("close", 0)],
+            {"commanded": [], "failed": [0], "not_attempted": [1]},
+            0,
+        ),
+    ],
+)
+def test_partial_session_operate_reports_each_channel(
+    failing, actions, outcome, reflected
+):
+    clock = Clock()
+    symbols = pico_symbols(clock)
+    manager = Sessions(
+        CHANNELS, "id", "Bench", clock.ticks_ms, clock.ticks_diff, lambda _: None
+    )
+
+    class PartialServos(FakeServos):
+        def close(self, channel):
+            super().close(channel)
+            return channel != failing
+
+    class Leds:
+        reflections = 0
+
+        def reflect(self):
+            self.reflections += 1
+
+        def set_claimed(self, _channels):
+            pass
+
+    server = object.__new__(symbols["WifiServer"])
+    server.sessions, server.servos, server.leds = manager, PartialServos(), Leds()
+    connection = Connection()
+    assert manager.claim(TOKEN, [0, 1])["ok"]
+    server._handle(
+        "SESSION "
+        + json.dumps(
+            {"op": "operate", "token": TOKEN, "action": "close", "channels": [1, 0]}
+        ),
+        connection,
+    )
+    assert json.loads(connection.writes[-1]) == {
+        "ok": False,
+        "error": "invalid_request",
+        **outcome,
+    }
+    assert server.servos.actions == actions
+    assert server.leds.reflections == reflected
+    assert manager.locked_channels() == {0, 1}
+
+
 def test_double_blink_and_physical_buttons_work_without_releasing_claim():
     clock = Clock()
     symbols = pico_symbols(clock)

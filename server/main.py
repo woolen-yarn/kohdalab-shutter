@@ -445,7 +445,11 @@ class WifiServer:
             conn.write(b"ERR\n")
 
     def _session_operate(self, action, channels):
-        for channel in channels:
+        # Independent servos cannot be commanded atomically. Stop at the first
+        # rejected channel (as before) and report exactly which channels were
+        # already commanded so the client can record mixed physical states.
+        commanded = []
+        for index, channel in enumerate(channels):
             if action == "open":
                 ok = self.servos.open(channel)
             elif action == "close":
@@ -453,7 +457,14 @@ class WifiServer:
             else:
                 ok = self.servos.toggle(channel)
             if not ok:
-                return False
+                if commanded:
+                    self.leds.reflect()
+                return {
+                    "commanded": commanded,
+                    "failed": [channel],
+                    "not_attempted": list(channels[index + 1 :]),
+                }
+            commanded.append(channel)
         self.leds.reflect()
         return True
 

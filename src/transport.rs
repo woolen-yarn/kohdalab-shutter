@@ -10,6 +10,89 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Per-channel result of a multi-channel `operate` that the Pico rejected
+/// after commanding some channels. Servos are independent, so a partial
+/// failure can leave channels in mixed physical states; `commanded` lists the
+/// channels the Pico accepted before stopping. Older firmware omits these
+/// fields and yields a plain session error instead.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartialOperation {
+    pub code: String,
+    pub commanded: Vec<u8>,
+    pub failed: Vec<u8>,
+    pub not_attempted: Vec<u8>,
+}
+
+impl std::fmt::Display for PartialOperation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Pico session rejected request: {}", self.code)?;
+        write!(formatter, "; commanded CH {:?}", self.commanded)?;
+        write!(formatter, ", failed CH {:?}", self.failed)?;
+        write!(formatter, ", not attempted CH {:?}", self.not_attempted)
+    }
+}
+
+impl std::error::Error for PartialOperation {}
+
+impl PartialOperation {
+    /// Return the partial `operate` outcome carried by a transport error.
+    pub fn from_error(error: &io::Error) -> Option<&Self> {
+        error.get_ref()?.downcast_ref::<Self>()
+    }
+
+    /// Accept only a self-consistent report: every listed channel was
+    /// requested, appears once, and something actually failed.
+    fn parse(
+        code: &str,
+        body: &serde_json::Map<String, Value>,
+        requested: &[u8],
+    ) -> Option<Self> {
+        let list = |key: &str| -> Option<Vec<u8>> {
+            body.get(key)?
+                .as_array()?
+                .iter()
+                .map(|value| value.as_u64().and_then(|v| u8::try_from(v).ok()))
+                .collect()
+        };
+        let partial = Self {
+            code: code.to_owned(),
+            commanded: list("commanded")?,
+            failed: list("failed")?,
+            not_attempted: list("not_attempted")?,
+        };
+        let mut seen: Vec<u8> = partial
+            .commanded
+            .iter()
+            .chain(&partial.failed)
+            .chain(&partial.not_attempted)
+            .copied()
+            .collect();
+        let total = seen.len();
+        seen.sort_unstable();
+        seen.dedup();
+        let consistent = !partial.failed.is_empty()
+            && seen.len() == total
+            && seen.iter().all(|channel| requested.contains(channel));
+        consistent.then_some(partial)
+    }
+}
+
+/// A session reply with `ok: false`; keeps the reply body so callers can
+/// read additive fields without changing the error text or kind.
+#[derive(Debug)]
+struct SessionRejection {
+    code: String,
+    body: serde_json::Map<String, Value>,
+}
+
+impl std::fmt::Display for SessionRejection {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Pico session rejected request: {}", self.code)
+    }
+}
+
+impl std::error::Error for SessionRejection {}
+
 #[derive(Clone)]
 pub struct Client {
     pub host: String,
@@ -167,7 +250,11 @@ impl Client {
         Ok(())
     }
 
-    /// Perform one all-or-nothing action over channels owned by this session.
+    /// Perform one action over channels owned by this session. Ownership is
+    /// validated for every channel before anything moves, but independent
+    /// servos are not atomic: when newer firmware reports a partial failure,
+    /// the error carries a [`PartialOperation`] (see
+    /// [`PartialOperation::from_error`]).
     pub fn operate_many(&self, operation: Operation, channels: &[u8]) -> io::Result<()> {
         validate_channels(channels)?;
         let action = match operation {
@@ -176,13 +263,27 @@ impl Client {
             Operation::Toggle => "toggle",
         };
         // Toggle is intentionally never retried: a lost reply leaves the
-        // physical outcome ambiguous. Open and Close are idempotent.
-        self.session_with_token(
+        // physical outcome ambiguous. Open and Close are idempotent. A Pico
+        // rejection is a complete reply, so it is never retried either.
+        match self.session_with_token(
             "operate",
             json!({"action": action, "channels": channels}),
             operation != Operation::Toggle,
-        )?;
-        Ok(())
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                let partial = error
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<SessionRejection>())
+                    .and_then(|rejection| {
+                        PartialOperation::parse(&rejection.code, &rejection.body, channels)
+                    });
+                match partial {
+                    Some(partial) => Err(Error::new(error.kind(), partial)),
+                    None => Err(error),
+                }
+            }
+        }
     }
 
     fn session_with_token(&self, operation: &str, value: Value, retry: bool) -> io::Result<Value> {
@@ -224,7 +325,10 @@ impl Client {
                 };
                 Err(Error::new(
                     kind,
-                    format!("Pico session rejected request: {code}"),
+                    SessionRejection {
+                        code: code.to_owned(),
+                        body: object.clone(),
+                    },
                 ))
             }
             None => Err(invalid("Invalid session response from Pico W")),
@@ -561,6 +665,42 @@ mod tests {
                 .set_config(Some("No lease"), &Default::default())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn operate_many_reports_partial_outcome_and_keeps_legacy_errors() {
+        let (client, worker) = server(vec![
+            b"{\"ok\":true}\n",
+            b"{\"ok\":false,\"error\":\"invalid_request\",\"commanded\":[0],\"failed\":[2],\"not_attempted\":[3]}\n",
+            // Older firmware: no per-channel fields.
+            b"{\"ok\":false,\"error\":\"invalid_request\"}\n",
+            // Inconsistent report (unrequested CH 9) is not trusted.
+            b"{\"ok\":false,\"error\":\"invalid_request\",\"commanded\":[9],\"failed\":[0],\"not_attempted\":[]}\n",
+        ]);
+        let rejected = "Pico session rejected request: invalid_request";
+        let detail = "; commanded CH [0], failed CH [2], not attempted CH [3]";
+        let leased = client.claim(&[0, 2, 3]).unwrap();
+        let error = leased.operate_many(Operation::Close, &[0, 2, 3]).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+        assert_eq!(
+            PartialOperation::from_error(&error),
+            Some(&PartialOperation {
+                code: "invalid_request".into(),
+                commanded: vec![0],
+                failed: vec![2],
+                not_attempted: vec![3],
+            })
+        );
+        assert_eq!(error.to_string(), format!("{rejected}{detail}"));
+
+        for _ in 0..2 {
+            let error = leased.operate_many(Operation::Close, &[0, 2, 3]).unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::InvalidInput);
+            assert!(PartialOperation::from_error(&error).is_none());
+            assert_eq!(error.to_string(), rejected);
+        }
+        // A complete rejection is a reply, not a lost connection: no resend.
+        assert_eq!(worker.join().unwrap().len(), 4);
     }
 
     #[test]
