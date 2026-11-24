@@ -15,15 +15,15 @@ KohdaLab Shutterは、実験室のPCからサーボ式の光シャッターを�
 
 ## Downloads / ダウンロード
 
-[Stable release / 安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.4) · [v1.0.4 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.4)
+[Stable release / 安定版](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.5) · [v1.0.5 release notes / リリースノート](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/v1.0.5)
 
 | OS / 対応環境 | Installer / インストーラー | Portable / ポータブル |
 | --- | --- | --- |
-| Windows 10/11 x64 | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-windows-x64.zip) |
-| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-macos-universal.zip) |
-| Ubuntu 24.04 x64 | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter_1.0.4_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-linux-x86_64.tar.gz) |
+| Windows 10/11 x64 | [Setup (.exe)](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter-1.0.5-windows-x64-Setup.exe) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter-1.0.5-windows-x64.zip) |
+| macOS 13+ (Apple Silicon / Intel) | [DMG](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter-1.0.5-macos-universal.dmg) | [ZIP](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter-1.0.5-macos-universal.zip) |
+| Ubuntu 24.04 x64 | [DEB](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter_1.0.5_amd64.deb) | [tar.gz](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter-1.0.5-linux-x86_64.tar.gz) |
 
-[SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.4/kohdalab-shutter-1.0.4-source.zip)
+[SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/SHA256SUMS.txt) · [Linux SHA-256](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/SHA256SUMS-linux.txt) · [Source ZIP / ソース](https://github.com/woolen-yarn/kohdalab-shutter/releases/download/v1.0.5/kohdalab-shutter-1.0.5-source.zip)
 
 Use Setup on Windows, drag the app from the DMG to Applications on macOS, or install the DEB on Ubuntu. For portable use, extract the archive before launching. / Windows は Setup、macOS は DMG からアプリを Applications へコピー、Ubuntu は DEB を使います。ポータブル版は展開して起動します。
 
@@ -62,7 +62,7 @@ The MicroPython firmware in [`server/`](server/) runs on the Pico W or Pico 2 W.
 
 [`server/`](server/) の MicroPython ファームウェアは Pico W または Pico 2 W で動作し、PCA9685、物理ボタン、チャンネルの確保を管理します。PC アプリは研究室のネットワーク経由で接続します。
 
-Use Pico Setup 1.2.3 for the PCA9685 recovery firmware. The compiled USB tool is available for Windows and macOS; the source ZIP also includes the USB uploader. / PCA9685 の復電対策には Pico Setup 1.2.3 のファームウェアを使います。Windows・macOS 向けの USB ツールを配布しており、ソース ZIP にも USB 転送ツールが含まれます。 [Pico Setup 1.2.3](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.3) · [Pico setup guide / Pico の準備と更新](docs/pico-upload.md)
+Use Pico Setup 1.2.4 for the current Pico firmware. The compiled USB tool is available for Windows and macOS; the source ZIP also includes the USB uploader. / Pico の最新ファームウェアは Pico Setup 1.2.4 に含まれています。Windows・macOS 向けの USB ツールを配布しており、ソース ZIP にも USB 転送ツールが含まれます。 [Pico Setup 1.2.4](https://github.com/woolen-yarn/kohdalab-shutter/releases/tag/pico-tools-v1.2.4) · [Pico setup guide / Pico の準備と更新](docs/pico-upload.md)
 
 ![Simulated Shutter control window with named channels](docs/images/kohdalab-shutter.png)
 
