@@ -86,6 +86,30 @@ def test_operate_requires_every_selected_channel_and_only_then_calls_callback():
     assert calls == [("open", (0,))]
 
 
+def test_operate_reports_partial_servo_outcome_without_renewing_lease():
+    manager, clock, _saved = sessions()
+    assert manager.claim(ONE, [0, 1, 2])["ok"]
+    clock.now = 100
+
+    def partial(_action, channels):
+        assert channels == (0, 1, 2)
+        return {"commanded": [0], "failed": [1], "not_attempted": [2]}
+
+    assert manager.request(
+        {"op": "operate", "token": ONE, "action": "close", "channels": [2, 0, 1]},
+        partial,
+    ) == {
+        "ok": False,
+        "error": "invalid_request",
+        "commanded": [0],
+        "failed": [1],
+        "not_attempted": [2],
+    }
+    # A failed operate keeps the previous lease timestamp, as before.
+    assert manager.owners[ONE]["seen"] == 0
+    assert manager.locked_channels() == {0, 1, 2}
+
+
 def test_label_only_changes_when_free_and_is_persisted():
     manager, _clock, saved = sessions()
     assert manager.request({"op": "set_label", "label": "Line 2"}) == {

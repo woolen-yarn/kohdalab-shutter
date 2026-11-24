@@ -13,7 +13,7 @@ use kohdalab_shutter::{
     protocol::{Operation, Snapshot, Status},
     remote,
     session::{ChannelInfo, ControllerInfo},
-    transport::Client,
+    transport::{Client, PartialOperation},
 };
 use serde_json::{Value, json};
 use std::{
@@ -108,6 +108,10 @@ enum Reply {
     LinkInterrupted(String),
     Config(Result<ControllerInfo, String>),
     Accepted(String),
+    /// The Pico rejected a multi-channel operation after commanding some
+    /// channels; handled like any other operation error, but journaled with
+    /// the per-channel outcome.
+    PartialOperation(PartialOperation, String),
 }
 #[derive(Clone)]
 struct PendingOperation {
@@ -975,7 +979,14 @@ impl App {
             self.pending_operation = Some(pending);
             self.task(move || {
                 let total = channels.len();
-                client.operate_many(operation, &channels)?;
+                if let Err(error) = client.operate_many(operation, &channels) {
+                    return match PartialOperation::from_error(&error) {
+                        Some(partial) => {
+                            Ok(Reply::PartialOperation(partial.clone(), error.to_string()))
+                        }
+                        None => Err(error),
+                    };
+                }
                 Ok(Reply::Accepted(format!(
                     "{operation:?}: {total} channel(s) accepted"
                 )))
@@ -1002,7 +1013,10 @@ impl App {
         }
         self.pending = None;
         self.refreshing = false;
-        let api_error = result.as_ref().err().cloned();
+        let api_error = match &result {
+            Err(error) | Ok(Reply::PartialOperation(_, error)) => Some(error.clone()),
+            Ok(_) => None,
+        };
         match result {
             Ok(Reply::Devices(devices, info)) => {
                 self.device_info = info;
@@ -1117,6 +1131,29 @@ impl App {
                     );
                 }
                 self.next_refresh = Instant::now();
+            }
+            Ok(Reply::PartialOperation(partial, error)) => {
+                // Keep the documented `unresolved` outcome (the selection is
+                // in mixed physical states) and add the per-channel result.
+                if let Some(pending) = self.pending_operation.take() {
+                    self.journal_event(
+                        "operation_outcome",
+                        json!({
+                            "operation_id": pending.id,
+                            "requested_action": format!("{:?}", pending.operation).to_lowercase(),
+                            "requested_channel_ids": pending.channels,
+                            "outcome": "unresolved",
+                            "error": error,
+                            "channel_outcomes": {
+                                "commanded": partial.commanded,
+                                "failed": partial.failed,
+                                "not_attempted": partial.not_attempted
+                            },
+                            "optical_verification": "not_available_no_optical_sensor"
+                        }),
+                    );
+                }
+                self.drop_connection(error);
             }
             Err(error) => self.drop_connection(error),
         }
@@ -3597,6 +3634,48 @@ mod tests {
         assert_eq!(app.demo_status[&1], 0);
         assert!(!app.journal_error.is_empty());
         assert_eq!(app.snapshot_json()["journal_incomplete"], true);
+    }
+
+    #[test]
+    fn partial_operation_is_journaled_per_channel_and_disconnects() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = App::demo();
+        app.journal = Some(OperationJournal::open(directory.path()).unwrap());
+        let path = app.journal.as_ref().unwrap().path.clone();
+        app.pending_operation = Some(PendingOperation {
+            id: "partial-close".into(),
+            operation: Operation::Close,
+            channels: vec![0, 1, 2],
+        });
+        let partial = PartialOperation {
+            code: "invalid_request".into(),
+            commanded: vec![0],
+            failed: vec![1],
+            not_attempted: vec![2],
+        };
+        let message = partial.to_string();
+        let reply = Reply::PartialOperation(partial, message.clone());
+        deliver(&mut app, Ok(reply));
+        assert!(app.pending_operation.is_none());
+        assert!(app.error);
+        assert_eq!(app.message, message);
+        app.finish_journal_with_timeout(Duration::from_secs(1));
+
+        let outcomes: Vec<Value> = std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|entry| entry["event"] == "operation_outcome")
+            .collect();
+        assert_eq!(outcomes.len(), 1);
+        let detail = &outcomes[0]["detail"];
+        assert_eq!(detail["operation_id"], "partial-close");
+        assert_eq!(detail["outcome"], "unresolved");
+        assert_eq!(detail["requested_channel_ids"], json!([0, 1, 2]));
+        assert_eq!(
+            detail["channel_outcomes"],
+            json!({"commanded": [0], "failed": [1], "not_attempted": [2]})
+        );
     }
 
     #[test]

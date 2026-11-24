@@ -617,7 +617,24 @@ def test_session_requests_reply_with_json_and_operate_owned_channels():
     assert servos.actions == [("open", 0), ("close", 0), ("toggle", 0)]
     servos.ok = False
     body = {"op": "operate", "token": TOKEN, "action": "open", "channels": [0]}
-    assert session(body) == {"ok": False, "error": "invalid_request"}
+    assert session(body) == {
+        "ok": False,
+        "error": "invalid_request",
+        "commanded": [],
+        "failed": [0],
+        "not_attempted": [],
+    }
+
+    assert session({"op": "release", "token": TOKEN}) == {"ok": True}
+    assert session({"op": "claim", "token": TOKEN, "channels": [0, 1]})["ok"]
+    servos.open = lambda channel: channel == 0
+    assert session(dict(body, channels=[0, 1])) == {
+        "ok": False,
+        "error": "invalid_request",
+        "commanded": [0],
+        "failed": [1],
+        "not_attempted": [],
+    }
 
 
 @pytest.mark.parametrize(
