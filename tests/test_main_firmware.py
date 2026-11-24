@@ -528,13 +528,22 @@ def test_poll_serves_at_most_eight_connections_per_pass():
 
 def test_poll_replies_error_and_survives_failing_client_sockets(capsys):
     firmware = Firmware(auto_start=True)
-    invalid = Connection(firmware, b"\xff\n")
-    broken = Connection(firmware, b"\xff\n", fail={"write", "close"})
+    invalid = Connection(firmware, RuntimeError("recv"))
+    broken = Connection(firmware, RuntimeError("recv"), fail={"write", "close"})
     firmware.listeners[0].connections.extend([invalid, broken])
     firmware.poll(40)
     assert invalid.writes == [b"ERROR\n"] and invalid.closed
     assert broken.writes == [] and broken.closed
     assert capsys.readouterr().out.count("Server error:") == 2
+
+
+def test_invalid_utf8_is_rejected_by_firmware():
+    firmware = Firmware(auto_start=True)
+    connection = Connection(firmware, b"\xff\n")
+    firmware.listeners[0].connections.append(connection)
+    firmware.poll(40)
+    assert connection.writes == [b"UNKNOWN\n"] and connection.closed
+    assert firmware.servos.actions == []
 
 
 def test_slow_client_keeps_local_controls_serviced():
