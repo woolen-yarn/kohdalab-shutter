@@ -319,64 +319,137 @@ class WifiServer:
 
         self.discovery.poll()
         self.leds.set_claimed(self.sessions.locked_channels())
+        self._serve(service_local)
 
-        # Keep the cooperative servo/LED loop responsive even when several
-        # desktop clients poll the controller at once.
-        for _ in range(8):
-            try:
-                conn, _addr = self.sock.accept()
-            except OSError:
-                break
+    # Connections are read concurrently, so an idle or slow peer only holds
+    # its own slot. Each pending read keeps its COMMAND_READ_TIMEOUT_MS
+    # deadline; new peers are accepted only during the first
+    # COMMAND_READ_TIMEOUT_MS of a pass, bounding one poll() to about
+    # 2 * COMMAND_READ_TIMEOUT_MS. MAX_PENDING bounds buffer memory to
+    # MAX_PENDING * 8192 bytes. READ_SLICE_S is the per-recv wait while
+    # several reads are pending, keeping one round near 20 ms.
+    MAX_ACCEPTS = 8
+    MAX_PENDING = 4
+    READ_SLICE_S = 0.005
 
-            try:
-                command = self._readline(conn, service_local=service_local)
-                if not self.running:
-                    break
-                self._handle(command, conn)
-            except Exception as exc:
-                print("Server error:", exc)
+    def _serve(self, service_local=None, max_length=8192):
+        started = last_service = time.ticks_ms()
+        pending = []
+        accepted = 0
+        try:
+            while True:
+                while accepted < self.MAX_ACCEPTS and len(pending) < self.MAX_PENDING:
+                    now = time.ticks_ms()
+                    if time.ticks_diff(now, started) >= COMMAND_READ_TIMEOUT_MS:
+                        break
+                    try:
+                        conn, _addr = self.sock.accept()
+                    except OSError:
+                        break
+                    accepted += 1
+                    try:
+                        conn.settimeout(self.READ_SLICE_S)
+                    except Exception as exc:
+                        self._fail(conn, exc)
+                        continue
+                    pending.append([conn, bytearray(), time.ticks_ms()])
+                if not pending:
+                    return
                 try:
-                    conn.write(b"ERROR\n")
-                except Exception:
-                    pass
-            finally:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+                    last_service = self._service(last_service, service_local)
+                except Exception as exc:
+                    while pending:
+                        self._fail(pending.pop()[0], exc)
+                    return
+                if service_local is not None and not self.running:
+                    # Stopped locally: drop pending requests unanswered.
+                    return
+                for entry in list(pending):
+                    conn = entry[0]
+                    try:
+                        command = self._read_some(entry, max_length)
+                    except Exception as exc:
+                        pending.remove(entry)
+                        self._fail(conn, exc)
+                        continue
+                    if command is None:
+                        continue
+                    pending.remove(entry)
+                    try:
+                        # Keep the existing response write timeout. Only reads
+                        # use the shorter per-connection scheduling slice.
+                        conn.settimeout(0.02)
+                        self._handle(command, conn)
+                    except Exception as exc:
+                        self._fail(conn, exc)
+                        continue
+                    self._close(conn)
+        finally:
+            for entry in pending:
+                self._close(entry[0])
+
+    def _fail(self, conn, exc):
+        print("Server error:", exc)
+        try:
+            conn.write(b"ERROR\n")
+        except Exception:
+            pass
+        self._close(conn)
+
+    @staticmethod
+    def _close(conn):
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    def _service(self, last_service, service_local):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, last_service) < 20:
+            return last_service
+        if service_local is None:
+            self.servos.tick()
+            self.leds.tick()
+        else:
+            service_local()
+        return now
+
+    def _read_some(self, entry, max_length):
+        """Advance one read: a command, "" to reject, or None if incomplete."""
+        conn, buffer, started = entry
+        if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
+            return ""
+        try:
+            chunk = conn.recv(min(256, max_length - len(buffer)))
+        except OSError:
+            return None
+        if not chunk:
+            return ""
+        newline = chunk.find(b"\n")
+        if newline >= 0:
+            if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
+                return ""
+            buffer.extend(chunk[:newline])
+            return bytes(buffer).decode().strip()
+        # extend() mutates the entry's buffer in place on MicroPython too.
+        buffer.extend(chunk)
+        if len(buffer) >= max_length:
+            # Commands are line framed. Never operate on a truncated request.
+            return ""
+        return None
 
     def _readline(self, conn, max_length=8192, service_local=None):
+        """Blocking read of one connection with the same deadline and framing."""
         conn.settimeout(0.02)
-        started = last_service = time.ticks_ms()
-        buffer = bytearray()
-        while len(buffer) < max_length:
-            now = time.ticks_ms()
-            if time.ticks_diff(now, started) >= COMMAND_READ_TIMEOUT_MS:
+        entry = [conn, bytearray(), time.ticks_ms()]
+        last_service = entry[2]
+        while True:
+            last_service = self._service(last_service, service_local)
+            if service_local is not None and not self.running:
                 return ""
-            if time.ticks_diff(now, last_service) >= 20:
-                last_service = now
-                if service_local is None:
-                    self.servos.tick()
-                    self.leds.tick()
-                else:
-                    service_local()
-                    if not self.running:
-                        return ""
-            try:
-                chunk = conn.recv(min(256, max_length - len(buffer)))
-            except OSError:
-                continue
-            if not chunk:
-                return ""
-            newline = chunk.find(b"\n")
-            if newline >= 0:
-                if time.ticks_diff(time.ticks_ms(), started) >= COMMAND_READ_TIMEOUT_MS:
-                    return ""
-                buffer += chunk[:newline]
-                return bytes(buffer).decode().strip()
-            buffer += chunk
-        # Commands are line framed. Never operate on a truncated request.
-        return ""
+            command = self._read_some(entry, max_length)
+            if command is not None:
+                return command
 
     def _configure_ip(self):
         if USE_STATIC_IP:

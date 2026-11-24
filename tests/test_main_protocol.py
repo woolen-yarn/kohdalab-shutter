@@ -648,6 +648,85 @@ def test_incomplete_continuous_request_hits_deadline_without_acting():
     assert clock.now >= 1000
 
 
+class TimedConnection:
+    """A peer whose blocking recv waits its full timeout on the fake clock."""
+
+    def __init__(self, clock, data=b"", trickle=False):
+        self.clock = clock
+        self.data = data
+        self.trickle = trickle
+        self.timeout = None
+        self.writes = []
+        self.closed_at = None
+
+    def settimeout(self, value):
+        self.timeout = value
+
+    def recv(self, size):
+        if self.data:
+            chunk, self.data = self.data[:size], self.data[size:]
+            return chunk
+        self.clock.now += round(self.timeout * 1000)
+        if self.trickle:
+            return b"x"
+        raise OSError("timed out")
+
+    def write(self, value):
+        self.writes.append((self.clock.now, value))
+
+    def close(self):
+        self.closed_at = self.clock.now
+
+
+@pytest.mark.parametrize("idle_peers", [1, 2])
+def test_idle_and_trickling_peers_do_not_starve_a_well_behaved_peer(idle_peers):
+    clock = Clock()
+    symbols = pico_symbols(clock)
+    server = object.__new__(symbols["WifiServer"])
+    server.servos = FakeServos()
+    server.leds = symbols["LedDeck"](CHANNELS, server.servos)
+    server.sessions = Sessions(
+        CHANNELS, "id", "Bench", clock.ticks_ms, clock.ticks_diff, lambda _: None
+    )
+    server.running, server.reconnecting = True, False
+    server.discovery = SimpleNamespace(poll=lambda: None)
+    server._poll_wifi = lambda: None
+    stalled = [TimedConnection(clock) for _ in range(idle_peers)]
+    stalled.append(TimedConnection(clock, trickle=True))
+    first = TimedConnection(clock, b"STATUS\n")
+    late = TimedConnection(clock, b"CLOSE 1\n")
+    listener = ListeningSocket()
+    listener.connections.extend([*stalled, first])
+    accept = listener.accept
+
+    def accept_with_late_arrival():
+        # A well-behaved peer connects while the others are still stalled.
+        if clock.now >= 300 and late.timeout is None and not listener.connections:
+            listener.connections.append(late)
+        return accept()
+
+    listener.accept = accept_with_late_arrival
+    server.sock = listener
+    # One round reads every pending peer once, each waiting at most this long.
+    round_ms = server.MAX_PENDING * round(server.READ_SLICE_S * 1000)
+
+    server.poll()
+
+    assert first.writes == [(first.writes[0][0], b"STATUS\n")]
+    assert first.writes[0][0] <= round_ms
+    assert late.writes == [(late.writes[0][0], b"OK\n")]
+    assert late.writes[0][0] - 300 <= 2 * round_ms
+    assert server.servos.actions == [("close", 1)]
+    for peer in stalled:
+        assert peer.writes == [(peer.writes[0][0], b"UNKNOWN\n")]
+        assert 1000 <= peer.writes[0][0] <= 1000 + round_ms
+        assert peer.closed_at is not None
+    assert first.closed_at is not None and late.closed_at is not None
+    # The pass is bounded by one read deadline, not one per stalled peer.
+    assert clock.now <= 1000 + round_ms
+    assert server.servos.ticks > 0
+
+
 def test_complete_maximum_unicode_label_patch_exceeds_old_limit_but_is_accepted():
     clock = Clock()
     symbols = pico_symbols(clock)
