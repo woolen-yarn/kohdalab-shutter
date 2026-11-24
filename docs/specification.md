@@ -210,7 +210,11 @@ stream `write` to avoid partial TCP replies.
 
 `operate` success is `{"ok":true}`. Independent servos are not atomic: channels are commanded in ascending CH order and the Pico stops at the first channel the servo board rejects. Ownership failures (`lease_lost`, `invalid_request` for bad input) still move nothing. When a servo rejection happens, current firmware replies with the legacy error code plus additive per-channel lists, for example `{"ok":false,"error":"invalid_request","commanded":[0],"failed":[2],"not_attempted":[3]}`. `commanded` channels were accepted and may be moving; `failed` holds the rejected channel; `not_attempted` channels were not commanded. A partial failure does not renew the lease. Older firmware replies `{"ok":false,"error":"invalid_request"}` only, and clients must treat the whole selection as unresolved. The desktop GUI journals both cases as `outcome: "unresolved"`; when the lists are present it adds them as `channel_outcomes`. / `operate` は CH 番号の昇順に指令し、サーボ側で拒否された最初の CH で止まります。現行ファームウェアは従来のエラーコードに `commanded`（指令済み）・`failed`（拒否）・`not_attempted`（未指令）を追加して返します。旧ファームウェアではこれらの項目がなく、選択全体を未確定として扱います。
 
-Human labels are stored atomically in `device_config.json`; calibration/Wi-Fi remain separate. The loop bounds accepted connections and read deadlines so stalled clients cannot indefinitely block motion. Double-flash LEDs use 100 ms on, 100 ms off, 100 ms on, 900 ms off per connected CH.
+Human labels are stored atomically in `device_config.json`. Calibration and Wi-Fi settings are separate.
+
+The cooperative loop admits up to four concurrent reads, each with a 1000 ms deadline. Each receive waits up to 5 ms, so successive reads for an admitted connection normally start within one read round of about 20 ms, plus command handling and local servicing. An idle round is paced with `time.sleep_ms` if reads return early. Replies retain the 20 ms write timeout. Commands remain newline-framed, one per connection, with an 8192-byte limit.
+
+The listener accepts at most eight connections in the first 1000 ms of a pass. When all four slots are occupied, later connections wait in the TCP backlog until slots free and acceptance resumes. Network Close commands have the same admission delay. Local button, servo and LED servicing continues during pending reads. Double-flash LEDs use 100 ms on, 100 ms off, 100 ms on, and 900 ms off per connected CH.
 
 ## Shared names and desktop persistence
 
