@@ -35,6 +35,10 @@ class FakeTime:
     def ticks_diff(self, now, then):
         return self.clock.ticks_diff(now, then)
 
+    def sleep_ms(self, milliseconds):
+        # The firmware paces idle reads with sleep_ms; time passes only here.
+        self.clock.now += milliseconds
+
 
 class FakePin:
     OUT = 1

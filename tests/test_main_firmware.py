@@ -216,6 +216,8 @@ class Connection:
         self.closed = False
 
     def settimeout(self, timeout):
+        if "settimeout" in self.fail:
+            raise RuntimeError("settimeout")
         self.timeouts.append(timeout)
 
     def recv(self, size):
@@ -253,6 +255,7 @@ class Firmware:
         static_ip=False,
     ):
         self.now = 0
+        self.sleeps = []
         self.wifi = Wifi(self)
         self.socket_faults = set()
         self.listeners = []
@@ -315,6 +318,7 @@ class Firmware:
                 ticks_ms=self.ticks_ms,
                 ticks_diff=self.ticks_diff,
                 sleep=self.sleep,
+                sleep_ms=self.sleep_ms,
             ),
             "ujson": ujson_module if ujson else None,
             "wifi_config": wifi_module if wifi_config else None,
@@ -350,6 +354,11 @@ class Firmware:
     def sleep(self, _seconds):
         self.now += 20
         raise StopFirmware
+
+    def sleep_ms(self, milliseconds):
+        # Pacing inside a poll pass: advances the fake clock, never exits.
+        self.sleeps.append(milliseconds)
+        self.now += milliseconds
 
     def poll(self, moment):
         self.now = moment
@@ -522,8 +531,45 @@ def test_poll_serves_at_most_eight_connections_per_pass():
     listener.connections.extend(connections)
     firmware.poll(40)
     assert [conn.writes for conn in connections[:8]] == [[b"CH0=90,CH1=0\n"]] * 8
-    assert all(conn.closed and conn.timeouts == [0.02] for conn in connections[:8])
+    # Reads use the short scheduling slice; the reply keeps its 0.02 s timeout.
+    slices = [firmware.server.READ_SLICE_S, 0.02]
+    assert all(conn.closed and conn.timeouts == slices for conn in connections[:8])
     assert list(listener.connections) == [connections[8]]
+    assert firmware.sleeps == []  # every round made progress
+
+
+def test_reads_that_fail_at_once_are_paced_instead_of_spinning():
+    # recv may raise EAGAIN immediately (a fractional timeout rounded down);
+    # each idle round then sleeps out the slice instead of busy-polling.
+    firmware = Firmware(auto_start=True)
+    idle = Connection(firmware)
+    firmware.listeners[0].connections.append(idle)
+    ticks = firmware.servos.ticks
+    firmware.poll(40)
+    assert idle.writes == [b"UNKNOWN\n"] and idle.closed
+    assert firmware.now == 40 + 1000
+    slice_ms = firmware.server.READ_SLICE_MS
+    assert firmware.sleeps == [slice_ms] * (1000 // slice_ms)
+    assert firmware.servos.ticks - ticks >= 1000 // 20
+    assert firmware.servos.actions == []
+
+
+def test_full_capacity_keeps_a_new_peer_in_the_backlog_until_the_next_pass():
+    firmware = Firmware(auto_start=True)
+    server, listener = firmware.server, firmware.listeners[0]
+    stalled = [Connection(firmware) for _ in range(server.MAX_PENDING)]
+    newcomer = Connection(firmware, b"CLOSE 1\n")
+    listener.connections.extend([*stalled, newcomer])
+    firmware.poll(40)
+    # Every slot was held for its full read deadline, after the accept window.
+    assert all(conn.writes == [b"UNKNOWN\n"] and conn.closed for conn in stalled)
+    assert firmware.now == 40 + 1000
+    assert list(listener.connections) == [newcomer] and newcomer.writes == []
+    assert firmware.servos.actions == []
+
+    firmware.poll(firmware.now + 20)  # the next pass admits it at once
+    assert newcomer.writes == [b"OK\n"] and newcomer.closed
+    assert firmware.servos.actions == [("close", 1)]
 
 
 def test_poll_replies_error_and_survives_failing_client_sockets(capsys):
@@ -535,6 +581,26 @@ def test_poll_replies_error_and_survives_failing_client_sockets(capsys):
     assert invalid.writes == [b"ERROR\n"] and invalid.closed
     assert broken.writes == [] and broken.closed
     assert capsys.readouterr().out.count("Server error:") == 2
+
+
+def test_setup_reply_and_service_failures_answer_error_and_end_the_pass(capsys):
+    firmware = Firmware(auto_start=True)
+    unconfigurable = Connection(firmware, fail={"settimeout"})
+    unwritable = Connection(firmware, b"STATUS\n", fail={"write"})
+    stalled = Connection(firmware, advance=20)
+    firmware.listeners[0].connections.extend([unconfigurable, unwritable, stalled])
+
+    def broken_service():
+        raise RuntimeError("service")
+
+    firmware.server.poll(broken_service)
+    assert unconfigurable.writes == [b"ERROR\n"] and unconfigurable.closed
+    assert unwritable.writes == [] and unwritable.closed
+    assert stalled.writes == [b"ERROR\n"] and stalled.closed
+    assert firmware.servos.actions == []
+    out = capsys.readouterr().out
+    for message in ("settimeout", "write", "service"):
+        assert "Server error: " + message in out
 
 
 def test_invalid_utf8_is_rejected_by_firmware():
@@ -556,16 +622,29 @@ def test_slow_client_keeps_local_controls_serviced():
     assert firmware.servos.ticks == ticks + 2
 
 
+def test_poll_collects_a_command_split_across_reads():
+    firmware = Firmware(auto_start=True)
+    connection = Connection(firmware, b"ST", b"ATE\n")
+    firmware.listeners[0].connections.append(connection)
+
+    firmware.poll(40)
+
+    assert connection.writes == [STATE.encode() + b"\n"]
+    assert connection.closed
+
+
 def test_local_stop_while_reading_drops_the_request_and_ends_the_pass():
     firmware = Firmware(auto_start=True)
     server = firmware.server
     stalled = Connection(firmware, advance=20)
-    queued = Connection(firmware, b"OPEN 0\n")
+    # Read concurrently: its command line has not arrived when the stop lands.
+    queued = Connection(firmware, OSError("EAGAIN"), b"OPEN 0\n")
     firmware.listeners[0].connections.extend([stalled, queued])
     server.poll(server.stop)
     assert not server.running
     assert stalled.writes == [] and stalled.closed
-    assert queued.writes == [] and not queued.closed
+    assert queued.writes == [] and queued.closed
+    assert queued.chunks  # the late command was never read
     assert firmware.servos.actions == []
 
 
@@ -585,6 +664,16 @@ def test_readline_frames_one_line_and_rejects_partial_or_late_requests():
     assert firmware.now - started >= 1000
     assert firmware.servos.ticks > ticks
     assert firmware.servos.actions == []
+
+    # A local stop while blocked on one read abandons it unanswered.
+    server.running = True
+    stopping = Connection(firmware, advance=20)
+
+    def stop_locally():
+        server.running = False
+
+    assert server._readline(stopping, service_local=stop_locally) == ""
+    assert stopping.writes == [] and not server.running
 
 
 def test_session_requests_reply_with_json_and_operate_owned_channels():

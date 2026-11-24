@@ -326,11 +326,17 @@ class WifiServer:
     # deadline; new peers are accepted only during the first
     # COMMAND_READ_TIMEOUT_MS of a pass, bounding one poll() to about
     # 2 * COMMAND_READ_TIMEOUT_MS. MAX_PENDING bounds buffer memory to
-    # MAX_PENDING * 8192 bytes. READ_SLICE_S is the per-recv wait while
-    # several reads are pending, keeping one round near 20 ms.
+    # MAX_PENDING * 8192 bytes. READ_SLICE_MS is the per-recv wait while
+    # several reads are pending, keeping one round at most near 20 ms.
+    # The latency bound applies to admitted peers only: with MAX_PENDING
+    # reads pending, a new peer stays in the listen backlog until a slot
+    # frees (see docs/specification.md, "Channel sessions").
     MAX_ACCEPTS = 8
     MAX_PENDING = 4
-    READ_SLICE_S = 0.005
+    READ_SLICE_MS = 5
+    READ_SLICE_S = READ_SLICE_MS / 1000
+    # Unchanged response write timeout and blocking _readline recv timeout.
+    REPLY_TIMEOUT_MS = 20
 
     def _serve(self, service_local=None, max_length=8192):
         started = last_service = time.ticks_ms()
@@ -364,26 +370,35 @@ class WifiServer:
                 if service_local is not None and not self.running:
                     # Stopped locally: drop pending requests unanswered.
                     return
+                round_started = time.ticks_ms()
+                progressed = False
                 for entry in list(pending):
-                    conn = entry[0]
+                    conn, buffer = entry[0], entry[1]
+                    received = len(buffer)
                     try:
                         command = self._read_some(entry, max_length)
                     except Exception as exc:
                         pending.remove(entry)
                         self._fail(conn, exc)
+                        progressed = True
                         continue
                     if command is None:
+                        if len(buffer) != received:
+                            progressed = True
                         continue
+                    progressed = True
                     pending.remove(entry)
                     try:
                         # Keep the existing response write timeout. Only reads
                         # use the shorter per-connection scheduling slice.
-                        conn.settimeout(0.02)
+                        conn.settimeout(self.REPLY_TIMEOUT_MS / 1000)
                         self._handle(command, conn)
                     except Exception as exc:
                         self._fail(conn, exc)
                         continue
                     self._close(conn)
+                if not progressed:
+                    self._pace(round_started, self.READ_SLICE_MS)
         finally:
             for entry in pending:
                 self._close(entry[0])
@@ -402,6 +417,15 @@ class WifiServer:
             conn.close()
         except Exception:
             pass
+
+    @staticmethod
+    def _pace(round_started, slice_ms):
+        # A recv timeout is only a ceiling: a port may round a fractional
+        # timeout down or report EAGAIN at once. Sleep out the rest of the
+        # slice after a round without progress so idle reads never busy-spin.
+        remaining = slice_ms - time.ticks_diff(time.ticks_ms(), round_started)
+        if remaining > 0:
+            time.sleep_ms(remaining)
 
     def _service(self, last_service, service_local):
         now = time.ticks_ms()
@@ -443,16 +467,20 @@ class WifiServer:
 
     def _readline(self, conn, max_length=8192, service_local=None):
         """Blocking read of one connection with the same deadline and framing."""
-        conn.settimeout(0.02)
+        conn.settimeout(self.REPLY_TIMEOUT_MS / 1000)
         entry = [conn, bytearray(), time.ticks_ms()]
         last_service = entry[2]
         while True:
             last_service = self._service(last_service, service_local)
             if service_local is not None and not self.running:
                 return ""
+            read_started = time.ticks_ms()
+            received = len(entry[1])
             command = self._read_some(entry, max_length)
             if command is not None:
                 return command
+            if len(entry[1]) == received:
+                self._pace(read_started, self.REPLY_TIMEOUT_MS)
 
     def _configure_ip(self):
         if USE_STATIC_IP:
